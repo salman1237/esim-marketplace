@@ -14,6 +14,17 @@ COPY . .
 
 RUN mkdir -p public
 
+# NEXT_PUBLIC_* variables are inlined into the client JS bundle at build
+# time — setting them only as a container runtime `environment:` (as
+# docker-compose.yml does for documentation/consistency) has no effect on
+# an already-built image. They must be passed as build args instead.
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_DEFAULT_CURRENCY
+ARG NEXT_PUBLIC_DEFAULT_LOCALE
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_DEFAULT_CURRENCY=$NEXT_PUBLIC_DEFAULT_CURRENCY
+ENV NEXT_PUBLIC_DEFAULT_LOCALE=$NEXT_PUBLIC_DEFAULT_LOCALE
+
 ENV NEXT_TELEMETRY_DISABLED 1
 RUN npm run build
 

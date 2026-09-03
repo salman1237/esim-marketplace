@@ -52,6 +52,14 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      # NEXT_PUBLIC_* vars are inlined into the client bundle at build time,
+      # so they must be passed as build args, not (only) as the container's
+      # runtime environment below — a running container's env has no effect
+      # on JS that was already bundled into a prior build.
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://esim.salmandev.io}
+        NEXT_PUBLIC_DEFAULT_CURRENCY: ${NEXT_PUBLIC_DEFAULT_CURRENCY:-USD}
+        NEXT_PUBLIC_DEFAULT_LOCALE: ${NEXT_PUBLIC_DEFAULT_LOCALE:-en}
     container_name: esim-frontend
     restart: unless-stopped
     depends_on:
