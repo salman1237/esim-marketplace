@@ -88,8 +88,10 @@ class VivaPeAdapter:
     @classmethod
     async def get_products(cls, db: AsyncSession, country_id: int) -> list:
         data = await cls.call_api(db, "GET", "products", params={"country_id": country_id})
-        if isinstance(data, dict) and data.get("success"):
-            return data.get("data", [])
+        if isinstance(data, list):
+            return data
+        elif isinstance(data, dict):
+            return data.get("data", []) or data.get("products", [])
         return []
 
     @classmethod
