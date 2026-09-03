@@ -3,8 +3,10 @@
 import React, { useState, useEffect } from "react";
 import { Briefcase, DollarSign, UserCheck, QrCode, CheckCircle2, Send, Share2, Sparkles, AlertCircle, History, List } from "lucide-react";
 import { api } from "@/lib/api";
+import { useAppSettings } from "@/lib/AppSettingsContext";
 
 export default function ResellerPortalPage() {
+  const { formatPrice } = useAppSettings();
   const [userData, setUserData] = useState<any>(null);
   const [countries, setCountries] = useState<any[]>([]);
   const [selectedCountry, setSelectedCountry] = useState<string>("");
@@ -88,15 +90,29 @@ export default function ResellerPortalPage() {
 
     setLoading(true);
     try {
-      const res = await api.checkout(token, {
-        product_id: selectedProduct,
-        payment_method: "WALLET",
-        is_buy_for_user: true,
-        customer_email: customerEmail,
-        customer_phone: customerPhone,
-      });
+      let res;
+      try {
+        // First try to find an existing customer account by email.
+        res = await api.checkout(token, {
+          product_id: selectedProduct,
+          payment_method: "WALLET",
+          is_buy_for_user: true,
+          beneficiary_email: customerEmail,
+          auto_create_user: false,
+        });
+      } catch (lookupErr: any) {
+        if (!String(lookupErr.message || "").includes("Beneficiary user account not found")) throw lookupErr;
+        // No existing account for that email — auto-generate a new customer
+        // account and issue the eSIM to it, per the plan's reseller flow.
+        res = await api.checkout(token, {
+          product_id: selectedProduct,
+          payment_method: "WALLET",
+          is_buy_for_user: true,
+          auto_create_user: true,
+        });
+      }
       setOrderResult(res);
-      
+
       // refresh user data for balances
       api.getMe(token).then(setUserData).catch(console.error);
     } catch (err: any) {
@@ -166,12 +182,12 @@ export default function ResellerPortalPage() {
         <div className="flex gap-3">
           <div className="glass-panel px-4 py-2 rounded-xl border border-white/10 text-right">
             <span className="text-[10px] text-slate-400 uppercase font-semibold block">Commission Wallet</span>
-            <span className="text-base font-black text-amber-400 font-mono">${commissionBalance.toFixed(2)}</span>
+            <span className="text-base font-black text-amber-400 font-mono">{formatPrice(commissionBalance)}</span>
           </div>
           <div className="glass-panel px-4 py-2 rounded-xl border border-white/10 text-right">
             <span className="text-[10px] text-slate-400 uppercase font-semibold block">Default Wallet</span>
             <span className="text-base font-black text-emerald-400 font-mono">
-              ${userData?.wallets?.find((w: any) => w.wallet_type === "DEFAULT")?.balance?.toFixed(2) || "0.00"}
+              {formatPrice(userData?.wallets?.find((w: any) => w.wallet_type === "DEFAULT")?.balance || 0)}
             </span>
           </div>
         </div>
@@ -219,7 +235,7 @@ export default function ResellerPortalPage() {
                   <select value={selectedProduct} onChange={(e) => setSelectedProduct(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white" required>
                     {products.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.title_en} â€” {p.data_amount_gb} GB ({p.validity_days} Days) â€” ${parseFloat(p.retail_price).toFixed(2)}
+                        {p.title_en} — {p.data_amount_gb} GB ({p.validity_days} Days) — {formatPrice(parseFloat(p.retail_price))}
                       </option>
                     ))}
                   </select>
@@ -261,7 +277,7 @@ export default function ResellerPortalPage() {
 
                 <div className="bg-slate-900/80 p-4 rounded-xl text-left text-xs space-y-2 font-mono border border-white/5">
                   <div><span className="text-slate-500">Target Customer:</span> {customerEmail}</div>
-                  <div><span className="text-slate-500">Order Amount:</span> ${parseFloat(orderResult.total_amount).toFixed(2)}</div>
+                  <div><span className="text-slate-500">Order Amount:</span> {formatPrice(parseFloat(orderResult.total_amount))}</div>
                   <div><span className="text-slate-500">Status:</span> <span className="text-emerald-400">{orderResult.status}</span></div>
                 </div>
 
@@ -307,8 +323,8 @@ export default function ResellerPortalPage() {
                       <td className="py-2.5 font-mono text-brand-400">{o.order_no}</td>
                       <td className="py-2.5 text-slate-200">{o.beneficiary_username}</td>
                       <td className="py-2.5 text-slate-200">{o.product_title}</td>
-                      <td className="py-2.5 text-slate-400 font-bold">${o.total_amount.toFixed(2)}</td>
-                      <td className="py-2.5 text-amber-400 font-bold">+${o.commission_earned.toFixed(2)}</td>
+                      <td className="py-2.5 text-slate-400 font-bold">{formatPrice(o.total_amount)}</td>
+                      <td className="py-2.5 text-amber-400 font-bold">+{formatPrice(o.commission_earned)}</td>
                       <td className="py-2.5 font-mono text-[10px] text-slate-500">{o.iccid || "N/A"}</td>
                     </tr>
                   ))}
@@ -339,10 +355,10 @@ export default function ResellerPortalPage() {
                     <tr key={idx}>
                       <td className="py-2.5 text-slate-400">{new Date(l.created_at).toLocaleString()}</td>
                       <td className="py-2.5 text-slate-200">{l.description}</td>
-                      <td className={`py-2.5 font-bold ${l.transaction_type === 'CREDIT' ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {l.transaction_type === 'CREDIT' ? '+' : '-'}${l.amount.toFixed(2)}
+                      <td className={`py-2.5 font-bold ${l.tx_type === 'CREDIT' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {l.tx_type === 'CREDIT' ? '+' : '-'}{formatPrice(l.amount)}
                       </td>
-                      <td className="py-2.5 text-amber-400 font-mono">${l.balance_after.toFixed(2)}</td>
+                      <td className="py-2.5 text-amber-400 font-mono">{formatPrice(l.balance_after)}</td>
                     </tr>
                   ))}
                   {commissionLedger.length === 0 && (

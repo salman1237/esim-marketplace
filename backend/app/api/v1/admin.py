@@ -386,6 +386,14 @@ async def toggle_language(
     await db.commit()
     return {"status": "success", "language": req.code, "is_active": req.is_active}
 
+@router.get("/languages", dependencies=[Depends(require_super_admin)])
+async def get_all_languages(db: AsyncSession = Depends(get_db)):
+    """Unlike the public GET /settings/languages (active-only, for the
+    storefront switcher), this returns every language including inactive
+    ones so the Super Admin manager can re-activate them."""
+    res = await db.execute(select(Language))
+    return res.scalars().all()
+
 @router.post("/languages", dependencies=[Depends(require_super_admin)])
 async def create_language(
     req: LanguageCreateRequest,

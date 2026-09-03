@@ -3,8 +3,10 @@
 import React, { useState, useEffect } from "react";
 import { Search, Zap, ShieldCheck, Globe, ArrowRight, CheckCircle2, Sparkles, Check, X } from "lucide-react";
 import { api } from "@/lib/api";
+import { useAppSettings } from "@/lib/AppSettingsContext";
 
 export default function HomePage() {
+  const { formatPrice } = useAppSettings();
   const [search, setSearch] = useState("");
   const [countries, setCountries] = useState<any[]>([]);
   const [selectedCountry, setSelectedCountry] = useState<any | null>(null);
@@ -168,6 +170,7 @@ export default function HomePage() {
           <div className="glass-panel rounded-2xl max-w-lg w-full p-6 relative border border-white/20 shadow-2xl">
             <button
               onClick={() => setSelectedCountry(null)}
+              aria-label="Close"
               className="absolute top-4 right-4 p-1 rounded-lg text-slate-400 hover:text-white"
             >
               <X className="w-5 h-5" />
@@ -194,7 +197,7 @@ export default function HomePage() {
                       <div className="text-xs text-slate-400">{p.validity_days} Days Validity &bull; 4G/5G Speed</div>
                     </div>
                     <div className="text-right">
-                      <div className="text-lg font-black text-emerald-400">${parseFloat(p.retail_price).toFixed(2)}</div>
+                      <div className="text-lg font-black text-emerald-400">{formatPrice(parseFloat(p.retail_price))}</div>
                       <button
                         onClick={() => handleBuy(p)}
                         disabled={purchasing}

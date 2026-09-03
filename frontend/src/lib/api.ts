@@ -16,6 +16,7 @@ export const api = {
   getPublicSettings: () => fetchApi("/api/v1/settings/public"),
   getLanguages: () => fetchApi("/api/v1/settings/languages"),
   getRates: () => fetchApi("/api/v1/settings/rates"),
+  getTranslations: (lang: string) => fetchApi(`/api/v1/settings/translations/${lang}`),
   getCountries: (search?: string, popularOnly?: boolean) => {
     const params = new URLSearchParams();
     if (search) params.append("search", search);
@@ -34,8 +35,12 @@ export const api = {
   // Wallets
   getMyWallets: (token: string) => fetchApi("/api/v1/wallets/my-wallets", { headers: { Authorization: `Bearer ${token}` } }),
   getMyLedger: (token: string) => fetchApi("/api/v1/wallets/ledger", { headers: { Authorization: `Bearer ${token}` } }),
-  getWalletLedger: (token: string, type: string) => fetchApi(`/api/v1/wallets/ledger/${type}`, { headers: { Authorization: `Bearer ${token}` } }),
+  getWalletLedger: (token: string, type: string) => fetchApi(`/api/v1/wallets/ledger?wallet_type=${type}`, { headers: { Authorization: `Bearer ${token}` } }),
   submitManualDeposit: (token: string, data: any) => fetchApi("/api/v1/wallets/manual-deposit", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+
+  // Payments
+  initiateShurjopayTopup: (token: string, amountUsd: number) =>
+    fetchApi(`/api/v1/payments/shurjopay/topup?amount_usd=${amountUsd}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
 
   // Orders
   checkout: (token: string, data: any) => fetchApi("/api/v1/orders/checkout", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
@@ -60,4 +65,12 @@ export const api = {
   updateAdminCatalogProduct: (token: string, id: string, data: any) => fetchApi(`/api/v1/admin/catalog/${id}`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
   getAdminUsers: (token: string) => fetchApi("/api/v1/admin/users", { headers: { Authorization: `Bearer ${token}` } }),
   updateUserRole: (token: string, id: string, role: string) => fetchApi(`/api/v1/admin/users/${id}/role`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ role }) }),
+  updateUserStatus: (token: string, id: string, isActive: boolean) => fetchApi(`/api/v1/admin/users/${id}/status`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ is_active: isActive }) }),
+
+  // Super Admin: Languages & Translations
+  getAllLanguages: (token: string) => fetchApi("/api/v1/admin/languages", { headers: { Authorization: `Bearer ${token}` } }),
+  createLanguage: (token: string, data: any) => fetchApi("/api/v1/admin/languages", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  toggleLanguage: (token: string, code: string, isActive: boolean) => fetchApi("/api/v1/admin/languages/toggle", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ code, is_active: isActive }) }),
+  upsertTranslation: (token: string, data: any) => fetchApi("/api/v1/admin/translations", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  autoTranslateLanguage: (token: string, code: string) => fetchApi(`/api/v1/admin/languages/${code}/auto-translate`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
 };

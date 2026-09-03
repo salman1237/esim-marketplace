@@ -3,8 +3,10 @@
 import React, { useState, useEffect } from "react";
 import { Wallet, ArrowDownRight, ArrowUpRight, Plus, Upload, CheckCircle2 } from "lucide-react";
 import { api } from "@/lib/api";
+import { useAppSettings } from "@/lib/AppSettingsContext";
 
 export default function WalletPage() {
+  const { formatPrice, convertTo } = useAppSettings();
   const [wallets, setWallets] = useState<any[]>([]);
   const [ledger, setLedger] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -13,6 +15,7 @@ export default function WalletPage() {
   const [txId, setTxId] = useState("");
   const [submittingSlip, setSubmittingSlip] = useState(false);
   const [slipSuccess, setSlipSuccess] = useState(false);
+  const [payingViaGateway, setPayingViaGateway] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("esim_token");
@@ -30,6 +33,26 @@ export default function WalletPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  const handleGatewayTopup = async () => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+
+    setPayingViaGateway(true);
+    try {
+      const res = await api.initiateShurjopayTopup(token, parseFloat(depositAmount));
+      const checkoutUrl = res.checkout_url || res.checkoutUrl;
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
+      } else {
+        alert("ShurjoPay did not return a checkout link. Please try again or use manual deposit.");
+      }
+    } catch (err: any) {
+      alert(err.message || "Failed to start ShurjoPay checkout");
+    } finally {
+      setPayingViaGateway(false);
+    }
+  };
+
   const handleManualSlip = async (e: React.FormEvent) => {
     e.preventDefault();
     const token = localStorage.getItem("esim_token");
@@ -38,7 +61,7 @@ export default function WalletPage() {
     setSubmittingSlip(true);
     try {
       await api.submitManualDeposit(token, {
-        amount: parseFloat(depositAmount) * 122.63, // BDT equivalent
+        amount: convertTo(parseFloat(depositAmount), "BDT"),
         currency: "BDT",
         bank_name: bankName,
         transaction_id: txId,
@@ -68,7 +91,7 @@ export default function WalletPage() {
               <Wallet className="w-4 h-4 text-brand-400" />
             </div>
             <div className="text-3xl font-extrabold text-white">
-              ${parseFloat(w.balance).toFixed(2)}
+              {formatPrice(parseFloat(w.balance))}
             </div>
             <div className="text-[11px] text-emerald-400 mt-2 flex items-center space-x-1">
               <span>Active Currency: {w.currency}</span>
@@ -105,10 +128,11 @@ export default function WalletPage() {
             </div>
 
             <button
-              onClick={() => alert("Redirecting to ShurjoPay Sandbox...")}
-              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-900/30 hover:opacity-95"
+              onClick={handleGatewayTopup}
+              disabled={payingViaGateway}
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-900/30 hover:opacity-95 disabled:opacity-60"
             >
-              Pay via ShurjoPay Sandbox (${depositAmount})
+              {payingViaGateway ? "Redirecting to ShurjoPay..." : `Pay via ShurjoPay Sandbox ($${depositAmount})`}
             </button>
           </div>
         </div>
@@ -197,9 +221,9 @@ export default function WalletPage() {
                     <td className={`py-3 font-bold font-mono ${
                       entry.tx_type === "CREDIT" ? "text-emerald-400" : "text-rose-400"
                     }`}>
-                      {entry.tx_type === "CREDIT" ? "+" : "-"}${parseFloat(entry.amount).toFixed(2)}
+                      {entry.tx_type === "CREDIT" ? "+" : "-"}{formatPrice(parseFloat(entry.amount))}
                     </td>
-                    <td className="py-3 font-mono text-slate-300">${parseFloat(entry.balance_after).toFixed(2)}</td>
+                    <td className="py-3 font-mono text-slate-300">{formatPrice(parseFloat(entry.balance_after))}</td>
                     <td className="py-3 text-slate-400">{entry.description || entry.reference_type}</td>
                   </tr>
                 ))}

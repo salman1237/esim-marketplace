@@ -1,10 +1,16 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Shield, Users, ShoppingCart, DollarSign, Wifi, RefreshCw, Check, X, Sliders, Globe, FileText, Activity } from "lucide-react";
+import { Shield, Users, ShoppingCart, DollarSign, Wifi, RefreshCw, Check, X, Sliders, Globe, FileText, Activity, Languages } from "lucide-react";
 import { api } from "@/lib/api";
+import { useAppSettings } from "@/lib/AppSettingsContext";
+import TranslationsManager from "@/components/TranslationsManager";
+
+type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "branding" | "translations" | "logs";
 
 export default function AdminConsolePage() {
+  const { formatPrice, languages: appLanguages } = useAppSettings();
+  const [role, setRole] = useState<string | null>(null);
   const [stats, setStats] = useState<any>({ total_users: 0, total_orders: 0, total_revenue_usd: 0, total_esims_issued: 0 });
   const [merchants, setMerchants] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
@@ -13,9 +19,10 @@ export default function AdminConsolePage() {
   const [allOrders, setAllOrders] = useState<any[]>([]);
   const [catalog, setCatalog] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [inspectingLog, setInspectingLog] = useState<any | null>(null);
 
   const [branding, setBranding] = useState({ platform_name: "eSIM Global", support_email: "support@esim.local", support_phone: "+880 1700-000000" });
-  const [activeTab, setActiveTab] = useState<"overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "branding" | "logs">("overview");
+  const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [syncing, setSyncing] = useState(false);
 
   // Currency override
@@ -23,22 +30,31 @@ export default function AdminConsolePage() {
   const [manualRate, setManualRate] = useState("125.00");
   const [isOverride, setIsOverride] = useState(false);
 
+  const isSuperAdmin = role === "SUPER_ADMIN";
+
   useEffect(() => {
     const token = localStorage.getItem("esim_token");
     if (!token) {
       window.location.href = "/auth/login";
       return;
     }
-    
+
+    api.getMe(token).then((me) => setRole(me.role)).catch(() => {
+      localStorage.removeItem("esim_token");
+      window.location.href = "/auth/login";
+    });
+
     api.getAdminStats(token).then(setStats).catch(console.error);
     api.getMerchantQueue(token).then(setMerchants).catch(console.error);
     api.getPaymentQueue(token).then(setPayments).catch(console.error);
-    api.getAuditLogs(token).then(setAuditLogs).catch(console.error);
     api.getSupplierLogs(token).then(setSupplierLogs).catch(console.error);
     api.getAdminOrders(token).then(setAllOrders).catch(console.error);
     api.getAdminCatalog(token).then(setCatalog).catch(console.error);
-    api.getAdminUsers(token).then(setUsers).catch(console.error);
-
+    // Super-Admin-only endpoints: fetched regardless, the backend 403s a
+    // non-Super-Admin caller and these simply stay empty (RBAC is enforced
+    // server-side; the tabs below just don't render for other roles).
+    api.getAuditLogs(token).then(setAuditLogs).catch(() => {});
+    api.getAdminUsers(token).then(setUsers).catch(() => {});
   }, []);
 
 
@@ -148,7 +164,7 @@ export default function AdminConsolePage() {
         </div>
         <div className="glass-panel rounded-2xl p-5 border border-white/10">
           <div className="text-xs font-semibold text-slate-400">Total Revenue (USD)</div>
-          <div className="text-2xl font-black text-emerald-400 mt-1">${parseFloat(stats.total_revenue_usd || 0).toFixed(2)}</div>
+          <div className="text-2xl font-black text-emerald-400 mt-1">{formatPrice(parseFloat(stats.total_revenue_usd || 0))}</div>
         </div>
         <div className="glass-panel rounded-2xl p-5 border border-white/10">
           <div className="text-xs font-semibold text-slate-400">Active eSIMs Issued</div>
@@ -156,13 +172,20 @@ export default function AdminConsolePage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex space-x-2 border-b border-white/10">
+      {/* Tabs — Merchant/Payment approvals, Orders, and Catalog are shared
+          Admin+Super-Admin operations; Branding, Users, Translations, and
+          the audit-log half of "360° Logs" are Super-Admin-only, matching
+          the backend's require_super_admin gate on those endpoints. */}
+      <div className="flex space-x-2 border-b border-white/10 overflow-x-auto hide-scrollbar">
         {[
           { id: "overview", label: "Overview" },
           { id: "merchants", label: `Merchants (${merchants.filter(m => m.status === "PENDING").length})` },
           { id: "payments", label: `Manual Deposits (${payments.filter(p => p.status === "PENDING").length})` },
-          { id: "branding", label: "Dynamic Branding & Rates" },
+          { id: "orders", label: "Orders" },
+          { id: "catalog", label: "Catalog" },
+          ...(isSuperAdmin ? [{ id: "users", label: "Staff & Users" }] : []),
+          ...(isSuperAdmin ? [{ id: "branding", label: "Dynamic Branding & Rates" }] : []),
+          ...(isSuperAdmin ? [{ id: "translations", label: "Languages & Translations" }] : []),
           { id: "logs", label: `360° Logs (${auditLogs.length + supplierLogs.length})` }
         ].map((tab) => (
           <button
@@ -350,7 +373,11 @@ export default function AdminConsolePage() {
         </div>
       )}
 
-      
+      {/* Tab: Languages & Translations (Super Admin only) */}
+      {activeTab === "translations" && isSuperAdmin && (
+        <TranslationsManager languages={appLanguages} />
+      )}
+
       {/* Tab: Orders Viewer */}
       {activeTab === "orders" && (
         <div className="glass-panel rounded-2xl p-6 border border-white/10">
@@ -374,7 +401,7 @@ export default function AdminConsolePage() {
                     <td className="py-2.5 text-slate-400">{new Date(o.created_at).toLocaleString()}</td>
                     <td className="py-2.5 text-slate-200">{o.email}</td>
                     <td className="py-2.5 text-slate-200">{o.product_title}</td>
-                    <td className="py-2.5 font-bold text-emerald-400">${o.total_amount.toFixed(2)}</td>
+                    <td className="py-2.5 font-bold text-emerald-400">{formatPrice(o.total_amount)}</td>
                     <td className="py-2.5">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                         o.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
@@ -411,7 +438,7 @@ export default function AdminConsolePage() {
                     <td className="py-2.5 font-bold text-white">{p.country}</td>
                     <td className="py-2.5 text-brand-300">{p.title}</td>
                     <td className="py-2.5 text-slate-400">{p.data_gb} GB / {p.validity_days} Days</td>
-                    <td className="py-2.5 text-slate-400">${p.cost_price.toFixed(2)}</td>
+                    <td className="py-2.5 text-slate-400">{formatPrice(p.cost_price)}</td>
                     <td className="py-2.5">
                       <input 
                         type="number" 
@@ -508,7 +535,7 @@ export default function AdminConsolePage() {
                 </thead>
                 <tbody className="divide-y divide-white/5 font-mono">
                   {supplierLogs.map((log) => (
-                    <tr key={log.id}>
+                    <tr key={log.id} onClick={() => setInspectingLog(log)} className="cursor-pointer hover:bg-white/5">
                       <td className="py-2.5 text-slate-400">{new Date(log.created_at).toLocaleTimeString()}</td>
                       <td className="py-2.5 font-bold text-brand-400">{log.method}</td>
                       <td className="py-2.5 text-slate-200">/{log.endpoint}</td>
@@ -525,36 +552,60 @@ export default function AdminConsolePage() {
             </div>
           </div>
 
-          {/* Audit Logs */}
-          <div className="glass-panel rounded-2xl p-6 border border-white/10">
-            <h3 className="text-base font-bold text-white mb-1 flex items-center space-x-2">
-              <FileText className="w-4 h-4 text-amber-400" />
-              <span>Administrative Audit Trail ("Log of Everything")</span>
-            </h3>
-            <p className="text-xs text-slate-400 mb-4">Tamper-evident logs of all administrative actions and parameter changes.</p>
+          {/* Audit Logs — Super Admin only, matching the backend's
+              require_super_admin gate on GET /admin/audit-logs. */}
+          {isSuperAdmin ? (
+            <div className="glass-panel rounded-2xl p-6 border border-white/10">
+              <h3 className="text-base font-bold text-white mb-1 flex items-center space-x-2">
+                <FileText className="w-4 h-4 text-amber-400" />
+                <span>Administrative Audit Trail ("Log of Everything")</span>
+              </h3>
+              <p className="text-xs text-slate-400 mb-4">Tamper-evident logs of all administrative actions and parameter changes. Click a row to inspect the full before/after state.</p>
 
-            <div className="overflow-x-auto max-h-80 overflow-y-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="text-slate-400 border-b border-white/10 sticky top-0 bg-slate-900">
-                  <tr>
-                    <th className="py-2">Time</th>
-                    <th className="py-2">Role</th>
-                    <th className="py-2">Action</th>
-                    <th className="py-2">State Diff</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {auditLogs.map((log) => (
-                    <tr key={log.id}>
-                      <td className="py-2.5 text-slate-400 font-mono">{new Date(log.created_at).toLocaleTimeString()}</td>
-                      <td className="py-2.5 font-bold text-amber-400">{log.actor_role}</td>
-                      <td className="py-2.5 font-semibold text-white">{log.action}</td>
-                      <td className="py-2.5 font-mono text-[11px] text-slate-400 truncate max-w-xs">{JSON.stringify(log.after_state)}</td>
+              <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="text-slate-400 border-b border-white/10 sticky top-0 bg-slate-900">
+                    <tr>
+                      <th className="py-2">Time</th>
+                      <th className="py-2">Role</th>
+                      <th className="py-2">Action</th>
+                      <th className="py-2">State Diff</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {auditLogs.map((log) => (
+                      <tr key={log.id} onClick={() => setInspectingLog(log)} className="cursor-pointer hover:bg-white/5">
+                        <td className="py-2.5 text-slate-400 font-mono">{new Date(log.created_at).toLocaleTimeString()}</td>
+                        <td className="py-2.5 font-bold text-amber-400">{log.actor_role}</td>
+                        <td className="py-2.5 font-semibold text-white">{log.action}</td>
+                        <td className="py-2.5 font-mono text-[11px] text-slate-400 truncate max-w-xs">{JSON.stringify(log.after_state)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
+          ) : (
+            <div className="glass-panel rounded-2xl p-6 border border-white/10 text-xs text-slate-400">
+              The full administrative audit trail is visible to Super Admins only. You can see supplier API traffic above.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* JSON Inspect Modal — for both supplier and audit log rows */}
+      {inspectingLog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4" onClick={() => setInspectingLog(null)}>
+          <div className="glass-panel rounded-2xl max-w-2xl w-full p-6 border border-white/20 shadow-2xl max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-white">Log Entry Detail</h3>
+              <button onClick={() => setInspectingLog(null)} aria-label="Close" className="p-1 rounded-lg text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <pre className="text-[11px] font-mono text-slate-300 bg-slate-950 p-4 rounded-xl overflow-x-auto whitespace-pre-wrap break-all">
+              {JSON.stringify(inspectingLog, null, 2)}
+            </pre>
           </div>
         </div>
       )}
