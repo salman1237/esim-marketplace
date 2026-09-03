@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Numeric, Integer, Text
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Numeric, Integer, Text, Index
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -36,6 +36,8 @@ class Product(Base):
     is_active = Column(Boolean, default=True)
     supplier_reference = Column(String(100), nullable=True)  # esimgo_bundle or worldmove_esim
     coverage_networks = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country", back_populates="products")
     orders = relationship("Order", back_populates="product")

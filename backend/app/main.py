@@ -4,7 +4,7 @@ from decimal import Decimal
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
+from sqlalchemy import select, text
 from app.core.config import settings
 from app.core.database import engine, Base, AsyncSessionLocal
 from app.core.security import get_password_hash
@@ -19,10 +19,39 @@ from app.api.v1 import api_v1_router
 configure_logging()
 logger = get_logger(__name__)
 
+async def _reset_stale_pre_migration_schema(conn):
+    """One-time compatibility shim (2026-09-03 schema realignment).
+
+    Several columns were renamed/restructured (users.phone_number -> phone,
+    orders.user_id -> buyer_id + new beneficiary_id, etc.) but the app has
+    no migration tool and creates schema via create_all, which only adds
+    missing tables — it never alters existing ones. Any database created by
+    an earlier version of this app is left with the old, incompatible
+    columns, which crashes every route touching them.
+
+    This detects that old schema (via the renamed users.phone_number
+    column, which only exists pre-migration) and drops everything so
+    create_all rebuilds it fresh from the current models. Confirmed safe to
+    do unconditionally for this deployment (no production data to
+    preserve). Once the schema is current this column no longer exists, so
+    the check — and the drop — becomes a permanent no-op on every future
+    boot; this is not a general-purpose migration mechanism and shouldn't
+    be extended for future schema changes (use Alembic instead).
+    """
+    result = await conn.execute(text(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'users' AND column_name = 'phone_number'"
+    ))
+    if result.first():
+        logger.warning("stale_pre_migration_schema_detected_resetting")
+        await conn.run_sync(Base.metadata.drop_all)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 1. Automatically create all database tables if they do not exist
     async with engine.begin() as conn:
+        await _reset_stale_pre_migration_schema(conn)
         await conn.run_sync(Base.metadata.create_all)
     
     # 2. Seed initial Super Admin, platform settings, currencies, and languages
