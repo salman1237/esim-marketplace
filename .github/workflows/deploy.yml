@@ -44,8 +44,34 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Dokploy Auto-Deployment
+      - name: Trigger Dokploy deployment and wait for it to finish
+        env:
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          COMPOSE_ID: ${{ secrets.DOKPLOY_COMPOSE_ID }}
+          DOKPLOY_URL: http://89.116.122.118:3000
         run: |
-          echo "Triggering Dokploy deploy webhook..."
-          curl -sf -X POST "${{ secrets.DOKPLOY_DEPLOY_WEBHOOK }}"
-          echo "Dokploy deployment triggered successfully."
+          set -e
+          echo "Triggering deploy via Dokploy API (the push webhook silently no-ops on a git-branch mismatch it reports as a redirect, which curl -f does not treat as failure — this endpoint gives an honest queued/error result instead)..."
+          trigger_response=$(curl -sf -X POST "$DOKPLOY_URL/api/compose.deploy" \
+            -H "x-api-key: $DOKPLOY_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"composeId\":\"$COMPOSE_ID\",\"title\":\"${{ github.event.head_commit.message }}\"}")
+          echo "Trigger response: $trigger_response"
+
+          echo "Polling deployment status..."
+          for i in $(seq 1 40); do
+            sleep 15
+            status=$(curl -sf -H "x-api-key: $DOKPLOY_API_KEY" "$DOKPLOY_URL/api/compose.one?composeId=$COMPOSE_ID" | python3 -c "import json,sys; print(json.load(sys.stdin)['deployments'][0]['status'])")
+            echo "  [$((i * 15))s] status: $status"
+            if [ "$status" = "done" ]; then
+              echo "Deployment succeeded."
+              exit 0
+            fi
+            if [ "$status" = "error" ]; then
+              echo "Deployment failed. Fetching log path for diagnosis..."
+              curl -sf -H "x-api-key: $DOKPLOY_API_KEY" "$DOKPLOY_URL/api/compose.one?composeId=$COMPOSE_ID" | python3 -c "import json,sys; print(json.load(sys.stdin)['deployments'][0]['logPath'])"
+              exit 1
+            fi
+          done
+          echo "Timed out waiting for deployment to finish."
+          exit 1
