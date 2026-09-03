@@ -116,9 +116,11 @@ class VivaPeAdapter:
         return []
 
     @classmethod
-    async def create_transaction(cls, db: AsyncSession, product_id: int, phone: str, receiver_amount: float) -> dict:
+    async def create_transaction(cls, db: AsyncSession, product_id: int, receiver_amount: float) -> dict:
+        # VivaPe's own Postman example marks `phone` disabled for
+        # activity=esim create-transaction calls (it's for the topup
+        # activity type) — sending it was untested and is dropped here.
         payload = {
-            "phone": phone,
             "product_id": str(product_id),
             "receiver_amount": str(receiver_amount),
             "activity": "esim"

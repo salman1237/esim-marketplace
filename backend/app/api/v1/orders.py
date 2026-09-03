@@ -152,9 +152,14 @@ async def checkout_esim(
             # provisioned drastically wrong data amounts on every real
             # purchase.
             trx = await VivaPeAdapter.create_transaction(
-                db, product.supplier_product_id, current_user.phone or "8801700000000", float(product.supplier_receiver_amount)
+                db, product.supplier_product_id, float(product.supplier_receiver_amount)
             )
-            trx_id = trx.get("purchase_trx", {}).get("id")
+            # purchase_trx is a dict with "id" on success, but VivaPe
+            # returns it as an empty list ([]) alongside an "error" string
+            # on failure — confirmed live via supplier_transaction_logs
+            # (e.g. {"error": "Transaction Failed!!", "purchase_trx": []}).
+            purchase_trx = trx.get("purchase_trx") if isinstance(trx, dict) else None
+            trx_id = purchase_trx.get("id") if isinstance(purchase_trx, dict) else None
             if trx_id:
                 esim_data = await VivaPeAdapter.get_esim_by_trx(db, trx_id)
                 if esim_data.get("iccid"):
@@ -162,6 +167,12 @@ async def checkout_esim(
                     lpa = esim_data.get("lpa") or lpa
                     qr_data = esim_data.get("qr_code") or lpa
                     is_mock_fallback = False
+            else:
+                logger.warning(
+                    "vivape_provisioning_failed_using_mock_fallback",
+                    order_id=order.id,
+                    vivape_error=trx.get("error") if isinstance(trx, dict) else str(trx)
+                )
         except Exception as e:
             logger.warning("vivape_provisioning_failed_using_mock_fallback", order_id=order.id, error=str(e))
 
