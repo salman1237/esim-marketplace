@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   esim-db:
     image: postgres:16-alpine
@@ -47,6 +45,7 @@ services:
       - logs_data:/var/log/esim
     networks:
       - esim-network
+      - dokploy-network
 
   esim-frontend:
     build:
@@ -57,13 +56,14 @@ services:
     depends_on:
       - esim-backend
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://89.116.122.118:8000}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://esim.salmandev.io}
       NEXT_PUBLIC_DEFAULT_CURRENCY: ${NEXT_PUBLIC_DEFAULT_CURRENCY:-USD}
       NEXT_PUBLIC_DEFAULT_LOCALE: ${NEXT_PUBLIC_DEFAULT_LOCALE:-en}
     ports:
       - "${FRONTEND_PORT:-3001}:3000"
     networks:
       - esim-network
+      - dokploy-network
 
 volumes:
   postgres_data:
@@ -77,3 +77,5 @@ networks:
   esim-network:
     name: esim-network
     driver: bridge
+  dokploy-network:
+    external: true
