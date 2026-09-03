@@ -26,7 +26,7 @@ async def register(req: UserRegister, db: AsyncSession = Depends(get_db)):
         hashed_password=get_password_hash(req.password),
         role=UserRole.USER,
         status=UserStatus.ACTIVE,
-        phone=req.phone,
+        phone_number=req.phone,
         full_name=req.full_name
     )
     db.add(user)
