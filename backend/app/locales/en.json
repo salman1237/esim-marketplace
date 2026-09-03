@@ -10,6 +10,8 @@
     "register": "Create Account",
     "logout": "Sign Out",
     "profile": "Profile",
+    "maintenance_title": "Down for maintenance",
+    "maintenance_body": "We're making some improvements and will be back shortly. Thanks for your patience.",
     "admin": "Admin Console",
     "merchant": "Merchant Portal",
     "settings": "Settings",

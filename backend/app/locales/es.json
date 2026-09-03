@@ -10,6 +10,8 @@
     "register": "Crear Cuenta",
     "logout": "Cerrar Sesión",
     "profile": "Perfil",
+    "maintenance_title": "En mantenimiento",
+    "maintenance_body": "Estamos realizando mejoras y volveremos pronto. Gracias por su paciencia.",
     "admin": "Panel de Administración",
     "merchant": "Portal de Distribuidores",
     "settings": "Configuración",

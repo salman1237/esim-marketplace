@@ -23,6 +23,8 @@ interface AppSettingsContextValue {
   convert: (amountUsd: number) => number;
   convertTo: (amountUsd: number, targetCurrency: string) => number;
   formatPrice: (amountUsd: number) => string;
+  maintenanceMode: boolean;
+  platformName: string;
 }
 
 const AppSettingsContext = createContext<AppSettingsContextValue | null>(null);
@@ -41,6 +43,8 @@ export function AppSettingsProvider({ children }: { children: React.ReactNode })
   const [languages, setLanguages] = useState<LanguageMeta[]>([]);
   const [translations, setTranslations] = useState<Record<string, Record<string, string>>>({});
   const [rates, setRates] = useState<Record<string, number>>({ USD: 1 });
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [platformName, setPlatformName] = useState("eSIM Global");
 
   useEffect(() => {
     try {
@@ -55,6 +59,13 @@ export function AppSettingsProvider({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     api.getLanguages().then(setLanguages).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    api.getPublicSettings().then((s: any) => {
+      setMaintenanceMode(!!s.maintenance_mode);
+      if (s.platform_name) setPlatformName(s.platform_name);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -106,7 +117,7 @@ export function AppSettingsProvider({ children }: { children: React.ReactNode })
   }, [lang, isRTL]);
 
   return (
-    <AppSettingsContext.Provider value={{ lang, setLang, currency, setCurrency, isRTL, languages, t, convert, convertTo, formatPrice }}>
+    <AppSettingsContext.Provider value={{ lang, setLang, currency, setCurrency, isRTL, languages, t, convert, convertTo, formatPrice, maintenanceMode, platformName }}>
       {children}
     </AppSettingsContext.Provider>
   );

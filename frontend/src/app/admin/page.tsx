@@ -21,7 +21,7 @@ export default function AdminConsolePage() {
   const [users, setUsers] = useState<any[]>([]);
   const [inspectingLog, setInspectingLog] = useState<any | null>(null);
 
-  const [branding, setBranding] = useState({ platform_name: "eSIM Global", support_email: "support@esim.local", support_phone: "+880 1700-000000" });
+  const [branding, setBranding] = useState({ platform_name: "eSIM Global", support_email: "support@esim.local", support_phone: "+880 1700-000000", maintenance_mode: false });
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [syncing, setSyncing] = useState(false);
 
@@ -55,6 +55,20 @@ export default function AdminConsolePage() {
     // server-side; the tabs below just don't render for other roles).
     api.getAuditLogs(token).then(setAuditLogs).catch(() => {});
     api.getAdminUsers(token).then(setUsers).catch(() => {});
+
+    // Prefill the branding form with the real current values — without
+    // this, saving would silently overwrite fields like maintenance_mode
+    // back to the form's hardcoded defaults, since the backend treats any
+    // key present in the request body as an intentional update.
+    api.getPublicSettings().then((s: any) => {
+      setBranding((b) => ({
+        ...b,
+        platform_name: s.platform_name ?? b.platform_name,
+        support_email: s.support_email ?? b.support_email,
+        support_phone: s.support_phone ?? b.support_phone,
+        maintenance_mode: !!s.maintenance_mode,
+      }));
+    }).catch(() => {});
   }, []);
 
 
@@ -310,6 +324,19 @@ export default function AdminConsolePage() {
                   value={branding.support_email}
                   onChange={(e) => setBranding({ ...branding, support_email: e.target.value })}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                />
+              </div>
+              <div className="flex items-center justify-between bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5">
+                <div>
+                  <label htmlFor="maintenanceMode" className="text-xs text-slate-300 font-semibold block">Maintenance Mode</label>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Shows a maintenance page to everyone except admins.</p>
+                </div>
+                <input
+                  id="maintenanceMode"
+                  type="checkbox"
+                  checked={branding.maintenance_mode}
+                  onChange={(e) => setBranding({ ...branding, maintenance_mode: e.target.checked })}
+                  className="w-5 h-5 rounded bg-slate-900 border-slate-700 accent-brand-500"
                 />
               </div>
               <button
