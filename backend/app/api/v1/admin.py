@@ -44,26 +44,28 @@ async def sync_catalog_from_vivape(db: AsyncSession = Depends(get_db)):
     synced_p = 0
 
     popular_iso = ["US", "TH", "JP", "SA", "AE", "GB", "TR", "SG", "MY", "BD"]
+    existing_res = await db.execute(select(Country.iso2))
+    seen_iso = set(existing_res.scalars().all())
+
     for item in raw_countries:
         c_id = item.get("id")
-        iso2 = item.get("iso_alpha2") or item.get("iso2") or item.get("country_code", "")
+        raw_iso = item.get("iso_alpha2") or item.get("iso2") or item.get("country_code", "")
+        iso2 = raw_iso.strip().upper()
         name = item.get("country_name") or item.get("name", "")
-        if not iso2:
+        if not iso2 or iso2 in seen_iso:
             continue
 
-        c_res = await db.execute(select(Country).where(Country.iso2 == iso2.upper()))
-        c_obj = c_res.scalar_one_or_none()
-        if not c_obj:
-            c_obj = Country(
-                id=c_id,
-                iso2=iso2.upper(),
-                name_en=name,
-                flag_url=f"https://flagcdn.com/w80/{iso2.lower()}.png",
-                is_popular=iso2.upper() in popular_iso,
-                is_active=True
-            )
-            db.add(c_obj)
-            synced_c += 1
+        seen_iso.add(iso2)
+        c_obj = Country(
+            id=c_id,
+            iso2=iso2,
+            name_en=name,
+            flag_url=f"https://flagcdn.com/w80/{iso2.lower()}.png",
+            is_popular=iso2 in popular_iso,
+            is_active=True
+        )
+        db.add(c_obj)
+        synced_c += 1
 
     await db.commit()
 
