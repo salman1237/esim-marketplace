@@ -21,6 +21,7 @@ from app.schemas.settings import (
 from app.services.ledger_svc import LedgerService
 from app.services.audit_svc import AuditService
 from app.services.vivape_adapter import VivaPeAdapter
+from app.services.catalog_parsing import parse_vivape_product
 from app.services.currency_svc import CurrencyService
 
 
@@ -88,36 +89,26 @@ async def sync_catalog_from_vivape(db: AsyncSession = Depends(get_db)):
     await db.commit()
 
     # Sync products for popular destination countries
-    import re
     top_c = await db.execute(select(Country).where(Country.is_popular == True))
     for c in top_c.scalars().all():
         raw_products = await VivaPeAdapter.get_products(db, c.id)
         for p in raw_products:
-            ref = str(p.get("reference") or "")
-            title = str(p.get("title") or p.get("name") or "")
-            ESIM_REFERENCES = ("esimgo_bundle", "worldmove_esim")
-            if ref.lower() not in ESIM_REFERENCES and "esim" not in title.lower():
+            parsed = parse_vivape_product(p)
+            if parsed is None:
                 continue
 
-            cost = Decimal(str(p.get("price") or p.get("amount") or 5.0))
-            retail = (cost * Decimal("1.25")).quantize(Decimal("0.0001"))
-
-            gb_match = re.search(r"(\d+(\.\d+)?)\s*GB", title, re.IGNORECASE)
-            days_match = re.search(r"(\d+)\s*Days?", title, re.IGNORECASE)
-
-            data_amount = Decimal(gb_match.group(1)) if gb_match else Decimal("3.0")
-            validity = int(days_match.group(1)) if days_match else 15
-
             p_obj = Product(
-                supplier_product_id=p.get("id"),
+                supplier_product_id=parsed["supplier_product_id"],
                 country_id=c.id,
-                title_en=title or f"{c.name_en} eSIM",
-                data_amount_gb=data_amount,
-                validity_days=validity,
-                cost_price=cost,
-                retail_price=retail,
+                title_en=parsed["title"] or f"{c.name_en} eSIM",
+                data_amount_gb=parsed["data_amount_gb"],
+                validity_days=parsed["validity_days"],
+                cost_price=parsed["cost_price"],
+                retail_price=parsed["retail_price"],
                 currency="USD",
-                supplier_reference=ref
+                is_unlimited=parsed["is_unlimited"],
+                supplier_reference=parsed["supplier_reference"],
+                supplier_receiver_amount=parsed["supplier_receiver_amount"]
             )
             db.add(p_obj)
             synced_p += 1

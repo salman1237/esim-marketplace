@@ -35,6 +35,15 @@ class Product(Base):
     is_unlimited = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     supplier_reference = Column(String(100), nullable=True)  # esimgo_bundle or worldmove_esim
+    # VivaPe's own receiver_amount_min for this product, stored verbatim
+    # from the catalog sync and passed straight back to create-transaction.
+    # This is NOT a price — confirmed against the live catalog it means
+    # different things per supplier_reference (MB quantity for
+    # esimgo_bundle, e.g. 1000 for a 1GB plan and -1 for unlimited; some
+    # other cost-like unit for worldmove_esim, ~3.7x the USD price and
+    # unrelated to the GB amount). There is no way to derive the correct
+    # value from cost_price or the title — it must be round-tripped as-is.
+    supplier_receiver_amount = Column(Numeric(18, 4), nullable=True)
     coverage_networks = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

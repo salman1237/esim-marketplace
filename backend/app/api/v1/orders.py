@@ -140,10 +140,19 @@ async def checkout_esim(
     qr_data = lpa
     is_mock_fallback = True
 
-    if product.supplier_product_id:
+    if product.supplier_product_id and product.supplier_receiver_amount is not None:
         try:
+            # receiver_amount is NOT the price — confirmed against VivaPe's
+            # live catalog it's a supplier-defined quantity whose meaning
+            # varies by product type (MB of data for esimgo_bundle, a
+            # different cost-like unit for worldmove_esim). It must be the
+            # exact value VivaPe's own catalog reported for this product at
+            # sync time (see catalog_parsing.py), never derived from
+            # cost_price — that was the previous behavior and would have
+            # provisioned drastically wrong data amounts on every real
+            # purchase.
             trx = await VivaPeAdapter.create_transaction(
-                db, product.supplier_product_id, current_user.phone or "8801700000000", float(product.cost_price)
+                db, product.supplier_product_id, current_user.phone or "8801700000000", float(product.supplier_receiver_amount)
             )
             trx_id = trx.get("purchase_trx", {}).get("id")
             if trx_id:
