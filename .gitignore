@@ -7,6 +7,10 @@ desktop.ini
 .env
 .env*.local
 !.env.example
+*_deploy_key
+*_deploy_key.pub
+id_ed25519*
+id_rsa*
 
 # Node / Next.js
 node_modules/
