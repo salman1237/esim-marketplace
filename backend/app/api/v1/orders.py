@@ -152,7 +152,7 @@ async def checkout_esim(
             # provisioned drastically wrong data amounts on every real
             # purchase.
             trx = await VivaPeAdapter.create_transaction(
-                db, product.supplier_product_id, float(product.supplier_receiver_amount)
+                db, product.supplier_product_id, Decimal(str(product.supplier_receiver_amount))
             )
             # purchase_trx is a dict with "id" on success, but VivaPe
             # returns it as an empty list ([]) alongside an "error" string

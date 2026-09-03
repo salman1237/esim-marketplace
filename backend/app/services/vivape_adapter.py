@@ -116,13 +116,18 @@ class VivaPeAdapter:
         return []
 
     @classmethod
-    async def create_transaction(cls, db: AsyncSession, product_id: int, receiver_amount: float) -> dict:
+    async def create_transaction(cls, db: AsyncSession, product_id: int, receiver_amount: Decimal) -> dict:
         # VivaPe's own Postman example marks `phone` disabled for
         # activity=esim create-transaction calls (it's for the topup
         # activity type) — sending it was untested and is dropped here.
+        # receiver_amount is sent as VivaPe's own example formats it
+        # ("1000", not "1000.0") — str(Decimal) keeps trailing zeros
+        # (Decimal("1000.0000") -> "1000.0000"), which live testing
+        # showed VivaPe rejects with a generic "Transaction Failed!!".
+        amount_str = f"{receiver_amount.normalize():f}"
         payload = {
             "product_id": str(product_id),
-            "receiver_amount": str(receiver_amount),
+            "receiver_amount": amount_str,
             "activity": "esim"
         }
         return await cls.call_api(db, "POST", "create-transaction", data=payload)
