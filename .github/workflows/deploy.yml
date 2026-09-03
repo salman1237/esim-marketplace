@@ -49,13 +49,17 @@ jobs:
           DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
           COMPOSE_ID: ${{ secrets.DOKPLOY_COMPOSE_ID }}
           DOKPLOY_URL: http://89.116.122.118:3000
+          # Passed as an env var (not interpolated into the shell command)
+          # since a commit message is untrusted, multi-line content.
+          COMMIT_TITLE: ${{ github.event.head_commit.message }}
         run: |
           set -e
           echo "Triggering deploy via Dokploy API (the push webhook silently no-ops on a git-branch mismatch it reports as a redirect, which curl -f does not treat as failure — this endpoint gives an honest queued/error result instead)..."
+          payload=$(python3 -c "import json,os; print(json.dumps({'composeId': os.environ['COMPOSE_ID'], 'title': os.environ['COMMIT_TITLE']}))")
           trigger_response=$(curl -sf -X POST "$DOKPLOY_URL/api/compose.deploy" \
             -H "x-api-key: $DOKPLOY_API_KEY" \
             -H "Content-Type: application/json" \
-            -d "{\"composeId\":\"$COMPOSE_ID\",\"title\":\"${{ github.event.head_commit.message }}\"}")
+            -d "$payload")
           echo "Trigger response: $trigger_response"
 
           echo "Polling deployment status..."
