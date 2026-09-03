@@ -34,6 +34,44 @@ async def test_merchant_application_approval_flow(client, promote_role):
     assert any(w["type"] == "COMMISSION" for w in me.json()["wallets"])
 
 
+async def test_merchant_commission_update_requires_super_admin_and_persists(client, promote_role):
+    admin = await register_and_login(client, "capprover")
+    await promote_role(admin["user_id"], "ADMIN")
+
+    applicant = await register_and_login(client, "cmerchant")
+    await client.post(
+        "/api/v1/auth/apply-merchant",
+        json={"business_name": "Commission Co", "contact_phone": "+1000000001"},
+        headers=applicant["headers"],
+    )
+    queue = await client.get("/api/v1/admin/merchants/queue", headers=admin["headers"])
+    entry = next(m for m in queue.json() if m["user_id"] == applicant["user_id"])
+    assert entry["commission_rate_pct"] == 5.0  # model default
+    await client.post(f"/api/v1/admin/merchants/{entry['id']}/approve", headers=admin["headers"])
+
+    # A plain ADMIN cannot change commission policy - that's Super Admin only.
+    denied = await client.put(
+        f"/api/v1/admin/merchants/{entry['id']}/commission", json={"rate_pct": 12.5}, headers=admin["headers"]
+    )
+    assert denied.status_code == 403
+
+    await promote_role(admin["user_id"], "SUPER_ADMIN")
+    updated = await client.put(
+        f"/api/v1/admin/merchants/{entry['id']}/commission", json={"rate_pct": 12.5}, headers=admin["headers"]
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["commission_rate_pct"] == 12.5
+
+    queue_after = await client.get("/api/v1/admin/merchants/queue", headers=admin["headers"])
+    entry_after = next(m for m in queue_after.json() if m["id"] == entry["id"])
+    assert entry_after["commission_rate_pct"] == 12.5
+
+    out_of_range = await client.put(
+        f"/api/v1/admin/merchants/{entry['id']}/commission", json={"rate_pct": 150}, headers=admin["headers"]
+    )
+    assert out_of_range.status_code == 422
+
+
 async def test_manual_deposit_approval_credits_wallet(client, promote_role, db_session):
     """Regression test: manual deposit submission previously crashed because
     ManualPaymentRequest(receipt_url=...) didn't match the model's actual

@@ -55,6 +55,7 @@ wheels/
 *.sqlite3
 *.db
 pg_data/
+backend/uploads/
 
 # Logs & Temporary
 *.log

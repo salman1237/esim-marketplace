@@ -28,7 +28,7 @@ from app.services.catalog_parsing import parse_vivape_product
 from app.services.currency_svc import CurrencyService
 
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 class ProductUpdateRequest(BaseModel):
@@ -40,6 +40,9 @@ class UserRoleUpdateRequest(BaseModel):
 
 class UserStatusUpdateRequest(BaseModel):
     is_active: bool
+
+class MerchantCommissionUpdateRequest(BaseModel):
+    rate_pct: Decimal = Field(..., ge=0, le=100)
 
 router = APIRouter(prefix="/admin", tags=["Admin & Super Admin"])
 
@@ -135,10 +138,38 @@ async def get_merchant_queue(db: AsyncSession = Depends(get_db)):
             "trade_license": m.trade_license,
             "contact_phone": m.contact_phone,
             "status": m.status.value,
+            "commission_rate_pct": float(m.commission_rate_pct),
             "created_at": m.created_at
         }
         for m, u in res.all()
     ]
+
+@router.put("/merchants/{merchant_id}/commission", dependencies=[Depends(require_super_admin)])
+async def update_merchant_commission(
+    merchant_id: str,
+    req: MerchantCommissionUpdateRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(select(MerchantProfile).where(MerchantProfile.id == merchant_id))
+    m = res.scalar_one_or_none()
+    if not m:
+        raise HTTPException(status_code=404, detail="Merchant not found")
+
+    before_rate = float(m.commission_rate_pct)
+    m.commission_rate_pct = req.rate_pct
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_MERCHANT_COMMISSION",
+        before_state={"merchant_id": m.id, "commission_rate_pct": before_rate},
+        after_state={"merchant_id": m.id, "commission_rate_pct": float(req.rate_pct)},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success", "commission_rate_pct": float(req.rate_pct)}
 
 @router.post("/merchants/{merchant_id}/approve", dependencies=[Depends(require_admin)])
 async def approve_merchant(

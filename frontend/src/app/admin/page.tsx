@@ -134,6 +134,22 @@ export default function AdminConsolePage() {
     setMerchants(merchants.map(m => m.id === id ? { ...m, status: "APPROVED" } : m));
   };
 
+  const handleUpdateCommission = async (id: string, ratePct: string) => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    const rate = parseFloat(ratePct);
+    if (Number.isNaN(rate) || rate < 0 || rate > 100) {
+      alert("Commission rate must be a number between 0 and 100.");
+      return;
+    }
+    try {
+      await api.updateMerchantCommission(token, id, rate);
+      setMerchants(merchants.map(m => m.id === id ? { ...m, commission_rate_pct: rate } : m));
+    } catch (err: any) {
+      alert("Failed to update commission: " + err.message);
+    }
+  };
+
   const handleApprovePayment = async (id: string) => {
     const token = localStorage.getItem("esim_token");
     if (!token) return;
@@ -243,6 +259,7 @@ export default function AdminConsolePage() {
                   <th className="py-2">Business</th>
                   <th className="py-2">Contact</th>
                   <th className="py-2">Status</th>
+                  <th className="py-2">Commission %</th>
                   <th className="py-2">Action</th>
                 </tr>
               </thead>
@@ -255,6 +272,22 @@ export default function AdminConsolePage() {
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                         m.status === "APPROVED" ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"
                       }`}>{m.status}</span>
+                    </td>
+                    <td className="py-3">
+                      {isSuperAdmin ? (
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={0.01}
+                          defaultValue={m.commission_rate_pct}
+                          key={`${m.id}-${m.commission_rate_pct}`}
+                          onBlur={(e) => e.target.value !== String(m.commission_rate_pct) && handleUpdateCommission(m.id, e.target.value)}
+                          className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white"
+                        />
+                      ) : (
+                        <span className="text-slate-300">{m.commission_rate_pct}%</span>
+                      )}
                     </td>
                     <td className="py-3">
                       {m.status === "PENDING" && (
