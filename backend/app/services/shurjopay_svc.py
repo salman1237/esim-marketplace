@@ -37,7 +37,9 @@ class ShurjoPayService:
         customer_name: str,
         customer_email: str,
         customer_phone: str,
-        customer_address: str = "Dhaka, Bangladesh"
+        customer_address: str = "Dhaka, Bangladesh",
+        customer_post_code: str = "1212",
+        client_ip: str = "127.0.0.1"
     ) -> dict:
         auth_data = await ShurjoPayService.authenticate(db)
         token = auth_data.get("token")
@@ -62,7 +64,8 @@ class ShurjoPayService:
             "customer_phone": customer_phone or "01700000000",
             "customer_address": customer_address,
             "customer_city": "Dhaka",
-            "client_ip": "127.0.0.1"
+            "customer_post_code": customer_post_code,
+            "client_ip": client_ip
         }
 
         async with httpx.AsyncClient(verify=True, timeout=15.0) as client:

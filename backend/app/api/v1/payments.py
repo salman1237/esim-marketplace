@@ -1,6 +1,6 @@
 import uuid
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.database import get_db
@@ -20,6 +20,7 @@ MAX_TOPUP_USD = Decimal("2000.00")
 @router.post("/shurjopay/topup")
 async def topup_via_shurjopay(
     amount_usd: Decimal,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -35,7 +36,8 @@ async def topup_via_shurjopay(
         amount_bdt=amount_bdt,
         customer_name=current_user.full_name or current_user.username,
         customer_email=current_user.email,
-        customer_phone=current_user.phone or "01700000000"
+        customer_phone=current_user.phone or "01700000000",
+        client_ip=request.client.host if request.client else "127.0.0.1"
     )
     await db.commit()
     return pay_res
@@ -46,23 +48,44 @@ async def shurjopay_callback(
     order_id: str = Query(...),
     db: AsyncSession = Depends(get_db)
 ):
-    if not order_id.startswith("TOPUP-"):
-        raise HTTPException(status_code=400, detail="Unknown order reference")
+    """`order_id` here is ShurjoPay's own sp_order_id (e.g. "sp6a99c..."),
+    not the "TOPUP-{user_id}-..." reference we sent them — confirmed by
+    actually completing a sandbox payment end-to-end: their return_url
+    redirect comes back as "?order_id=<their sp_order_id>", and that's the
+    only identifier a real callback ever gives us. Our own reference is
+    recovered from the verification response's customer_order_id field,
+    which ShurjoPay echoes back for us.
+
+    Also: GET /api/verification always returns a JSON array ([{...}]), not
+    a bare object — confirmed the same way. Both of these were previously
+    unhandled and would have made every real top-up fail (order-not-found
+    from ShurjoPay, or an AttributeError from treating the list as a dict).
+    """
+    verification = await ShurjoPayService.verify_payment(db, order_id)
+    record = verification[0] if isinstance(verification, list) and verification else verification
+    if not isinstance(record, dict):
+        await db.commit()
+        return {"status": "failed", "detail": "Unexpected verification response"}
+
+    sp_code = record.get("sp_code")
+    if str(sp_code) != "1000":
+        await db.commit()
+        return {"status": "failed", "detail": record}
+
+    customer_order_id = record.get("customer_order_id") or ""
+    if not customer_order_id.startswith("TOPUP-"):
+        await db.commit()
+        return {"status": "failed", "detail": "Unknown order reference"}
 
     # Format is "TOPUP-{user_id}-{random_suffix}"; user_id (a UUID) itself
     # contains hyphens, so strip the known prefix/suffix rather than splitting.
-    remainder = order_id[len("TOPUP-"):]
+    remainder = customer_order_id[len("TOPUP-"):]
     user_id, _, suffix = remainder.rpartition("-")
     if not user_id or not suffix:
-        raise HTTPException(status_code=400, detail="Malformed order reference")
-
-    verification = await ShurjoPayService.verify_payment(db, order_id)
-    sp_code = verification.get("sp_code")
-    if str(sp_code) != "1000":
         await db.commit()
-        return {"status": "failed", "detail": verification}
+        return {"status": "failed", "detail": "Malformed order reference"}
 
-    amount_paid_bdt = Decimal(str(verification.get("amount", "0")))
+    amount_paid_bdt = Decimal(str(record.get("amount", "0")))
 
     res = await db.execute(select(User).where(User.id == user_id))
     user = res.scalar_one_or_none()
@@ -82,8 +105,9 @@ async def shurjopay_callback(
     rate = await CurrencyService.get_effective_rate(db, "BDT")
     usd_val = (amount_paid_bdt / rate).quantize(Decimal("0.0001"))
 
-    # idempotency_key keyed on order_id means a replayed/duplicate callback
-    # for the same order can never credit the wallet twice.
+    # idempotency_key keyed on ShurjoPay's own order_id (globally unique)
+    # means a replayed/duplicate callback for the same order can never
+    # credit the wallet twice.
     await LedgerService.credit(
         db, wallet.id, usd_val,
         LedgerRefType.DEPOSIT_GATEWAY,
