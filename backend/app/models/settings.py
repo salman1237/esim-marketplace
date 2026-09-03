@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Numeric, Text, JSON
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Numeric, Text, JSON, Index
 from app.core.database import Base
 
 class PlatformSetting(Base):
@@ -32,3 +32,20 @@ class Language(Base):
     flag_emoji = Column(String(10), nullable=True)
     is_active = Column(Boolean, default=True)
     is_rtl = Column(Boolean, default=False)
+
+
+class Translation(Base):
+    __tablename__ = "translations"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    language_code = Column(String(10), ForeignKey("languages.code"), nullable=False, index=True)
+    namespace = Column(String(50), nullable=False, default="common")
+    key = Column(String(150), nullable=False)
+    value = Column(Text, nullable=False)
+    is_machine_translated = Column(Boolean, default=False)
+    updated_by_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_translation_lang_ns_key", "language_code", "namespace", "key", unique=True),
+    )

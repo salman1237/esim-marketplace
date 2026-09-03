@@ -4,7 +4,7 @@ from app.models.wallet import Wallet, WalletType, WalletLedgerEntry, LedgerTxTyp
 from app.models.catalog import Country, Product
 from app.models.order import Order, OrderStatus, PaymentMethod, ESIMProfile, ESIMStatus
 from app.models.payment import ManualPaymentRequest, ManualPaymentStatus, PaymentLog
-from app.models.settings import PlatformSetting, CurrencyRate, Language
+from app.models.settings import PlatformSetting, CurrencyRate, Language, Translation
 from app.models.audit import AuditLog, SupplierTransactionLog
 
 __all__ = [
@@ -14,6 +14,6 @@ __all__ = [
     "Country", "Product",
     "Order", "OrderStatus", "PaymentMethod", "ESIMProfile", "ESIMStatus",
     "ManualPaymentRequest", "ManualPaymentStatus", "PaymentLog",
-    "PlatformSetting", "CurrencyRate", "Language",
+    "PlatformSetting", "CurrencyRate", "Language", "Translation",
     "AuditLog", "SupplierTransactionLog"
 ]

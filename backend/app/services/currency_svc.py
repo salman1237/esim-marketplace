@@ -1,11 +1,14 @@
-import ssl
 import httpx
 from decimal import Decimal
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.settings import CurrencyRate
 from app.core.config import settings
+from app.core.logging import get_logger
+
+RATE_TTL = timedelta(hours=6)
+logger = get_logger(__name__)
 
 class CurrencyService:
     @staticmethod
@@ -19,7 +22,7 @@ class CurrencyService:
                     data = resp.json()
                     rates = data.get("rates", {})
         except Exception as e:
-            print("Primary exchange rate API error:", e)
+            logger.warning("currency_api_primary_failed", error=str(e))
 
         # 2. Fallback if empty: jsDelivr CDN
         if not rates:
@@ -31,7 +34,7 @@ class CurrencyService:
                         raw_rates = data.get("usd", {})
                         rates = {k.upper(): v for k, v in raw_rates.items()}
             except Exception as e:
-                print("Fallback exchange rate API error:", e)
+                logger.warning("currency_api_fallback_failed", error=str(e))
 
         if not rates:
             return {"error": "Could not fetch rates from either source"}
@@ -65,15 +68,29 @@ class CurrencyService:
     async def get_effective_rate(db: AsyncSession, currency_code: str) -> Decimal:
         if currency_code.upper() == "USD":
             return Decimal("1.0")
-        
+
         res = await db.execute(select(CurrencyRate).where(CurrencyRate.currency_code == currency_code.upper()))
         record = res.scalar_one_or_none()
+
+        if record and record.is_manual_override and record.manual_rate:
+            # A manual override always wins and is never auto-refreshed.
+            return Decimal(str(record.manual_rate))
+
         if record:
-            if record.is_manual_override and record.manual_rate:
-                return Decimal(str(record.manual_rate))
+            stale = record.updated_at is None or (datetime.now(timezone.utc) - record.updated_at) > RATE_TTL
+            if stale:
+                await CurrencyService.sync_rates_from_api(db)
+                await db.refresh(record)
             return Decimal(str(record.rate_to_base))
-        
-        # Default safe fallbacks if not yet in DB
+
+        # Not in the DB yet at all: try a live sync once, then fall back to a
+        # safe default rather than blocking every subsequent call.
+        await CurrencyService.sync_rates_from_api(db)
+        res2 = await db.execute(select(CurrencyRate).where(CurrencyRate.currency_code == currency_code.upper()))
+        record2 = res2.scalar_one_or_none()
+        if record2:
+            return Decimal(str(record2.rate_to_base))
+
         defaults = {"BDT": Decimal("122.50"), "EUR": Decimal("0.86"), "GBP": Decimal("0.74")}
         return defaults.get(currency_code.upper(), Decimal("1.0"))
 

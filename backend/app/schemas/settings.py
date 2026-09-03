@@ -57,3 +57,21 @@ class LanguageResponse(BaseModel):
 class LanguageToggleRequest(BaseModel):
     code: str
     is_active: bool
+
+class LanguageCreateRequest(BaseModel):
+    code: str
+    name: str
+    native_name: str
+    flag_emoji: Optional[str] = None
+    is_rtl: bool = False
+    seed_from_english: bool = True
+
+class TranslationsResponse(BaseModel):
+    language_code: str
+    namespaces: Dict[str, Dict[str, str]]
+
+class TranslationUpsertRequest(BaseModel):
+    language_code: str
+    namespace: str
+    key: str
+    value: str

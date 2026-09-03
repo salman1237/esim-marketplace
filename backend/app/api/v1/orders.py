@@ -17,6 +17,9 @@ from app.schemas.order import OrderCreateRequest, OrderResponse, ESIMProfileResp
 from app.services.ledger_svc import LedgerService
 from app.services.vivape_adapter import VivaPeAdapter
 from app.services.audit_svc import AuditService
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/orders", tags=["Orders & eSIMs"])
 
@@ -151,7 +154,7 @@ async def checkout_esim(
                     qr_data = esim_data.get("qr_code") or lpa
                     is_mock_fallback = False
         except Exception as e:
-            print("VivaPe provisioning failed, falling back to a flagged mock profile:", e)
+            logger.warning("vivape_provisioning_failed_using_mock_fallback", order_id=order.id, error=str(e))
 
     if is_mock_fallback:
         await AuditService.log_action(

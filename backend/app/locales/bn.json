@@ -1,0 +1,103 @@
+{
+  "common": {
+    "site_name": "ই-সিম গ্লোবাল",
+    "tagline": "২০০+ দেশে ইন্সট্যান্ট গ্লোবাল ই-সিম ইন্টারনেট ডাটা",
+    "search_placeholder": "কোথায় ভ্রমণ করছেন? ২০০+ দেশ খুঁজুন...",
+    "explore": "ব্রাউজ",
+    "my_esims": "আমার ই-সিম",
+    "wallet": "ওয়ালেট",
+    "login": "লগইন",
+    "register": "অ্যাকাউন্ট খুলুন",
+    "logout": "সাইন আউট",
+    "profile": "প্রোফাইল",
+    "admin": "অ্যাডমিন প্যানেল",
+    "merchant": "রিসেলার পোর্টাল",
+    "settings": "সেটিংস",
+    "save": "সংরক্ষণ করুন",
+    "cancel": "বাতিল",
+    "confirm": "নিশ্চিত করুন",
+    "back": "ফিরে যান",
+    "submit": "জমা দিন",
+    "status": "অবস্থা",
+    "actions": "অ্যাকশন"
+  },
+  "nav": {
+    "home": "হোম",
+    "countries": "দেশসমূহ",
+    "regions": "রিজিওনাল প্ল্যান",
+    "b2b": "বি২বি পার্টনার",
+    "support": "২৪/৭ সাপোর্ট",
+    "currency": "মুদ্রা",
+    "language": "ভাষা"
+  },
+  "hero": {
+    "title": "রোমিং চার্জ ছাড়াই বিশ্বজুড়ে সবসময় কানেক্টেড থাকুন",
+    "subtitle": "ভ্রমণে পান হাই-স্পিড ইন্টারনেট। কিউআর কোড স্ক্যান করে মুহূর্তেই চালু করুন।",
+    "search_title": "আপনার গন্তব্য দেশ নির্বাচন করুন",
+    "popular_countries": "জনপ্রিয়: যুক্তরাষ্ট্র, থাইল্যান্ড, জাপান, সৌদি আরব, সংযুক্ত আরব আমিরাত"
+  },
+  "catalog": {
+    "days": "{count} দিন",
+    "data": "{amount} জিবি",
+    "price": "মূল্য",
+    "buy_now": "এখনই কিনুন",
+    "view_details": "বিস্তারিত দেখুন",
+    "instant_activation": "তাৎক্ষণিক ডিজিটাল ডেলিভারি",
+    "high_speed": "৪জি / ৫জি হাই স্পিড",
+    "unlimited": "আনলিমিটেড ডাটা",
+    "coverage": "নেটওয়ার্ক কভারেজ",
+    "select_plan": "প্ল্যান বাছুন"
+  },
+  "checkout": {
+    "order_summary": "অর্ডার বিবরণ",
+    "package": "ই-সিম প্যাকেজ",
+    "validity": "মেয়াদ",
+    "total": "মোট প্রদেয়",
+    "pay_with": "পেমেন্ট মাধ্যম",
+    "wallet_balance": "ওয়ালেট ব্যালেন্স",
+    "shurjopay": "কার্ড / মোবাইল ব্যাংকিং দিয়ে পে করুন (সূর্যপে)",
+    "confirm_payment": "পেমেন্ট নিশ্চিত করুন",
+    "processing": "ই-সিম তৈরি করা হচ্ছে..."
+  },
+  "esim": {
+    "ready_title": "আপনার ই-সিম প্রস্তুত!",
+    "scan_qr": "আপনার ফোনের ক্যামেরা বা সেটিংস দিয়ে কিউআর স্ক্যান করুন",
+    "manual_install": "ম্যানুয়াল ইনস্টলেশন তথ্য",
+    "smdp_address": "SM-DP+ অ্যাড্রেস",
+    "activation_code": "অ্যাক্টিভেশন কোড",
+    "iccid": "আইসিসিআইডি (ICCID)",
+    "copy_code": "কোড কপি করুন",
+    "install_guide": "ইনস্টলেশন নির্দেশিকা",
+    "ios_guide": "আইওএস: Settings > Cellular > Add eSIM > Scan QR",
+    "android_guide": "অ্যান্ড্রয়েড: Settings > Network & Internet > SIMs > Add > Scan QR"
+  },
+  "reseller": {
+    "buy_for_title": "গ্রাহকের জন্য ই-সিম ইস্যু করুন",
+    "buy_for_self": "নিজের জন্য",
+    "buy_for_user": "গ্রাহকের জন্য",
+    "user_search": "গ্রাহকের ইমেইল বা ফোন নম্বর খুঁজুন",
+    "auto_generate": "স্বয়ংক্রিয় নতুন গ্রাহক অ্যাকাউন্ট তৈরি",
+    "customer_username": "গ্রাহক অ্যাকাউন্ট আইডি",
+    "commission_earned": "অর্জিত কমিশন"
+  },
+  "wallet": {
+    "balance": "বর্তমান ব্যালেন্স",
+    "default_wallet": "মূল ব্যালেন্স",
+    "reward_wallet": "রিওয়ার্ড পয়েন্ট",
+    "commission_wallet": "কমিশন ব্যালেন্স",
+    "top_up": "টাকা রিচার্জ",
+    "manual_deposit": "ব্যাংক স্লিপ জমা দিন",
+    "submit_slip": "পেমেন্ট রশিদ আপলোড করুন",
+    "transaction_history": "লেনদেন খতিয়ান"
+  },
+  "admin": {
+    "dashboard": "ওভারভিউ",
+    "catalog_management": "প্যাকেজ ক্যাটালগ ও মূল্য",
+    "merchant_approvals": "রিসেলার আবেদনসমূহ",
+    "payment_queue": "পেমেন্ট যাচাইকরণ",
+    "dynamic_branding": "সাইটের নাম ও লোগো পরিবর্তন",
+    "currency_manager": "মুদ্রা রূপান্তর ও ফিক্সড রেট",
+    "audit_logs": "নিরাপত্তা অডিট লগ",
+    "supplier_logs": "সাপ্লায়ার এপিআই ট্রাফিক"
+  }
+}

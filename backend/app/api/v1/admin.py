@@ -11,9 +11,13 @@ from app.models.wallet import Wallet, WalletType, LedgerRefType
 from app.models.order import Order, ESIMProfile
 from app.models.catalog import Country, Product
 from app.models.payment import ManualPaymentRequest, ManualPaymentStatus
-from app.models.settings import PlatformSetting, CurrencyRate, Language
+from app.models.settings import PlatformSetting, CurrencyRate, Language, Translation
 from app.models.audit import AuditLog, SupplierTransactionLog
-from app.schemas.settings import UpdateBrandingRequest, CurrencyOverrideRequest, LanguageToggleRequest
+from app.core.seed_translations import EN_TRANSLATIONS, flatten
+from app.schemas.settings import (
+    UpdateBrandingRequest, CurrencyOverrideRequest, LanguageToggleRequest,
+    LanguageCreateRequest, TranslationUpsertRequest,
+)
 from app.services.ledger_svc import LedgerService
 from app.services.audit_svc import AuditService
 from app.services.vivape_adapter import VivaPeAdapter
@@ -381,6 +385,113 @@ async def toggle_language(
     )
     await db.commit()
     return {"status": "success", "language": req.code, "is_active": req.is_active}
+
+@router.post("/languages", dependencies=[Depends(require_super_admin)])
+async def create_language(
+    req: LanguageCreateRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    code = req.code.lower()
+    res = await db.execute(select(Language).where(Language.code == code))
+    if res.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Language already exists")
+
+    db.add(Language(code=code, name=req.name, native_name=req.native_name, flag_emoji=req.flag_emoji, is_active=True, is_rtl=req.is_rtl))
+
+    seeded_keys = 0
+    if req.seed_from_english:
+        for namespace, key, value in flatten(EN_TRANSLATIONS):
+            db.add(Translation(language_code=code, namespace=namespace, key=key, value=value, is_machine_translated=True))
+            seeded_keys += 1
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="CREATE_LANGUAGE", after_state={"code": code, "seeded_keys": seeded_keys},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success", "code": code, "seeded_keys": seeded_keys}
+
+@router.put("/translations", dependencies=[Depends(require_super_admin)])
+async def upsert_translation(
+    req: TranslationUpsertRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    code = req.language_code.lower()
+    lang_res = await db.execute(select(Language).where(Language.code == code))
+    if not lang_res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Language not found")
+
+    res = await db.execute(
+        select(Translation).where(
+            Translation.language_code == code,
+            Translation.namespace == req.namespace,
+            Translation.key == req.key,
+        )
+    )
+    entry = res.scalar_one_or_none()
+    before = {"value": entry.value} if entry else None
+    if entry:
+        entry.value = req.value
+        entry.is_machine_translated = False
+        entry.updated_by_id = admin_user.id
+    else:
+        db.add(Translation(
+            language_code=code, namespace=req.namespace, key=req.key, value=req.value,
+            is_machine_translated=False, updated_by_id=admin_user.id
+        ))
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_TRANSLATION", before_state=before,
+        after_state={"language_code": code, "namespace": req.namespace, "key": req.key, "value": req.value},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success"}
+
+@router.post("/languages/{code}/auto-translate", dependencies=[Depends(require_super_admin)])
+async def auto_translate_language(
+    code: str,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Fills every English key missing for this language with a placeholder
+    copy of the English string, flagged is_machine_translated=True for later
+    human review. No external machine-translation provider is configured in
+    this deployment (VivaPe/ShurjoPay credentials are the only third-party
+    integrations wired up) — this is an honest placeholder, not a real
+    translation, and exists so the language is immediately usable (with
+    English text) rather than showing blank strings."""
+    code = code.lower()
+    res = await db.execute(select(Language).where(Language.code == code))
+    if not res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Language not found")
+
+    existing_res = await db.execute(select(Translation.namespace, Translation.key).where(Translation.language_code == code))
+    existing = {(ns, key) for ns, key in existing_res.all()}
+
+    filled = 0
+    for namespace, key, value in flatten(EN_TRANSLATIONS):
+        if (namespace, key) not in existing:
+            db.add(Translation(language_code=code, namespace=namespace, key=key, value=value, is_machine_translated=True))
+            filled += 1
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="AUTO_TRANSLATE_LANGUAGE", after_state={"language_code": code, "filled_keys": filled},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success", "filled_keys": filled}
 
 # --- 360 Log Viewers ---
 @router.get("/audit-logs", dependencies=[Depends(require_super_admin)])

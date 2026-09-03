@@ -1,4 +1,5 @@
 import uuid
+import structlog
 from decimal import Decimal
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
@@ -8,10 +9,15 @@ from app.core.config import settings
 from app.core.database import engine, Base, AsyncSessionLocal
 from app.core.security import get_password_hash
 from app.models.user import User, UserRole, UserStatus
-from app.models.settings import PlatformSetting, CurrencyRate, Language
+from app.models.settings import PlatformSetting, CurrencyRate, Language, Translation
 from app.services.ledger_svc import LedgerService
 from app.services.currency_svc import CurrencyService
+from app.core.seed_translations import SHIPPED_LOCALE_CODES, PLACEHOLDER_LANGUAGES, load_shipped_translations, flatten, EN_TRANSLATIONS
+from app.core.logging import configure_logging, get_logger
 from app.api.v1 import api_v1_router
+
+configure_logging()
+logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -37,7 +43,7 @@ async def lifespan(app: FastAPI):
             await db.commit()
             await db.refresh(sa)
             await LedgerService.ensure_wallets_for_user(db, sa.id, sa.role)
-            print("Seeded default Super Admin: superadmin@esim.local / SuperAdmin2026!")
+            logger.warning("seeded_default_super_admin", email="superadmin@esim.local")
 
         # Default Settings
         default_settings = [
@@ -55,20 +61,33 @@ async def lifespan(app: FastAPI):
             if not res.scalar_one_or_none():
                 db.add(PlatformSetting(key=k, value=v, is_public=True))
 
-        # Default Languages
-        langs = [
-            ("en", "English", "English", "🇺🇸", True, False),
-            ("bn", "Bangla", "বাংলা", "🇧🇩", True, False),
-            ("ar", "Arabic", "العربية", "🇸🇦", True, True),
-            ("es", "Spanish", "Español", "🇪🇸", True, False),
-            ("fr", "French", "Français", "🇫🇷", True, False),
-            ("de", "German", "Deutsch", "🇩🇪", True, False),
-            ("zh", "Chinese", "中文", "🇨🇳", True, False)
+        # Default Languages — shipped with real hand-authored strings
+        shipped_langs = [
+            ("en", "English", "English", "🇺🇸", False),
+            ("bn", "Bangla", "বাংলা", "🇧🇩", False),
+            ("ar", "Arabic", "العربية", "🇸🇦", True),
+            ("es", "Spanish", "Español", "🇪🇸", False),
         ]
-        for code, name, native, flag, active, rtl in langs:
+        for code, name, native, flag, rtl in shipped_langs:
             res = await db.execute(select(Language).where(Language.code == code))
             if not res.scalar_one_or_none():
-                db.add(Language(code=code, name=name, native_name=native, flag_emoji=flag, is_active=active, is_rtl=rtl))
+                db.add(Language(code=code, name=name, native_name=native, flag_emoji=flag, is_active=True, is_rtl=rtl))
+            if code != "en":
+                t_res = await db.execute(select(Translation.id).where(Translation.language_code == code).limit(1))
+                if not t_res.scalar_one_or_none():
+                    for namespace, key, value in load_shipped_translations(code):
+                        db.add(Translation(language_code=code, namespace=namespace, key=key, value=value, is_machine_translated=False))
+
+        # Additional plan-listed languages without hand-authored strings yet:
+        # seeded active with English placeholder text (flagged
+        # is_machine_translated=True) so they're usable immediately rather
+        # than blank, pending a Super Admin auto-translate/edit pass.
+        for code, name, native, flag, rtl in PLACEHOLDER_LANGUAGES:
+            res = await db.execute(select(Language).where(Language.code == code))
+            if not res.scalar_one_or_none():
+                db.add(Language(code=code, name=name, native_name=native, flag_emoji=flag, is_active=True, is_rtl=rtl))
+                for namespace, key, value in flatten(EN_TRANSLATIONS):
+                    db.add(Translation(language_code=code, namespace=namespace, key=key, value=value, is_machine_translated=True))
 
         # Default Currency Rates
         rates = [
@@ -108,10 +127,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Correlation ID Middleware
+# Correlation ID Middleware — binds X-Request-ID into structlog's
+# contextvars so every log line emitted while handling this request
+# (including from services called deep in the stack) carries it.
 @app.middleware("http")
 async def add_correlation_id(request: Request, call_next):
     correlation_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(request_id=correlation_id)
     response = await call_next(request)
     response.headers["X-Request-ID"] = correlation_id
     return response
