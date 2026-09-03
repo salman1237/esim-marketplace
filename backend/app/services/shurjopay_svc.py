@@ -13,7 +13,7 @@ class ShurjoPayService:
             "username": settings.SHURJOPAY_USERNAME,
             "password": settings.SHURJOPAY_PASSWORD
         }
-        async with httpx.AsyncClient(verify=False, timeout=15.0) as client:
+        async with httpx.AsyncClient(verify=True, timeout=15.0) as client:
             resp = await client.post(url, json=payload)
             data = resp.json()
             
@@ -65,7 +65,7 @@ class ShurjoPayService:
             "client_ip": "127.0.0.1"
         }
 
-        async with httpx.AsyncClient(verify=False, timeout=15.0) as client:
+        async with httpx.AsyncClient(verify=True, timeout=15.0) as client:
             resp = await client.post(url, headers=headers, json=payload)
             data = resp.json()
 
@@ -88,7 +88,7 @@ class ShurjoPayService:
         url = f"{settings.SHURJOPAY_BASE_URL}/api/verification"
         headers = {"Authorization": f"Bearer {token}"}
         
-        async with httpx.AsyncClient(verify=False, timeout=15.0) as client:
+        async with httpx.AsyncClient(verify=True, timeout=15.0) as client:
             resp = await client.post(url, headers=headers, json={"order_id": order_id})
             data = resp.json()
 

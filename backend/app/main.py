@@ -97,10 +97,12 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS
+# CORS — explicit origin allowlist (required when allow_credentials=True;
+# a "*" wildcard combined with credentials is both spec-invalid and a
+# cross-site credential exposure).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -1,15 +1,51 @@
-﻿name: Deploy to Dokploy VPS
+name: Test & Deploy
 
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: esim_test
+          POSTGRES_PASSWORD: esim_test_pw
+          POSTGRES_DB: esim_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U esim_test -d esim_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements-dev.txt
+      - name: Run backend test suite
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://esim_test:esim_test_pw@localhost:5432/esim_test
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          ENVIRONMENT: development
+        run: pytest tests/ -v
+
   deploy:
+    needs: backend-tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Dokploy Auto-Deployment
         run: |
           echo "Triggering Dokploy deploy webhook..."
-          curl -s -X POST http://89.116.122.118:3000/api/deploy/compose/sZD8Ck7KhYC4uBJdf2yvO
+          curl -sf -X POST "${{ secrets.DOKPLOY_DEPLOY_WEBHOOK }}"
           echo "Dokploy deployment triggered successfully."

@@ -13,6 +13,9 @@ class AuditService:
         before_state: dict = None,
         after_state: dict = None
     ):
+        """Logs an admin/staff action. Does NOT commit — caller owns the
+        transaction boundary so this composes atomically with the write it's
+        auditing (one commit per business operation, not two)."""
         log = AuditLog(
             actor_id=actor_id,
             actor_role=actor_role,
@@ -23,4 +26,4 @@ class AuditService:
             after_state=after_state
         )
         db.add(log)
-        await db.commit()
+        await db.flush()

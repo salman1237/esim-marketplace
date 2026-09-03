@@ -21,6 +21,7 @@ class ESIMProfileResponse(BaseModel):
     qr_code_data: Optional[str] = None
     smdp_address: Optional[str] = None
     status: ESIMStatus
+    is_mock_fallback: bool = False
     created_at: datetime
 
     class Config:

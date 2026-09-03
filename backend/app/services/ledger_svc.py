@@ -1,5 +1,4 @@
 from decimal import Decimal
-import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.wallet import Wallet, WalletType, WalletLedgerEntry, LedgerTxType, LedgerRefType
@@ -37,6 +36,15 @@ class LedgerService:
         await db.commit()
 
     @staticmethod
+    async def _find_by_idempotency_key(db: AsyncSession, idempotency_key: str):
+        if not idempotency_key:
+            return None
+        res = await db.execute(
+            select(WalletLedgerEntry).where(WalletLedgerEntry.idempotency_key == idempotency_key)
+        )
+        return res.scalar_one_or_none()
+
+    @staticmethod
     async def credit(
         db: AsyncSession,
         wallet_id: str,
@@ -46,6 +54,13 @@ class LedgerService:
         description: str = None,
         idempotency_key: str = None
     ) -> WalletLedgerEntry:
+        """Credits a wallet. Does NOT commit — caller owns the transaction boundary
+        so this can be composed atomically with other writes in the same business
+        operation (e.g. an Order + its debit + its eSIM profile)."""
+        existing = await LedgerService._find_by_idempotency_key(db, idempotency_key)
+        if existing:
+            return existing
+
         # Lock wallet row with FOR UPDATE
         res = await db.execute(
             select(Wallet).where(Wallet.id == wallet_id).with_for_update()
@@ -70,7 +85,7 @@ class LedgerService:
             description=description
         )
         db.add(entry)
-        await db.commit()
+        await db.flush()
         await db.refresh(entry)
         return entry
 
@@ -84,6 +99,11 @@ class LedgerService:
         description: str = None,
         idempotency_key: str = None
     ) -> WalletLedgerEntry:
+        """Debits a wallet. Does NOT commit — see credit()."""
+        existing = await LedgerService._find_by_idempotency_key(db, idempotency_key)
+        if existing:
+            return existing
+
         res = await db.execute(
             select(Wallet).where(Wallet.id == wallet_id).with_for_update()
         )
@@ -110,6 +130,6 @@ class LedgerService:
             description=description
         )
         db.add(entry)
-        await db.commit()
+        await db.flush()
         await db.refresh(entry)
         return entry

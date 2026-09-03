@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     )
     
     # Security
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "change_this_super_secret_key_in_production_32chars_min")
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-only-insecure-secret-key-do-not-use-in-production")
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     
@@ -35,9 +35,24 @@ class Settings(BaseSettings):
     EXCHANGE_RATE_API_URL: str = "https://open.er-api.com/v6/latest"
     EXCHANGE_RATE_FALLBACK_URL: str = "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies"
     DEFAULT_CURRENCY: str = "USD"
+
+    # CORS: comma-separated list of allowed origins. Never combine a "*"
+    # wildcard with allow_credentials=True (browsers reject it, and any
+    # server that honored it would allow cross-site credentialed requests).
+    ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001")
+
+    @property
+    def allowed_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
     
     class Config:
         env_file = ".env"
         extra = "allow"
 
 settings = Settings()
+
+if settings.ENVIRONMENT == "production" and settings.SECRET_KEY == "dev-only-insecure-secret-key-do-not-use-in-production":
+    raise RuntimeError(
+        "SECRET_KEY environment variable must be set to a unique, random value in production "
+        "(the app refuses to boot with the committed development default)."
+    )

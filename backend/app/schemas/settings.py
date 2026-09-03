@@ -26,6 +26,7 @@ class UpdateBrandingRequest(BaseModel):
     support_email: Optional[str] = None
     support_whatsapp: Optional[str] = None
     maintenance_mode: Optional[bool] = None
+    default_currency: Optional[str] = None
 
 class CurrencyRateResponse(BaseModel):
     currency_code: str

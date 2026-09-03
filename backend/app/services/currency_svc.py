@@ -13,7 +13,7 @@ class CurrencyService:
         rates = {}
         # 1. Try Primary: open.er-api.com
         try:
-            async with httpx.AsyncClient(verify=False, timeout=10.0) as client:
+            async with httpx.AsyncClient(verify=True, timeout=10.0) as client:
                 resp = await client.get(f"{settings.EXCHANGE_RATE_API_URL}/USD")
                 if resp.status_code == 200:
                     data = resp.json()
@@ -24,7 +24,7 @@ class CurrencyService:
         # 2. Fallback if empty: jsDelivr CDN
         if not rates:
             try:
-                async with httpx.AsyncClient(verify=False, timeout=10.0) as client:
+                async with httpx.AsyncClient(verify=True, timeout=10.0) as client:
                     resp = await client.get(f"{settings.EXCHANGE_RATE_FALLBACK_URL}/usd.json")
                     if resp.status_code == 200:
                         data = resp.json()

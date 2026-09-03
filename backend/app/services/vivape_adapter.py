@@ -10,7 +10,7 @@ class VivaPeAdapter:
     _token_expiry = 0
 
     @classmethod
-    async def get_token(cls) -> str:
+    async def get_token(cls, db: AsyncSession) -> str:
         if cls._token and time.time() < cls._token_expiry:
             return cls._token
 
@@ -19,20 +19,41 @@ class VivaPeAdapter:
             "email": settings.VIVAPE_EMAIL,
             "password": settings.VIVAPE_PASSWORD
         }
-        async with httpx.AsyncClient(verify=False, timeout=15.0) as client:
-            resp = await client.post(url, data=form_data)
-            if resp.status_code == 200:
-                data = resp.json()
-                token = data.get("access_token")
-                if token:
+        start_time = time.time()
+        status_code = 0
+        resp_data = None
+        try:
+            async with httpx.AsyncClient(verify=True, timeout=15.0) as client:
+                resp = await client.post(url, data=form_data)
+                status_code = resp.status_code
+                try:
+                    resp_data = resp.json()
+                except Exception:
+                    resp_data = {"raw": resp.text}
+
+                token = resp_data.get("access_token") if isinstance(resp_data, dict) else None
+                if resp.status_code == 200 and token:
                     cls._token = token
                     cls._token_expiry = time.time() + (3600 * 24 * 6)  # 6 days cache
                     return cls._token
-            raise Exception(f"VivaPe login failed: {resp.status_code} - {resp.text}")
+                raise Exception(f"VivaPe login failed: {resp.status_code} - {resp.text}")
+        finally:
+            latency = int((time.time() - start_time) * 1000)
+            log = SupplierTransactionLog(
+                supplier_name="VIVAPE",
+                endpoint="login",
+                method="POST",
+                request_payload={"email": settings.VIVAPE_EMAIL, "password": "***REDACTED***"},
+                response_payload={k: v for k, v in (resp_data or {}).items() if k != "access_token"} if isinstance(resp_data, dict) else resp_data,
+                status_code=status_code,
+                latency_ms=latency
+            )
+            db.add(log)
+            await db.commit()
 
     @classmethod
     async def call_api(cls, db: AsyncSession, method: str, endpoint: str, data: dict = None, params: dict = None) -> dict:
-        token = await cls.get_token()
+        token = await cls.get_token(db)
         url = f"{settings.VIVAPE_BASE_URL}/{endpoint.lstrip('/')}"
         headers = {
             "Authorization": f"Bearer {token}",
@@ -45,7 +66,7 @@ class VivaPeAdapter:
         error_msg = None
 
         try:
-            async with httpx.AsyncClient(verify=False, timeout=30.0) as client:
+            async with httpx.AsyncClient(verify=True, timeout=30.0) as client:
                 if method.upper() == "GET":
                     resp = await client.get(url, headers=headers, params=params)
                 else:

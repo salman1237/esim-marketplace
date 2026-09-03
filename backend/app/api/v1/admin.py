@@ -1,11 +1,11 @@
 from decimal import Decimal
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.core.database import get_db
 from app.core.deps import require_admin, require_super_admin
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, UserStatus
 from app.models.merchant import MerchantProfile, MerchantStatus
 from app.models.wallet import Wallet, WalletType, LedgerRefType
 from app.models.order import Order, ESIMProfile
@@ -91,7 +91,8 @@ async def sync_catalog_from_vivape(db: AsyncSession = Depends(get_db)):
         for p in raw_products:
             ref = str(p.get("reference") or "")
             title = str(p.get("title") or p.get("name") or "")
-            if "esim" not in ref.lower() and "esim" not in title.lower():
+            ESIM_REFERENCES = ("esimgo_bundle", "worldmove_esim")
+            if ref.lower() not in ESIM_REFERENCES and "esim" not in title.lower():
                 continue
 
             cost = Decimal(str(p.get("price") or p.get("amount") or 5.0))
@@ -144,6 +145,7 @@ async def get_merchant_queue(db: AsyncSession = Depends(get_db)):
 @router.post("/merchants/{merchant_id}/approve", dependencies=[Depends(require_admin)])
 async def approve_merchant(
     merchant_id: str,
+    request: Request,
     admin_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -151,10 +153,12 @@ async def approve_merchant(
     m = res.scalar_one_or_none()
     if not m:
         raise HTTPException(status_code=404, detail="Merchant application not found")
+    if m.status != MerchantStatus.PENDING:
+        raise HTTPException(status_code=400, detail=f"Application already {m.status.value.lower()}")
 
     m.status = MerchantStatus.APPROVED
     m.reviewed_by_id = admin_user.id
-    
+
     # Upgrade user role
     u_res = await db.execute(select(User).where(User.id == m.user_id))
     user = u_res.scalar_one_or_none()
@@ -164,10 +168,41 @@ async def approve_merchant(
 
     await AuditService.log_action(
         db, actor_id=admin_user.id, actor_role=admin_user.role.value,
-        action="APPROVE_MERCHANT", after_state={"merchant_id": m.id, "business": m.business_name}
+        action="APPROVE_MERCHANT", after_state={"merchant_id": m.id, "business": m.business_name},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
     )
     await db.commit()
     return {"status": "success", "message": "Merchant approved"}
+
+
+@router.post("/merchants/{merchant_id}/reject", dependencies=[Depends(require_admin)])
+async def reject_merchant(
+    merchant_id: str,
+    request: Request,
+    reason: Optional[str] = None,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(select(MerchantProfile).where(MerchantProfile.id == merchant_id))
+    m = res.scalar_one_or_none()
+    if not m:
+        raise HTTPException(status_code=404, detail="Merchant application not found")
+    if m.status != MerchantStatus.PENDING:
+        raise HTTPException(status_code=400, detail=f"Application already {m.status.value.lower()}")
+
+    m.status = MerchantStatus.REJECTED
+    m.reviewed_by_id = admin_user.id
+    m.rejection_reason = reason
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="REJECT_MERCHANT", after_state={"merchant_id": m.id, "reason": reason},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success", "message": "Merchant application rejected"}
 
 # --- Manual Payments Queue ---
 @router.get("/payments/manual-queue", dependencies=[Depends(require_admin)])
@@ -195,6 +230,7 @@ async def get_manual_payments(db: AsyncSession = Depends(get_db)):
 @router.post("/payments/manual/{request_id}/approve", dependencies=[Depends(require_admin)])
 async def approve_manual_payment(
     request_id: str,
+    request: Request,
     admin_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -202,6 +238,8 @@ async def approve_manual_payment(
     p = res.scalar_one_or_none()
     if not p:
         raise HTTPException(status_code=404, detail="Payment request not found")
+    if p.status != ManualPaymentStatus.PENDING:
+        raise HTTPException(status_code=400, detail=f"Request already {p.status.value.lower()}")
 
     p.status = ManualPaymentStatus.APPROVED
     p.reviewed_by_id = admin_user.id
@@ -219,28 +257,63 @@ async def approve_manual_payment(
             db, wallet.id, amount_usd,
             LedgerRefType.DEPOSIT_MANUAL,
             ref_id=p.id,
-            description=f"Manual Deposit Approved ({p.amount} {p.currency})"
+            description=f"Manual Deposit Approved ({p.amount} {p.currency})",
+            idempotency_key=f"manual-payment-{p.id}"
         )
 
     await AuditService.log_action(
         db, actor_id=admin_user.id, actor_role=admin_user.role.value,
-        action="APPROVE_MANUAL_PAYMENT", after_state={"payment_id": p.id, "amount": float(p.amount)}
+        action="APPROVE_MANUAL_PAYMENT", after_state={"payment_id": p.id, "amount": float(p.amount)},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
     )
     await db.commit()
     return {"status": "success", "message": "Payment approved and wallet credited"}
+
+
+@router.post("/payments/manual/{request_id}/reject", dependencies=[Depends(require_admin)])
+async def reject_manual_payment(
+    request_id: str,
+    request: Request,
+    reason: Optional[str] = None,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(select(ManualPaymentRequest).where(ManualPaymentRequest.id == request_id))
+    p = res.scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="Payment request not found")
+    if p.status != ManualPaymentStatus.PENDING:
+        raise HTTPException(status_code=400, detail=f"Request already {p.status.value.lower()}")
+
+    p.status = ManualPaymentStatus.REJECTED
+    p.reviewed_by_id = admin_user.id
+    p.admin_notes = reason
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="REJECT_MANUAL_PAYMENT", after_state={"payment_id": p.id, "reason": reason},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success", "message": "Payment request rejected"}
 
 # --- Super Admin Controls: Branding, Currency, Languages ---
 @router.put("/branding", dependencies=[Depends(require_super_admin)])
 async def update_branding(
     req: UpdateBrandingRequest,
+    request: Request,
     admin_user: User = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db)
 ):
     updates = req.model_dump(exclude_unset=True)
+    before = {}
     for k, v in updates.items():
         res = await db.execute(select(PlatformSetting).where(PlatformSetting.key == k))
         setting = res.scalar_one_or_none()
         if setting:
+            before[k] = setting.value
             setting.value = v
             setting.updated_by_id = admin_user.id
         else:
@@ -249,7 +322,9 @@ async def update_branding(
 
     await AuditService.log_action(
         db, actor_id=admin_user.id, actor_role=admin_user.role.value,
-        action="UPDATE_BRANDING", after_state=updates
+        action="UPDATE_BRANDING", before_state=before, after_state=updates,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
     )
     await db.commit()
     return {"status": "success", "updated": list(updates.keys())}
@@ -257,6 +332,7 @@ async def update_branding(
 @router.put("/currencies/override", dependencies=[Depends(require_super_admin)])
 async def override_currency_rate(
     req: CurrencyOverrideRequest,
+    request: Request,
     admin_user: User = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -265,6 +341,7 @@ async def override_currency_rate(
     if not rate_obj:
         raise HTTPException(status_code=404, detail="Currency not supported")
 
+    before = {"is_manual_override": rate_obj.is_manual_override, "manual_rate": float(rate_obj.manual_rate or 0)}
     rate_obj.is_manual_override = req.is_manual_override
     if req.is_manual_override and req.manual_rate:
         rate_obj.manual_rate = req.manual_rate
@@ -274,8 +351,10 @@ async def override_currency_rate(
 
     await AuditService.log_action(
         db, actor_id=admin_user.id, actor_role=admin_user.role.value,
-        action="CURRENCY_RATE_OVERRIDE",
-        after_state={"currency": req.currency_code, "override": req.is_manual_override, "rate": float(req.manual_rate or 0)}
+        action="CURRENCY_RATE_OVERRIDE", before_state=before,
+        after_state={"currency": req.currency_code, "override": req.is_manual_override, "rate": float(req.manual_rate or 0)},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
     )
     await db.commit()
     return {"status": "success", "currency": req.currency_code}
@@ -283,6 +362,7 @@ async def override_currency_rate(
 @router.put("/languages/toggle", dependencies=[Depends(require_super_admin)])
 async def toggle_language(
     req: LanguageToggleRequest,
+    request: Request,
     admin_user: User = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -291,10 +371,13 @@ async def toggle_language(
     if not lang:
         raise HTTPException(status_code=404, detail="Language not found")
 
+    before = {"is_active": lang.is_active}
     lang.is_active = req.is_active
     await AuditService.log_action(
         db, actor_id=admin_user.id, actor_role=admin_user.role.value,
-        action="LANGUAGE_TOGGLE", after_state={"code": req.code, "is_active": req.is_active}
+        action="LANGUAGE_TOGGLE", before_state=before, after_state={"code": req.code, "is_active": req.is_active},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
     )
     await db.commit()
     return {"status": "success", "language": req.code, "is_active": req.is_active}
@@ -364,6 +447,7 @@ async def get_admin_catalog(limit: int = 200, db: AsyncSession = Depends(get_db)
 async def update_product(
     product_id: str,
     req: ProductUpdateRequest,
+    request: Request,
     admin_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -371,15 +455,19 @@ async def update_product(
     p = res.scalar_one_or_none()
     if not p:
         raise HTTPException(status_code=404, detail="Product not found")
-    
+
+    before = {"retail_price": float(p.retail_price), "is_active": p.is_active}
     if req.retail_price is not None:
         p.retail_price = Decimal(str(req.retail_price))
     if req.is_active is not None:
         p.is_active = req.is_active
-        
+
     await AuditService.log_action(
         db, actor_id=admin_user.id, actor_role=admin_user.role.value,
-        action="UPDATE_CATALOG_PRODUCT", after_state={"product_id": p.id, "retail_price": float(p.retail_price), "is_active": p.is_active}
+        action="UPDATE_CATALOG_PRODUCT", before_state=before,
+        after_state={"product_id": p.id, "retail_price": float(p.retail_price), "is_active": p.is_active},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
     )
     await db.commit()
     return {"status": "success", "product_id": p.id}
@@ -395,7 +483,8 @@ async def get_all_users(limit: int = 100, db: AsyncSession = Depends(get_db)):
             "username": u.username,
             "email": u.email,
             "role": u.role.value,
-            "is_active": getattr(u, 'is_active', True),
+            "status": u.status.value,
+            "is_active": u.status == UserStatus.ACTIVE,
             "created_at": u.created_at
         }
         for u in users
@@ -405,6 +494,7 @@ async def get_all_users(limit: int = 100, db: AsyncSession = Depends(get_db)):
 async def update_user_role(
     user_id: str,
     req: UserRoleUpdateRequest,
+    request: Request,
     admin_user: User = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -412,11 +502,40 @@ async def update_user_role(
     u = res.scalar_one_or_none()
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
-        
+
+    before = {"role": u.role.value}
     u.role = req.role
     await AuditService.log_action(
         db, actor_id=admin_user.id, actor_role=admin_user.role.value,
-        action="UPDATE_USER_ROLE", after_state={"user_id": u.id, "new_role": req.role.value}
+        action="UPDATE_USER_ROLE", before_state=before, after_state={"user_id": u.id, "new_role": req.role.value},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success"}
+
+@router.put("/users/{user_id}/status", dependencies=[Depends(require_super_admin)])
+async def update_user_status(
+    user_id: str,
+    req: UserStatusUpdateRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(select(User).where(User.id == user_id))
+    u = res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+    if u.id == admin_user.id:
+        raise HTTPException(status_code=400, detail="Cannot change your own account status")
+
+    before = {"status": u.status.value}
+    u.status = UserStatus.ACTIVE if req.is_active else UserStatus.SUSPENDED
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_USER_STATUS", before_state=before, after_state={"user_id": u.id, "status": u.status.value},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
     )
     await db.commit()
     return {"status": "success"}

@@ -24,16 +24,15 @@ class User(Base):
     username = Column(String(100), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=True)
-    phone_number = Column(String(50), nullable=True)
+    phone = Column(String(50), nullable=True)
     role = Column(Enum(UserRole), default=UserRole.USER, nullable=False)
     status = Column(Enum(UserStatus), default=UserStatus.ACTIVE, nullable=False)
     preferred_currency = Column(String(10), default="USD")
     preferred_language = Column(String(10), default="en")
-    is_verified = Column(Boolean, default=False)
+    is_kyc_verified = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     merchant_profile = relationship("MerchantProfile", uselist=False, back_populates="user", foreign_keys="MerchantProfile.user_id")
     wallets = relationship("Wallet", back_populates="user", cascade="all, delete-orphan")
-    orders = relationship("Order", back_populates="user", foreign_keys="Order.user_id")
