@@ -25,7 +25,7 @@ class Order(Base):
     order_no = Column(String(64), unique=True, index=True, nullable=False)
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
     product_id = Column(String(36), ForeignKey("products.id"), nullable=False)
-    country_iso2 = Column(String(2), nullable=False)
+    country_iso2 = Column(String(10), nullable=False)
     quantity = Column(Numeric(10, 0), default=1)
     unit_price = Column(Numeric(18, 4), nullable=False)
     total_amount = Column(Numeric(18, 4), nullable=False)

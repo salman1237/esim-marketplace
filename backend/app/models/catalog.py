@@ -8,7 +8,7 @@ class Country(Base):
     __tablename__ = "countries"
 
     id = Column(Integer, primary_key=True)  # matching VivaPe country id if available or auto
-    iso2 = Column(String(2), unique=True, index=True, nullable=False)
+    iso2 = Column(String(10), unique=True, index=True, nullable=False)
     iso3 = Column(String(3), nullable=True)
     name_en = Column(String(100), nullable=False)
     name_bn = Column(String(100), nullable=True)
