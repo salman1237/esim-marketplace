@@ -133,7 +133,7 @@ export default function TranslationsManager({ languages: initialLanguages }: { l
         </h3>
         <p className="text-xs text-slate-400 mb-4">Activate/deactivate languages and trigger a bulk auto-translate pass (English placeholders, flagged for human review — no external MT provider is wired up in this deployment).</p>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-start text-xs">
             <thead className="text-slate-400 border-b border-white/10">
               <tr>
                 <th className="py-2">Language</th>

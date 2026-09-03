@@ -108,7 +108,7 @@ export default function HomePage() {
         {/* Live Search Bar */}
         <div className="mt-8 max-w-xl mx-auto relative">
           <div className="glass-panel rounded-2xl p-2 flex items-center shadow-2xl shadow-brand-900/20">
-            <Search className="w-5 h-5 text-slate-400 ml-3 shrink-0" />
+            <Search className="w-5 h-5 text-slate-400 ms-3 shrink-0" />
             <input
               type="text"
               value={search}
@@ -141,7 +141,7 @@ export default function HomePage() {
             <button
               key={country.iso2}
               onClick={() => handleSelectCountry(country)}
-              className="glass-card rounded-xl p-4 text-left flex items-center space-x-3.5 hover:border-brand-500/50 group"
+              className="glass-card rounded-xl p-4 text-start flex items-center space-x-3.5 hover:border-brand-500/50 group"
             >
               <div className="w-10 h-7 rounded overflow-hidden shadow shrink-0 border border-white/10 flex items-center justify-center bg-slate-800 text-xl">
                 {country.flag_url ? (
@@ -171,7 +171,7 @@ export default function HomePage() {
             <button
               onClick={() => setSelectedCountry(null)}
               aria-label="Close"
-              className="absolute top-4 right-4 p-1 rounded-lg text-slate-400 hover:text-white"
+              className="absolute top-4 end-4 p-1 rounded-lg text-slate-400 hover:text-white"
             >
               <X className="w-5 h-5" />
             </button>
@@ -189,14 +189,14 @@ export default function HomePage() {
             {loading ? (
               <div className="py-12 text-center text-sm text-slate-400">Loading data packages...</div>
             ) : (
-              <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto pe-1">
                 {products.map((p) => (
                   <div key={p.id} className="glass-card rounded-xl p-4 flex items-center justify-between">
                     <div>
                       <div className="text-base font-bold text-white">{p.data_amount_gb} GB Data</div>
                       <div className="text-xs text-slate-400">{p.validity_days} Days Validity &bull; 4G/5G Speed</div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-end">
                       <div className="text-lg font-black text-emerald-400">{formatPrice(parseFloat(p.retail_price))}</div>
                       <button
                         onClick={() => handleBuy(p)}

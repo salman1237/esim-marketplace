@@ -4,15 +4,17 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Compass, QrCode, Wallet, User } from "lucide-react";
+import { useAppSettings } from "@/lib/AppSettingsContext";
 
 export default function MobileBottomNav() {
   const pathname = usePathname();
+  const { t } = useAppSettings();
 
   const tabs = [
-    { href: "/", label: "Explore", icon: Compass },
-    { href: "/my-esims", label: "My eSIMs", icon: QrCode },
-    { href: "/wallet", label: "Wallet", icon: Wallet },
-    { href: "/profile", label: "Account", icon: User },
+    { href: "/", label: t("common", "explore", "Explore"), icon: Compass },
+    { href: "/my-esims", label: t("common", "my_esims", "My eSIMs"), icon: QrCode },
+    { href: "/wallet", label: t("common", "wallet", "Wallet"), icon: Wallet },
+    { href: "/profile", label: t("common", "profile", "Profile"), icon: User },
   ];
 
   return (

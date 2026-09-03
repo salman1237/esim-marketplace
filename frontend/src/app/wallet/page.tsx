@@ -236,7 +236,7 @@ export default function WalletPage() {
           <div className="py-8 text-center text-xs text-slate-500">No transactions recorded yet.</div>
         ) : (
           <div className="overflow-x-auto frozen-col-table">
-            <table className="w-full text-left text-xs">
+            <table className="w-full text-start text-xs">
               <thead className="text-slate-400 border-b border-white/10">
                 <tr>
                   <th className="py-2.5">Date</th>

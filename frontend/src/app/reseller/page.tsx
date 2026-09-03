@@ -180,11 +180,11 @@ export default function ResellerPortalPage() {
         </div>
 
         <div className="flex gap-3">
-          <div className="glass-panel px-4 py-2 rounded-xl border border-white/10 text-right">
+          <div className="glass-panel px-4 py-2 rounded-xl border border-white/10 text-end">
             <span className="text-[10px] text-slate-400 uppercase font-semibold block">Commission Wallet</span>
             <span className="text-base font-black text-amber-400 font-mono">{formatPrice(commissionBalance)}</span>
           </div>
-          <div className="glass-panel px-4 py-2 rounded-xl border border-white/10 text-right">
+          <div className="glass-panel px-4 py-2 rounded-xl border border-white/10 text-end">
             <span className="text-[10px] text-slate-400 uppercase font-semibold block">Default Wallet</span>
             <span className="text-base font-black text-emerald-400 font-mono">
               {formatPrice(userData?.wallets?.find((w: any) => w.wallet_type === "DEFAULT")?.balance || 0)}
@@ -275,7 +275,7 @@ export default function ResellerPortalPage() {
                 <h4 className="text-lg font-bold text-white">eSIM Successfully Allocated!</h4>
                 <p className="text-xs text-slate-400">Order #{orderResult.order_no} created and ready for delivery.</p>
 
-                <div className="bg-slate-900/80 p-4 rounded-xl text-left text-xs space-y-2 font-mono border border-white/5">
+                <div className="bg-slate-900/80 p-4 rounded-xl text-start text-xs space-y-2 font-mono border border-white/5">
                   <div><span className="text-slate-500">Target Customer:</span> {customerEmail}</div>
                   <div><span className="text-slate-500">Order Amount:</span> {formatPrice(parseFloat(orderResult.total_amount))}</div>
                   <div><span className="text-slate-500">Status:</span> <span className="text-emerald-400">{orderResult.status}</span></div>
@@ -304,7 +304,7 @@ export default function ResellerPortalPage() {
           <div className="glass-panel rounded-2xl p-6 border border-white/10">
             <h3 className="text-base font-bold text-white mb-4">Your Issued eSIMs (Sales History)</h3>
             <div className="overflow-x-auto frozen-col-table">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-start text-xs">
                 <thead className="text-slate-400 border-b border-white/10">
                   <tr>
                     <th className="py-2">Date</th>
@@ -341,7 +341,7 @@ export default function ResellerPortalPage() {
           <div className="glass-panel rounded-2xl p-6 border border-white/10">
             <h3 className="text-base font-bold text-white mb-4">Commission Wallet Ledger</h3>
             <div className="overflow-x-auto frozen-col-table">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-start text-xs">
                 <thead className="text-slate-400 border-b border-white/10">
                   <tr>
                     <th className="py-2">Date</th>

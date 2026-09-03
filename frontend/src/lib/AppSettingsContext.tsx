@@ -100,6 +100,11 @@ export function AppSettingsProvider({ children }: { children: React.ReactNode })
   const activeLang = languages.find((l) => l.code === lang);
   const isRTL = activeLang ? activeLang.is_rtl : lang === "ar";
 
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    document.documentElement.dir = isRTL ? "rtl" : "ltr";
+  }, [lang, isRTL]);
+
   return (
     <AppSettingsContext.Provider value={{ lang, setLang, currency, setCurrency, isRTL, languages, t, convert, convertTo, formatPrice }}>
       {children}
