@@ -51,8 +51,11 @@ async def test_callback_credits_wallet_using_sp_order_id_and_array_response(clie
 
     with patch("app.api.v1.payments.ShurjoPayService.verify_payment", return_value=response):
         res = await client.get("/api/v1/payments/shurjopay/callback", params={"order_id": "sp6a99c460a9300"})
-    assert res.status_code == 200, res.text
-    assert res.json()["status"] == "success"
+    # The callback redirects the browser to the frontend wallet page rather
+    # than returning JSON — a real payment redirect target, not an API
+    # response a customer's browser would otherwise render as raw text.
+    assert res.status_code == 302, res.text
+    assert "topup=success" in res.headers["location"]
 
     me = await client.get("/api/v1/auth/me", headers=user["headers"])
     default_wallet = next(w for w in me.json()["wallets"] if w["type"] == "DEFAULT")
@@ -82,8 +85,8 @@ async def test_callback_pending_payment_not_credited(client, db_session):
 
     with patch("app.api.v1.payments.ShurjoPayService.verify_payment", return_value=response):
         res = await client.get("/api/v1/payments/shurjopay/callback", params={"order_id": "sp6a99c2d29fb09"})
-    assert res.status_code == 200
-    assert res.json()["status"] == "failed"
+    assert res.status_code == 302
+    assert "topup=failed" in res.headers["location"]
 
     me = await client.get("/api/v1/auth/me", headers=user["headers"])
     default_wallet = next(w for w in me.json()["wallets"] if w["type"] == "DEFAULT")

@@ -1,8 +1,10 @@
 import uuid
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
@@ -61,21 +63,24 @@ async def shurjopay_callback(
     unhandled and would have made every real top-up fail (order-not-found
     from ShurjoPay, or an AttributeError from treating the list as a dict).
     """
+    def _fail(reason: str) -> RedirectResponse:
+        return RedirectResponse(f"{settings.FRONTEND_BASE_URL}/wallet?topup=failed&reason={reason}", status_code=302)
+
     verification = await ShurjoPayService.verify_payment(db, order_id)
     record = verification[0] if isinstance(verification, list) and verification else verification
     if not isinstance(record, dict):
         await db.commit()
-        return {"status": "failed", "detail": "Unexpected verification response"}
+        return _fail("unexpected_response")
 
     sp_code = record.get("sp_code")
     if str(sp_code) != "1000":
         await db.commit()
-        return {"status": "failed", "detail": record}
+        return _fail("not_paid")
 
     customer_order_id = record.get("customer_order_id") or ""
     if not customer_order_id.startswith("TOPUP-"):
         await db.commit()
-        return {"status": "failed", "detail": "Unknown order reference"}
+        return _fail("unknown_order")
 
     # Format is "TOPUP-{user_id}-{random_suffix}"; user_id (a UUID) itself
     # contains hyphens, so strip the known prefix/suffix rather than splitting.
@@ -83,7 +88,7 @@ async def shurjopay_callback(
     user_id, _, suffix = remainder.rpartition("-")
     if not user_id or not suffix:
         await db.commit()
-        return {"status": "failed", "detail": "Malformed order reference"}
+        return _fail("malformed_order")
 
     amount_paid_bdt = Decimal(str(record.get("amount", "0")))
 
@@ -91,7 +96,7 @@ async def shurjopay_callback(
     user = res.scalar_one_or_none()
     if not user:
         await db.commit()
-        return {"status": "failed", "detail": "Unknown user for this order"}
+        return _fail("unknown_user")
 
     w_res = await db.execute(
         select(Wallet).where(Wallet.user_id == user.id, Wallet.wallet_type == WalletType.DEFAULT)
@@ -99,7 +104,7 @@ async def shurjopay_callback(
     wallet = w_res.scalar_one_or_none()
     if not wallet:
         await db.commit()
-        return {"status": "failed", "detail": "No wallet found for user"}
+        return _fail("no_wallet")
 
     # Convert BDT back to USD
     rate = await CurrencyService.get_effective_rate(db, "BDT")
@@ -116,4 +121,4 @@ async def shurjopay_callback(
         idempotency_key=f"shurjopay-{order_id}"
     )
     await db.commit()
-    return {"status": "success", "message": "Payment verified and credited"}
+    return RedirectResponse(f"{settings.FRONTEND_BASE_URL}/wallet?topup=success", status_code=302)

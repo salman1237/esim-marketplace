@@ -28,9 +28,19 @@ class Settings(BaseSettings):
     SHURJOPAY_USERNAME: str = os.getenv("SHURJOPAY_USERNAME", "sp_sandbox")
     SHURJOPAY_PASSWORD: str = os.getenv("SHURJOPAY_PASSWORD", "pyyk97hu&6u6")
     SHURJOPAY_PREFIX: str = os.getenv("SHURJOPAY_PREFIX", "NOK")
-    SHURJOPAY_RETURN_URL: str = os.getenv("SHURJOPAY_RETURN_URL", "http://localhost:3000/payments/callback")
-    SHURJOPAY_CANCEL_URL: str = os.getenv("SHURJOPAY_CANCEL_URL", "http://localhost:3000/payments/cancel")
-    
+    # Must be a URL the customer's browser can actually reach after leaving
+    # the ShurjoPay checkout page — a localhost default here is a real bug,
+    # not a placeholder: it silently breaks the return trip for every real
+    # user (a Dokploy env var is normally the intended override, but a
+    # deployment that forgets to set one should still get a working
+    # default, not one that only ever worked on a developer's own machine).
+    SHURJOPAY_RETURN_URL: str = os.getenv("SHURJOPAY_RETURN_URL", "https://esim.salmandev.io/api/v1/payments/shurjopay/callback")
+    SHURJOPAY_CANCEL_URL: str = os.getenv("SHURJOPAY_CANCEL_URL", "https://esim.salmandev.io/wallet?topup=cancelled")
+
+    # Where GET /payments/shurjopay/callback redirects the browser after
+    # processing — the frontend's own origin, not this API's.
+    FRONTEND_BASE_URL: str = os.getenv("FRONTEND_BASE_URL", "https://esim.salmandev.io")
+
     # Currency Engine
     EXCHANGE_RATE_API_URL: str = "https://open.er-api.com/v6/latest"
     EXCHANGE_RATE_FALLBACK_URL: str = "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies"

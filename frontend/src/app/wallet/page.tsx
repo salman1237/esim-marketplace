@@ -30,12 +30,22 @@ export default function WalletPage() {
   const [submittingSlip, setSubmittingSlip] = useState(false);
   const [slipSuccess, setSlipSuccess] = useState(false);
   const [payingViaGateway, setPayingViaGateway] = useState(false);
+  const [topupBanner, setTopupBanner] = useState<{ kind: "success" | "failed"; reason?: string } | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("esim_token");
     if (!token) {
       window.location.href = "/auth/login";
       return;
+    }
+
+    // ShurjoPay redirects the browser back here after checkout — see
+    // GET /api/v1/payments/shurjopay/callback.
+    const params = new URLSearchParams(window.location.search);
+    const topup = params.get("topup");
+    if (topup === "success" || topup === "failed") {
+      setTopupBanner({ kind: topup, reason: params.get("reason") || undefined });
+      window.history.replaceState({}, "", window.location.pathname);
     }
 
     Promise.all([api.getMyWallets(token), api.getMyLedger(token)])
@@ -95,6 +105,21 @@ export default function WalletPage() {
         <h1 className="text-3xl font-extrabold text-white">Wallets &amp; Financial Ledger</h1>
         <p className="text-xs text-slate-400 mt-1">Manage balances, top up via cards or mobile banking, and inspect transactions.</p>
       </div>
+
+      {topupBanner && (
+        <div className={`mb-8 p-4 rounded-xl border text-sm font-semibold flex items-center justify-between ${
+          topupBanner.kind === "success"
+            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+            : "bg-rose-500/10 border-rose-500/20 text-rose-400"
+        }`}>
+          <span>
+            {topupBanner.kind === "success"
+              ? "Top up successful — your wallet has been credited."
+              : `Top up was not completed${topupBanner.reason ? ` (${topupBanner.reason.replace(/_/g, " ")})` : ""}. No amount was charged.`}
+          </span>
+          <button onClick={() => setTopupBanner(null)} className="text-xs underline opacity-75 hover:opacity-100">Dismiss</button>
+        </div>
+      )}
 
       {/* Wallets Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
