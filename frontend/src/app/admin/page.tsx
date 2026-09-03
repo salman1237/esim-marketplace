@@ -204,7 +204,7 @@ export default function AdminConsolePage() {
       {activeTab === "merchants" && (
         <div className="glass-panel rounded-2xl p-6 border border-white/10">
           <h3 className="text-base font-bold text-white mb-4">Partner &amp; Reseller Applications</h3>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto frozen-col-table">
             <table className="w-full text-left text-xs">
               <thead className="text-slate-400 border-b border-white/10">
                 <tr>
@@ -246,7 +246,7 @@ export default function AdminConsolePage() {
       {activeTab === "payments" && (
         <div className="glass-panel rounded-2xl p-6 border border-white/10">
           <h3 className="text-base font-bold text-white mb-4">Manual Payment Verification Queue</h3>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto frozen-col-table">
             <table className="w-full text-left text-xs">
               <thead className="text-slate-400 border-b border-white/10">
                 <tr>
@@ -382,7 +382,7 @@ export default function AdminConsolePage() {
       {activeTab === "orders" && (
         <div className="glass-panel rounded-2xl p-6 border border-white/10">
           <h3 className="text-base font-bold text-white mb-4">Customer Orders & Support</h3>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto frozen-col-table">
             <table className="w-full text-left text-xs">
               <thead className="text-slate-400 border-b border-white/10">
                 <tr>
@@ -419,7 +419,7 @@ export default function AdminConsolePage() {
       {activeTab === "catalog" && (
         <div className="glass-panel rounded-2xl p-6 border border-white/10">
           <h3 className="text-base font-bold text-white mb-4">Product Catalog & Pricing Editor</h3>
-          <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+          <div className="overflow-x-auto max-h-[600px] overflow-y-auto frozen-col-table">
             <table className="w-full text-left text-xs relative">
               <thead className="text-slate-400 border-b border-white/10 sticky top-0 bg-slate-900">
                 <tr>
@@ -473,7 +473,7 @@ export default function AdminConsolePage() {
       {activeTab === "users" && (
         <div className="glass-panel rounded-2xl p-6 border border-white/10">
           <h3 className="text-base font-bold text-white mb-4">Staff & User Management</h3>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto frozen-col-table">
             <table className="w-full text-left text-xs">
               <thead className="text-slate-400 border-b border-white/10">
                 <tr>

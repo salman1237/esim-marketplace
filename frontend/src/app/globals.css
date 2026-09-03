@@ -47,3 +47,15 @@ body {
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
+
+/* Frozen first column for wide data tables on tablet/mobile viewports —
+   apply to a scrollable table wrapper (e.g. <div class="overflow-x-auto frozen-col-table">)
+   so the identifying column (name, order no, business, etc.) stays visible
+   while the rest of the row scrolls horizontally underneath it. */
+.frozen-col-table table th:first-child,
+.frozen-col-table table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background-color: #111827;
+}

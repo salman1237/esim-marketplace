@@ -303,7 +303,7 @@ export default function ResellerPortalPage() {
         <div className="space-y-6">
           <div className="glass-panel rounded-2xl p-6 border border-white/10">
             <h3 className="text-base font-bold text-white mb-4">Your Issued eSIMs (Sales History)</h3>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto frozen-col-table">
               <table className="w-full text-left text-xs">
                 <thead className="text-slate-400 border-b border-white/10">
                   <tr>
@@ -340,7 +340,7 @@ export default function ResellerPortalPage() {
 
           <div className="glass-panel rounded-2xl p-6 border border-white/10">
             <h3 className="text-base font-bold text-white mb-4">Commission Wallet Ledger</h3>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto frozen-col-table">
               <table className="w-full text-left text-xs">
                 <thead className="text-slate-400 border-b border-white/10">
                   <tr>

@@ -2,8 +2,22 @@
 
 import React, { useState, useEffect } from "react";
 import { Wallet, ArrowDownRight, ArrowUpRight, Plus, Upload, CheckCircle2 } from "lucide-react";
+import { animate } from "framer-motion";
 import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
+
+function CountUpBalance({ value, formatPrice }: { value: number; formatPrice: (n: number) => string }) {
+  const [display, setDisplay] = useState(0);
+  useEffect(() => {
+    const controls = animate(0, value, {
+      duration: 1,
+      ease: "easeOut",
+      onUpdate: (v) => setDisplay(v),
+    });
+    return () => controls.stop();
+  }, [value]);
+  return <>{formatPrice(display)}</>;
+}
 
 export default function WalletPage() {
   const { formatPrice, convertTo } = useAppSettings();
@@ -91,7 +105,7 @@ export default function WalletPage() {
               <Wallet className="w-4 h-4 text-brand-400" />
             </div>
             <div className="text-3xl font-extrabold text-white">
-              {formatPrice(parseFloat(w.balance))}
+              <CountUpBalance value={parseFloat(w.balance)} formatPrice={formatPrice} />
             </div>
             <div className="text-[11px] text-emerald-400 mt-2 flex items-center space-x-1">
               <span>Active Currency: {w.currency}</span>
@@ -196,7 +210,7 @@ export default function WalletPage() {
         {ledger.length === 0 ? (
           <div className="py-8 text-center text-xs text-slate-500">No transactions recorded yet.</div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto frozen-col-table">
             <table className="w-full text-left text-xs">
               <thead className="text-slate-400 border-b border-white/10">
                 <tr>
