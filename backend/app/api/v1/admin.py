@@ -46,7 +46,7 @@ async def sync_catalog_from_vivape(db: AsyncSession = Depends(get_db)):
     popular_iso = ["US", "TH", "JP", "SA", "AE", "GB", "TR", "SG", "MY", "BD"]
     for item in raw_countries:
         c_id = item.get("id")
-        iso2 = item.get("iso2") or item.get("country_code", "")
+        iso2 = item.get("iso_alpha2") or item.get("iso2") or item.get("country_code", "")
         name = item.get("country_name") or item.get("name", "")
         if not iso2:
             continue
@@ -67,24 +67,32 @@ async def sync_catalog_from_vivape(db: AsyncSession = Depends(get_db)):
 
     await db.commit()
 
-    # Sync sample products for top popular countries
+    # Sync products for popular destination countries
+    import re
     top_c = await db.execute(select(Country).where(Country.is_popular == True))
     for c in top_c.scalars().all():
         raw_products = await VivaPeAdapter.get_products(db, c.id)
         for p in raw_products:
-            ref = p.get("reference", "")
-            if "esim" not in ref.lower():
+            ref = str(p.get("reference") or "")
+            title = str(p.get("title") or p.get("name") or "")
+            if "esim" not in ref.lower() and "esim" not in title.lower():
                 continue
 
-            cost = Decimal(str(p.get("amount") or p.get("price") or 5.0))
-            retail = (cost * Decimal("1.25")).quantize(Decimal("0.0001"))  # 25% default margin
-            
+            cost = Decimal(str(p.get("price") or p.get("amount") or 5.0))
+            retail = (cost * Decimal("1.25")).quantize(Decimal("0.0001"))
+
+            gb_match = re.search(r"(\d+(\.\d+)?)\s*GB", title, re.IGNORECASE)
+            days_match = re.search(r"(\d+)\s*Days?", title, re.IGNORECASE)
+
+            data_amount = Decimal(gb_match.group(1)) if gb_match else Decimal("3.0")
+            validity = int(days_match.group(1)) if days_match else 15
+
             p_obj = Product(
                 supplier_product_id=p.get("id"),
                 country_id=c.id,
-                title_en=p.get("name") or f"{c.name_en} eSIM",
-                data_amount_gb=Decimal(str(p.get("data_amount") or 3.0)),
-                validity_days=int(p.get("validity_days") or 15),
+                title_en=title or f"{c.name_en} eSIM",
+                data_amount_gb=data_amount,
+                validity_days=validity,
                 cost_price=cost,
                 retail_price=retail,
                 currency="USD",
