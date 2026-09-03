@@ -23,7 +23,7 @@ class ShurjoPayService:
                 endpoint="api/get_token",
                 request_payload={"username": settings.SHURJOPAY_USERNAME},
                 response_payload=data,
-                status_code=str(resp.status_code)
+                status_code=resp.status_code
             )
             db.add(log)
             await db.commit()
@@ -78,7 +78,7 @@ class ShurjoPayService:
                 endpoint="api/secret-pay",
                 request_payload=payload,
                 response_payload=data,
-                status_code=str(resp.status_code)
+                status_code=resp.status_code
             )
             db.add(log)
             await db.commit()
@@ -101,7 +101,7 @@ class ShurjoPayService:
                 endpoint="api/verification",
                 request_payload={"order_id": order_id},
                 response_payload=data,
-                status_code=str(resp.status_code)
+                status_code=resp.status_code
             )
             db.add(log)
             await db.commit()
