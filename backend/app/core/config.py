@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     # processing — the frontend's own origin, not this API's.
     FRONTEND_BASE_URL: str = os.getenv("FRONTEND_BASE_URL", "https://esim.salmandev.io")
 
+    # Admin-uploaded branding assets (logo/favicon). Defaults to "uploads"
+    # (relative to the process's working directory) so local dev and CI —
+    # where /app doesn't exist and isn't creatable without root — just get
+    # a throwaway folder; the real deployment overrides this to the
+    # /app/uploads path backed by the uploads_data Docker volume.
+    UPLOADS_DIR: str = os.getenv("UPLOADS_DIR", "uploads")
+
     # Currency Engine
     EXCHANGE_RATE_API_URL: str = "https://open.er-api.com/v6/latest"
     EXCHANGE_RATE_FALLBACK_URL: str = "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies"

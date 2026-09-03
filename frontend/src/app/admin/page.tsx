@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Shield, Users, ShoppingCart, DollarSign, Wifi, RefreshCw, Check, X, Sliders, Globe, FileText, Activity, Languages } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 import TranslationsManager from "@/components/TranslationsManager";
 
@@ -22,6 +22,8 @@ export default function AdminConsolePage() {
   const [inspectingLog, setInspectingLog] = useState<any | null>(null);
 
   const [branding, setBranding] = useState({ platform_name: "eSIM Global", support_email: "support@esim.local", support_phone: "+880 1700-000000", maintenance_mode: false });
+  const [brandingAssets, setBrandingAssets] = useState<{ logo_light?: string; logo_dark?: string; favicon?: string }>({});
+  const [uploadingKind, setUploadingKind] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [syncing, setSyncing] = useState(false);
 
@@ -68,8 +70,24 @@ export default function AdminConsolePage() {
         support_phone: s.support_phone ?? b.support_phone,
         maintenance_mode: !!s.maintenance_mode,
       }));
+      setBrandingAssets({ logo_light: s.logo_light, logo_dark: s.logo_dark, favicon: s.favicon });
     }).catch(() => {});
   }, []);
+
+  const handleUploadBrandingAsset = async (kind: "logo_light" | "logo_dark" | "favicon", file: File | null) => {
+    if (!file) return;
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    setUploadingKind(kind);
+    try {
+      const res = await api.uploadBrandingAsset(token, kind, file);
+      setBrandingAssets((a) => ({ ...a, [kind]: res.url }));
+    } catch (err: any) {
+      alert("Upload failed: " + err.message);
+    } finally {
+      setUploadingKind(null);
+    }
+  };
 
 
   const handleUpdateRole = async (userId: string, newRole: string) => {
@@ -325,6 +343,32 @@ export default function AdminConsolePage() {
                   onChange={(e) => setBranding({ ...branding, support_email: e.target.value })}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
                 />
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {([
+                  { kind: "logo_light" as const, label: "Logo (Light)" },
+                  { kind: "logo_dark" as const, label: "Logo (Dark)" },
+                  { kind: "favicon" as const, label: "Favicon" },
+                ]).map(({ kind, label }) => (
+                  <div key={kind}>
+                    <label className="text-xs text-slate-300 font-semibold block mb-1">{label}</label>
+                    <div className="w-full aspect-square rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center overflow-hidden mb-1.5">
+                      {brandingAssets[kind] ? (
+                        <img src={`${API_BASE}${brandingAssets[kind]}`} alt={label} className="w-full h-full object-contain" />
+                      ) : (
+                        <span className="text-[10px] text-slate-600">No file</span>
+                      )}
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/svg+xml,image/webp,image/x-icon"
+                      disabled={uploadingKind === kind}
+                      onChange={(e) => handleUploadBrandingAsset(kind, e.target.files?.[0] ?? null)}
+                      className="w-full text-[10px] text-slate-400 file:me-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-semibold file:bg-slate-800 file:text-slate-300"
+                    />
+                    {uploadingKind === kind && <p className="text-[10px] text-brand-400 mt-1">Uploading...</p>}
+                  </div>
+                ))}
               </div>
               <div className="flex items-center justify-between bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5">
                 <div>

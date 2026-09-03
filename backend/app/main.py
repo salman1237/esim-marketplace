@@ -4,6 +4,7 @@ from decimal import Decimal
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
@@ -141,6 +142,13 @@ async def add_correlation_id(request: Request, call_next):
 
 # Include Routers
 app.include_router(api_v1_router)
+
+# Serves admin-uploaded branding assets (logo/favicon) from the uploads_data
+# volume — mounted under /api/v1 so it rides the same Dokploy/Traefik path
+# rule as the rest of the API instead of needing a separate route.
+import os
+os.makedirs(settings.UPLOADS_DIR, exist_ok=True)
+app.mount("/api/v1/uploads", StaticFiles(directory=settings.UPLOADS_DIR), name="uploads")
 
 @app.get("/health", tags=["Health"])
 async def health_check():

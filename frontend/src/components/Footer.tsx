@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { Wifi, Phone, Mail, MessageCircle, ShieldCheck, Globe2 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 
 export default function Footer() {
@@ -28,9 +28,17 @@ export default function Footer() {
         {/* Col 1: Brand & Tagline */}
         <div className="space-y-4">
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center">
-              <Wifi className="w-4 h-4 text-white" />
-            </div>
+            {settings.logo_light ? (
+              <img
+                src={settings.logo_light.startsWith("http") ? settings.logo_light : `${API_BASE}${settings.logo_light}`}
+                alt={settings.platform_name || "eSIM Global"}
+                className="w-8 h-8 rounded-lg object-contain"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center">
+                <Wifi className="w-4 h-4 text-white" />
+              </div>
+            )}
             <span className="text-lg font-bold text-white">{settings.platform_name || "eSIM Global"}</span>
           </div>
           <p className="text-xs text-slate-400 leading-relaxed">

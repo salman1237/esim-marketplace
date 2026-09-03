@@ -42,6 +42,7 @@ services:
       SHURJOPAY_CANCEL_URL: ${SHURJOPAY_CANCEL_URL:-https://esim.salmandev.io/wallet?topup=cancelled}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://esim.salmandev.io}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://esim.salmandev.io}
+      UPLOADS_DIR: /app/uploads
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:

@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Globe, DollarSign, User, Shield, Briefcase, Wifi, Menu, X } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 
 const CURRENCIES = ["USD", "BDT", "EUR", "GBP", "AED", "SAR"];
@@ -36,9 +36,17 @@ export default function Header() {
 
         {/* Brand Logo & Name */}
         <Link href="/" className="flex items-center space-x-3 group">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-accent-500 flex items-center justify-center shadow-lg shadow-brand-600/30 group-hover:scale-105 transition-transform">
-            <Wifi className="w-5 h-5 text-white" />
-          </div>
+          {settings.logo_light ? (
+            <img
+              src={settings.logo_light.startsWith("http") ? settings.logo_light : `${API_BASE}${settings.logo_light}`}
+              alt={settings.platform_name || "eSIM Global"}
+              className="w-10 h-10 rounded-xl object-contain group-hover:scale-105 transition-transform"
+            />
+          ) : (
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-accent-500 flex items-center justify-center shadow-lg shadow-brand-600/30 group-hover:scale-105 transition-transform">
+              <Wifi className="w-5 h-5 text-white" />
+            </div>
+          )}
           <span className="text-xl font-bold tracking-tight text-white group-hover:text-brand-300 transition-colors">
             {settings.platform_name || "eSIM Global"}
           </span>

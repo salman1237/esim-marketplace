@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { api } from "./api";
+import { api, API_BASE } from "./api";
 
 interface LanguageMeta {
   code: string;
@@ -65,6 +65,15 @@ export function AppSettingsProvider({ children }: { children: React.ReactNode })
     api.getPublicSettings().then((s: any) => {
       setMaintenanceMode(!!s.maintenance_mode);
       if (s.platform_name) setPlatformName(s.platform_name);
+      if (s.favicon) {
+        let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+        if (!link) {
+          link = document.createElement("link");
+          link.rel = "icon";
+          document.head.appendChild(link);
+        }
+        link.href = s.favicon.startsWith("http") ? s.favicon : `${API_BASE}${s.favicon}`;
+      }
     }).catch(() => {});
   }, []);
 

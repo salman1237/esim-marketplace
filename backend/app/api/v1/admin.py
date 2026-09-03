@@ -1,8 +1,11 @@
+import uuid
 from decimal import Decimal
+from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import require_admin, require_super_admin
 from app.models.user import User, UserRole, UserStatus
@@ -323,6 +326,63 @@ async def update_branding(
     )
     await db.commit()
     return {"status": "success", "updated": list(updates.keys())}
+
+UPLOAD_DIR = Path(settings.UPLOADS_DIR) / "branding"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+BRANDING_UPLOAD_KINDS = {"logo_light", "logo_dark", "favicon"}
+UPLOAD_CONTENT_TYPES = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/svg+xml": ".svg",
+    "image/webp": ".webp",
+    "image/x-icon": ".ico",
+    "image/vnd.microsoft.icon": ".ico",
+}
+MAX_UPLOAD_BYTES = 2 * 1024 * 1024  # 2MB — plenty for a logo/favicon, keeps the shared volume small
+
+@router.post("/branding/upload", dependencies=[Depends(require_super_admin)])
+async def upload_branding_asset(
+    request: Request,
+    kind: str = Form(...),
+    file: UploadFile = File(...),
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    if kind not in BRANDING_UPLOAD_KINDS:
+        raise HTTPException(status_code=400, detail=f"kind must be one of {sorted(BRANDING_UPLOAD_KINDS)}")
+    ext = UPLOAD_CONTENT_TYPES.get(file.content_type)
+    if not ext:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {file.content_type}")
+
+    contents = await file.read()
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="File too large (max 2MB)")
+
+    filename = f"{kind}-{uuid.uuid4().hex}{ext}"
+    (UPLOAD_DIR / filename).write_bytes(contents)
+    # Served by the StaticFiles mount at /api/v1/uploads (see main.py) - kept
+    # under the existing /api/v1 prefix so it rides the same Dokploy/Traefik
+    # routing rule as every other endpoint instead of needing a new one.
+    url = f"/api/v1/uploads/branding/{filename}"
+
+    res = await db.execute(select(PlatformSetting).where(PlatformSetting.key == kind))
+    setting = res.scalar_one_or_none()
+    before = {kind: setting.value if setting else None}
+    if setting:
+        setting.value = url
+        setting.updated_by_id = admin_user.id
+    else:
+        db.add(PlatformSetting(key=kind, value=url, is_public=True, updated_by_id=admin_user.id))
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPLOAD_BRANDING_ASSET", before_state=before, after_state={kind: url},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success", "kind": kind, "url": url}
 
 @router.put("/currencies/override", dependencies=[Depends(require_super_admin)])
 async def override_currency_rate(
