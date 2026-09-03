@@ -99,8 +99,8 @@ async def fund_wallet(db_session, user_id: str, amount: Decimal = Decimal("100.0
 async def create_test_product(db_session, price: Decimal = Decimal("9.9900")) -> Product:
     suffix = uuid.uuid4().hex[:6]
     country = Country(
-        id=int(uuid.uuid4().int % 1_000_000),
-        iso2=f"Z{suffix[:1].upper()}",
+        id=int(uuid.uuid4().int % 1_000_000_000),
+        iso2=f"T{suffix.upper()}",  # not a real ISO2 code; just needs to be unique per test
         name_en=f"Testland {suffix}",
         is_active=True,
     )

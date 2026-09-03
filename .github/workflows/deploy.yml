@@ -37,7 +37,7 @@ jobs:
           TEST_DATABASE_URL: postgresql+asyncpg://esim_test:esim_test_pw@localhost:5432/esim_test
           SECRET_KEY: ci-test-secret-key-not-for-production
           ENVIRONMENT: development
-        run: pytest tests/ -v
+        run: python -m pytest tests/ -v
 
   deploy:
     needs: backend-tests
