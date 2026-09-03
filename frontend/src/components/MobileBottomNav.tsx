@@ -1,0 +1,38 @@
+"use client";
+
+import React from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Compass, QrCode, Wallet, User } from "lucide-react";
+
+export default function MobileBottomNav() {
+  const pathname = usePathname();
+
+  const tabs = [
+    { href: "/", label: "Explore", icon: Compass },
+    { href: "/my-esims", label: "My eSIMs", icon: QrCode },
+    { href: "/wallet", label: "Wallet", icon: Wallet },
+    { href: "/profile", label: "Account", icon: User },
+  ];
+
+  return (
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 glass-panel border-t border-white/10 h-16 flex items-center justify-around px-2">
+      {tabs.map((tab) => {
+        const Icon = tab.icon;
+        const isActive = pathname === tab.href;
+        return (
+          <Link
+            key={tab.href}
+            href={tab.href}
+            className={`flex flex-col items-center justify-center flex-1 h-full min-h-[44px] transition-colors ${
+              isActive ? "text-brand-400 font-semibold" : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <Icon className={`w-5 h-5 mb-1 ${isActive ? "scale-110" : ""}`} />
+            <span className="text-[10px] tracking-tight">{tab.label}</span>
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}

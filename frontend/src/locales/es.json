@@ -1,0 +1,63 @@
+{
+  "common": {
+    "site_name": "eSIM Global",
+    "tagline": "Datos móviles globales al instante en más de 200 destinos",
+    "search_placeholder": "¿A dónde viajas? Busca entre 200+ países...",
+    "explore": "Explorar",
+    "my_esims": "Mis eSIMs",
+    "wallet": "Billetera",
+    "login": "Iniciar Sesión",
+    "register": "Crear Cuenta",
+    "logout": "Cerrar Sesión",
+    "profile": "Perfil",
+    "admin": "Panel de Administración",
+    "merchant": "Portal de Distribuidores",
+    "settings": "Configuración",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "confirm": "Confirmar",
+    "back": "Volver",
+    "submit": "Enviar",
+    "status": "Estado",
+    "actions": "Acciones"
+  },
+  "hero": {
+    "title": "Conéctate en todo el mundo sin cargos de roaming",
+    "subtitle": "Datos de alta velocidad inmediatos para tus viajes. Instala en segundos mediante código QR.",
+    "search_title": "Busca tu destino de viaje",
+    "popular_countries": "Destinos populares: España, Estados Unidos, México, Tailandia, Japón"
+  },
+  "catalog": {
+    "days": "{count} Días",
+    "data": "{amount} GB",
+    "price": "Precio",
+    "buy_now": "Comprar Ahora",
+    "view_details": "Ver Detalles",
+    "instant_activation": "Entrega digital inmediata",
+    "high_speed": "Alta velocidad 4G / 5G",
+    "unlimited": "Datos Ilimitados",
+    "coverage": "Redes de Cobertura",
+    "select_plan": "Elegir Plan"
+  },
+  "checkout": {
+    "order_summary": "Resumen del Pedido",
+    "package": "Paquete eSIM",
+    "validity": "Validez",
+    "total": "Total a Pagar",
+    "pay_with": "Método de Pago",
+    "wallet_balance": "Saldo en Billetera",
+    "shurjopay": "Pagar con Tarjeta / Banca Móvil",
+    "confirm_payment": "Confirmar y Activar eSIM",
+    "processing": "Activando tu perfil eSIM..."
+  },
+  "esim": {
+    "ready_title": "¡Tu eSIM está lista para instalar!",
+    "scan_qr": "Escanea este código QR desde los ajustes de tu móvil",
+    "manual_install": "Detalles de Instalación Manual",
+    "smdp_address": "Dirección SM-DP+",
+    "activation_code": "Código de Activación",
+    "iccid": "Identificador ICCID",
+    "copy_code": "Copiar Código LPA",
+    "install_guide": "Guía de Instalación"
+  }
+}

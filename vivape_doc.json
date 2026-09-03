@@ -1,0 +1,384 @@
+{
+  "info": {
+    "_postman_id": "effb94cf-6b50-406c-91ce-26eec850d757",
+    "name": "VivaPe API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json",
+    "toc": [],
+    "description": "<html><head></head><body></body></html>",
+    "owner": "12835212",
+    "collectionId": "effb94cf-6b50-406c-91ce-26eec850d757",
+    "publishedId": "2sAYQdjALq",
+    "public": true,
+    "customColor": {
+      "top-bar": "FFFFFF",
+      "right-sidebar": "303030",
+      "highlight": "FF6C37"
+    },
+    "publishDate": "2025-01-22T14:01:45.000Z"
+  },
+  "item": [
+    {
+      "name": "login",
+      "id": "a09198ef-f5d6-4db2-8c3b-6a4daf228d5a",
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "noauth",
+          "isInherited": false
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "email",
+              "value": "merchantusd@vivape.co",
+              "type": "text"
+            },
+            {
+              "key": "password",
+              "value": "merchantusd@36",
+              "type": "text"
+            }
+          ]
+        },
+        "url": "https://app.vivape.net/api/login",
+        "urlObject": {
+          "protocol": "https",
+          "path": [
+            "api",
+            "login"
+          ],
+          "host": [
+            "app",
+            "vivape",
+            "net"
+          ],
+          "query": [],
+          "variable": []
+        }
+      },
+      "response": [],
+      "_postman_id": "a09198ef-f5d6-4db2-8c3b-6a4daf228d5a"
+    },
+    {
+      "name": "products",
+      "id": "9c5ff64b-381e-44cf-8f1f-ecc5a009f622",
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": {
+            "basicConfig": [
+              {
+                "key": "token",
+                "value": "<token>"
+              }
+            ]
+          },
+          "isInherited": false
+        },
+        "method": "GET",
+        "header": [],
+        "url": "https://app.vivape.net/api/products?country_id=18",
+        "urlObject": {
+          "protocol": "https",
+          "path": [
+            "api",
+            "products"
+          ],
+          "host": [
+            "app",
+            "vivape",
+            "net"
+          ],
+          "query": [
+            {
+              "key": "country_id",
+              "value": "18"
+            }
+          ],
+          "variable": []
+        }
+      },
+      "response": [],
+      "_postman_id": "9c5ff64b-381e-44cf-8f1f-ecc5a009f622"
+    },
+    {
+      "name": "product-list-by-phone",
+      "id": "2d42e226-0e1c-441e-af1a-335de5aaa65a",
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": {
+            "basicConfig": [
+              {
+                "key": "token",
+                "value": "<token>"
+              }
+            ]
+          },
+          "isInherited": false
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "phone",
+              "value": "+8801886181180",
+              "type": "text"
+            },
+            {
+              "key": "country",
+              "value": "18",
+              "type": "text",
+              "disabled": true
+            }
+          ]
+        },
+        "url": "https://app.vivape.net/api/product-list-by-phone",
+        "urlObject": {
+          "protocol": "https",
+          "path": [
+            "api",
+            "product-list-by-phone"
+          ],
+          "host": [
+            "app",
+            "vivape",
+            "net"
+          ],
+          "query": [],
+          "variable": []
+        }
+      },
+      "response": [],
+      "_postman_id": "2d42e226-0e1c-441e-af1a-335de5aaa65a"
+    },
+    {
+      "name": "create-transaction",
+      "id": "f68f8504-a5c0-45e5-ad59-9e1575fa20bc",
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": {
+            "basicConfig": [
+              {
+                "key": "token",
+                "value": "<token>"
+              }
+            ]
+          },
+          "isInherited": false
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "phone",
+              "value": "+8801750726094",
+              "type": "text",
+              "disabled": true
+            },
+            {
+              "key": "product_id",
+              "value": "9820",
+              "type": "text"
+            },
+            {
+              "key": "receiver_amount",
+              "value": "1000",
+              "type": "text"
+            },
+            {
+              "key": "activity",
+              "value": "esim",
+              "type": "text"
+            }
+          ]
+        },
+        "url": "https://app.vivape.net/api/create-transaction",
+        "description": "<h2 id=\"create-transaction-api\">Create Transaction API</h2>\n<p>This endpoint allows users to create a new transaction by submitting relevant details in the request body. Upon successful execution, it returns a confirmation of the transaction along with its unique identifier.</p>\n<h3 id=\"request\">Request</h3>\n<p><strong>Method:</strong> POST<br /><strong>URL:</strong> <code>https://app.vivape.net/api/create-transaction</code></p>\n<h4 id=\"request-body\">Request Body</h4>\n<p>The request body must be sent in <code>form-data</code> format and should include the following parameters:</p>\n<ul>\n<li><p><strong>product_id</strong> (string): The identifier for the product associated with the transaction.</p>\n</li>\n<li><p><strong>receiver_amount</strong> (string): The amount to be received by the receiver in the transaction.</p>\n</li>\n<li><p><strong>activity</strong> (string): A description of the activity related to the transaction.</p>\n</li>\n</ul>\n<h3 id=\"response\">Response</h3>\n<p>Upon successful creation of the transaction, the API will respond with a JSON object containing:</p>\n<ul>\n<li><p><strong>success</strong> (string): A message indicating the success status of the transaction creation.</p>\n</li>\n<li><p><strong>purchase_trx</strong> (object): An object containing the details of the created transaction.</p>\n<ul>\n<li><strong>id</strong> (integer): The unique identifier of the transaction.</li>\n</ul>\n</li>\n</ul>\n<h3 id=\"example-response\">Example Response</h3>\n<pre class=\"click-to-expand-wrapper is-snippet-wrapper\"><code class=\"language-json\">{\n  \"success\": \"\",\n  \"purchase_trx\": {\n    \"id\": 0\n  }\n}\n\n</code></pre>\n<p>Make sure to provide all required parameters in the correct format to ensure successful transaction creation.</p>\n",
+        "urlObject": {
+          "protocol": "https",
+          "path": [
+            "api",
+            "create-transaction"
+          ],
+          "host": [
+            "app",
+            "vivape",
+            "net"
+          ],
+          "query": [],
+          "variable": []
+        }
+      },
+      "response": [],
+      "_postman_id": "f68f8504-a5c0-45e5-ad59-9e1575fa20bc"
+    },
+    {
+      "name": "get-esim-by-trx",
+      "id": "d6210fd4-9b82-4264-b4ce-605111a8ce00",
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": {
+            "basicConfig": [
+              {
+                "key": "token",
+                "value": "<token>"
+              }
+            ]
+          },
+          "isInherited": false
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "trx_id",
+              "value": "13826",
+              "type": "text"
+            },
+            {
+              "key": "product_id",
+              "value": "15608",
+              "type": "text",
+              "disabled": true
+            },
+            {
+              "key": "receiver_amount",
+              "value": "509",
+              "type": "text",
+              "disabled": true
+            },
+            {
+              "key": "activity",
+              "value": "mobile_recharge",
+              "type": "text",
+              "disabled": true
+            }
+          ]
+        },
+        "url": "https://app.vivape.net/api/get-esim-by-trx",
+        "urlObject": {
+          "protocol": "https",
+          "path": [
+            "api",
+            "get-esim-by-trx"
+          ],
+          "host": [
+            "app",
+            "vivape",
+            "net"
+          ],
+          "query": [],
+          "variable": []
+        }
+      },
+      "response": [],
+      "_postman_id": "d6210fd4-9b82-4264-b4ce-605111a8ce00"
+    },
+    {
+      "name": "countries",
+      "id": "cf1d848b-1376-4a3f-8398-b68bd390bd39",
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": {
+            "basicConfig": [
+              {
+                "key": "token",
+                "value": "<token>"
+              }
+            ]
+          },
+          "isInherited": false
+        },
+        "method": "GET",
+        "header": [],
+        "url": "https://app.vivape.net/api/countries",
+        "urlObject": {
+          "protocol": "https",
+          "path": [
+            "api",
+            "countries"
+          ],
+          "host": [
+            "app",
+            "vivape",
+            "net"
+          ],
+          "query": [],
+          "variable": []
+        }
+      },
+      "response": [],
+      "_postman_id": "cf1d848b-1376-4a3f-8398-b68bd390bd39"
+    },
+    {
+      "name": "operators",
+      "id": "e872de33-cb1b-4c4a-a374-c8ccee852c70",
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": {
+            "basicConfig": [
+              {
+                "key": "token",
+                "value": "<token>"
+              }
+            ]
+          },
+          "isInherited": false
+        },
+        "method": "GET",
+        "header": [],
+        "url": "https://app.vivape.net/api/operators",
+        "urlObject": {
+          "protocol": "https",
+          "path": [
+            "api",
+            "operators"
+          ],
+          "host": [
+            "app",
+            "vivape",
+            "net"
+          ],
+          "query": [],
+          "variable": []
+        }
+      },
+      "response": [],
+      "_postman_id": "e872de33-cb1b-4c4a-a374-c8ccee852c70"
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+﻿# Operating System files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment and secrets
+.env
+.env*.local
+!.env.example
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+build/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.turbo/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Database & Storage
+*.sqlite3
+*.db
+pg_data/
+
+# Logs & Temporary
+*.log
+test_*.html
+mermaid.min.js
+plan_printable.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

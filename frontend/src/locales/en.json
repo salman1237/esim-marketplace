@@ -1,0 +1,103 @@
+{
+  "common": {
+    "site_name": "eSIM Global",
+    "tagline": "Instant Global eSIM Data in 200+ Destinations",
+    "search_placeholder": "Where are you traveling? Search 200+ countries...",
+    "explore": "Explore",
+    "my_esims": "My eSIMs",
+    "wallet": "Wallet",
+    "login": "Sign In",
+    "register": "Create Account",
+    "logout": "Sign Out",
+    "profile": "Profile",
+    "admin": "Admin Console",
+    "merchant": "Merchant Portal",
+    "settings": "Settings",
+    "save": "Save Changes",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "back": "Back",
+    "submit": "Submit",
+    "status": "Status",
+    "actions": "Actions"
+  },
+  "nav": {
+    "home": "Home",
+    "countries": "Destinations",
+    "regions": "Regional Plans",
+    "b2b": "B2B Partner",
+    "support": "24/7 Support",
+    "currency": "Currency",
+    "language": "Language"
+  },
+  "hero": {
+    "title": "Stay Connected Worldwide Without Roaming Fees",
+    "subtitle": "Get instant high-speed data for your travels. Install in seconds via QR code.",
+    "search_title": "Search your travel destination",
+    "popular_countries": "Popular: United States, Thailand, Japan, Saudi Arabia, UAE, United Kingdom"
+  },
+  "catalog": {
+    "days": "{count} Days",
+    "data": "{amount} GB",
+    "price": "Price",
+    "buy_now": "Buy Now",
+    "view_details": "View Details",
+    "instant_activation": "Instant Digital Delivery",
+    "high_speed": "4G / 5G High Speed",
+    "unlimited": "Unlimited Data",
+    "coverage": "Coverage Networks",
+    "select_plan": "Select Plan"
+  },
+  "checkout": {
+    "order_summary": "Order Summary",
+    "package": "eSIM Package",
+    "validity": "Validity Period",
+    "total": "Total Due",
+    "pay_with": "Payment Method",
+    "wallet_balance": "Wallet Balance",
+    "shurjopay": "Pay via Cards / Mobile Banking (ShurjoPay)",
+    "confirm_payment": "Confirm & Provision eSIM",
+    "processing": "Provisioning your eSIM Profile..."
+  },
+  "esim": {
+    "ready_title": "Your eSIM is Ready to Install!",
+    "scan_qr": "Scan this QR Code from your phone settings",
+    "manual_install": "Manual Installation Details",
+    "smdp_address": "SM-DP+ Address",
+    "activation_code": "Activation Code",
+    "iccid": "ICCID Identifier",
+    "copy_code": "Copy LPA Code",
+    "install_guide": "Installation Guide",
+    "ios_guide": "iOS: Settings > Cellular > Add eSIM > Scan QR",
+    "android_guide": "Android: Settings > Network & Internet > SIMs > Add > Scan QR"
+  },
+  "reseller": {
+    "buy_for_title": "Issue eSIM for Customer",
+    "buy_for_self": "For Myself",
+    "buy_for_user": "For Customer / User",
+    "user_search": "Search Customer by Email or Phone",
+    "auto_generate": "Auto-generate New Customer Account",
+    "customer_username": "Customer Account ID",
+    "commission_earned": "Commission Earned"
+  },
+  "wallet": {
+    "balance": "Current Balance",
+    "default_wallet": "Primary Balance",
+    "reward_wallet": "Reward Points",
+    "commission_wallet": "Commission Earnings",
+    "top_up": "Add Funds",
+    "manual_deposit": "Bank / Slip Deposit",
+    "submit_slip": "Upload Payment Receipt",
+    "transaction_history": "Financial Ledger"
+  },
+  "admin": {
+    "dashboard": "Overview",
+    "catalog_management": "Product Catalog & Pricing",
+    "merchant_approvals": "Partner Approvals",
+    "payment_queue": "Payment Approvals",
+    "dynamic_branding": "Site Branding & Identity",
+    "currency_manager": "Currency & FX Overrides",
+    "audit_logs": "Security Audit Trail",
+    "supplier_logs": "Supplier API Traffic"
+  }
+}

@@ -1,0 +1,81 @@
+﻿version: '3.8'
+
+services:
+  esim-db:
+    image: postgres:18-alpine
+    container_name: esim-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-esim_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-esim_secure_password_2026}
+      POSTGRES_DB: ${POSTGRES_DB:-esim_db}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-esim_user} -d ${POSTGRES_DB:-esim_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - esim-network
+
+  esim-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: esim-backend
+    restart: unless-stopped
+    depends_on:
+      esim-db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-esim_user}:${POSTGRES_PASSWORD:-esim_secure_password_2026}@esim-db:5432/${POSTGRES_DB:-esim_db}
+      SECRET_KEY: ${SECRET_KEY:-change_this_super_secret_key_in_production_32chars_min}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
+      VIVAPE_BASE_URL: ${VIVAPE_BASE_URL:-https://app.vivape.net/api}
+      VIVAPE_EMAIL: ${VIVAPE_EMAIL:-merchantusd@vivape.co}
+      VIVAPE_PASSWORD: ${VIVAPE_PASSWORD:-merchantusd@36}
+      SHURJOPAY_BASE_URL: ${SHURJOPAY_BASE_URL:-https://sandbox.shurjopayment.com}
+      SHURJOPAY_USERNAME: ${SHURJOPAY_USERNAME:-sp_sandbox}
+      SHURJOPAY_PASSWORD: ${SHURJOPAY_PASSWORD:-pyyk97hu&6u6}
+      SHURJOPAY_PREFIX: ${SHURJOPAY_PREFIX:-NOK}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - uploads_data:/app/uploads
+      - logs_data:/var/log/esim
+    networks:
+      - esim-network
+
+  esim-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: esim-frontend
+    restart: unless-stopped
+    depends_on:
+      - esim-backend
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      NEXT_PUBLIC_DEFAULT_CURRENCY: ${NEXT_PUBLIC_DEFAULT_CURRENCY:-USD}
+      NEXT_PUBLIC_DEFAULT_LOCALE: ${NEXT_PUBLIC_DEFAULT_LOCALE:-en}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    networks:
+      - esim-network
+
+volumes:
+  postgres_data:
+    name: esim_postgres_data
+  uploads_data:
+    name: esim_uploads_data
+  logs_data:
+    name: esim_logs_data
+
+networks:
+  esim-network:
+    name: esim-network
+    driver: bridge

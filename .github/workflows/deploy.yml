@@ -1,0 +1,15 @@
+﻿name: Deploy to Dokploy VPS
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Dokploy Auto-Deployment
+        run: |
+          echo "Triggering Dokploy deploy webhook..."
+          curl -s -X POST http://89.116.122.118:3000/api/deploy/compose/sZD8Ck7KhYC4uBJdf2yvO
+          echo "Dokploy deployment triggered successfully."
