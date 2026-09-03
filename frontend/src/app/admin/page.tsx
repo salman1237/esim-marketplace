@@ -10,8 +10,12 @@ export default function AdminConsolePage() {
   const [payments, setPayments] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [supplierLogs, setSupplierLogs] = useState<any[]>([]);
+  const [allOrders, setAllOrders] = useState<any[]>([]);
+  const [catalog, setCatalog] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+
   const [branding, setBranding] = useState({ platform_name: "eSIM Global", support_email: "support@esim.local", support_phone: "+880 1700-000000" });
-  const [activeTab, setActiveTab] = useState<"overview" | "merchants" | "payments" | "branding" | "logs">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "branding" | "logs">("overview");
   const [syncing, setSyncing] = useState(false);
 
   // Currency override
@@ -31,7 +35,35 @@ export default function AdminConsolePage() {
     api.getPaymentQueue(token).then(setPayments).catch(console.error);
     api.getAuditLogs(token).then(setAuditLogs).catch(console.error);
     api.getSupplierLogs(token).then(setSupplierLogs).catch(console.error);
+    api.getAdminOrders(token).then(setAllOrders).catch(console.error);
+    api.getAdminCatalog(token).then(setCatalog).catch(console.error);
+    api.getAdminUsers(token).then(setUsers).catch(console.error);
+
   }, []);
+
+
+  const handleUpdateRole = async (userId: string, newRole: string) => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    await api.updateUserRole(token, userId, newRole);
+    setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
+    alert("Role updated.");
+  };
+
+  const handleUpdateProductPrice = async (productId: string, priceStr: string) => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    const price = parseFloat(priceStr);
+    await api.updateAdminCatalogProduct(token, productId, { retail_price: price });
+    alert("Price updated.");
+  };
+
+  const handleToggleProduct = async (productId: string, isActive: boolean) => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    await api.updateAdminCatalogProduct(token, productId, { is_active: !isActive });
+    setCatalog(catalog.map(p => p.id === productId ? { ...p, is_active: !isActive } : p));
+  };
 
   const handleSyncCatalog = async () => {
     const token = localStorage.getItem("esim_token");
@@ -314,6 +346,140 @@ export default function AdminConsolePage() {
                 Save Rate Override
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      
+      {/* Tab: Orders Viewer */}
+      {activeTab === "orders" && (
+        <div className="glass-panel rounded-2xl p-6 border border-white/10">
+          <h3 className="text-base font-bold text-white mb-4">Customer Orders & Support</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="text-slate-400 border-b border-white/10">
+                <tr>
+                  <th className="py-2">Order No</th>
+                  <th className="py-2">Date</th>
+                  <th className="py-2">Customer</th>
+                  <th className="py-2">Product</th>
+                  <th className="py-2">Amount</th>
+                  <th className="py-2">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {allOrders.map((o) => (
+                  <tr key={o.id}>
+                    <td className="py-2.5 font-mono text-brand-400">{o.order_no}</td>
+                    <td className="py-2.5 text-slate-400">{new Date(o.created_at).toLocaleString()}</td>
+                    <td className="py-2.5 text-slate-200">{o.email}</td>
+                    <td className="py-2.5 text-slate-200">{o.product_title}</td>
+                    <td className="py-2.5 font-bold text-emerald-400">${o.total_amount.toFixed(2)}</td>
+                    <td className="py-2.5">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        o.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
+                      }`}>{o.status}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Catalog Editor */}
+      {activeTab === "catalog" && (
+        <div className="glass-panel rounded-2xl p-6 border border-white/10">
+          <h3 className="text-base font-bold text-white mb-4">Product Catalog & Pricing Editor</h3>
+          <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+            <table className="w-full text-left text-xs relative">
+              <thead className="text-slate-400 border-b border-white/10 sticky top-0 bg-slate-900">
+                <tr>
+                  <th className="py-2">Country</th>
+                  <th className="py-2">Product</th>
+                  <th className="py-2">Data / Validity</th>
+                  <th className="py-2">Base Cost</th>
+                  <th className="py-2">Retail Price</th>
+                  <th className="py-2">Status</th>
+                  <th className="py-2">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {catalog.map((p) => (
+                  <tr key={p.id}>
+                    <td className="py-2.5 font-bold text-white">{p.country}</td>
+                    <td className="py-2.5 text-brand-300">{p.title}</td>
+                    <td className="py-2.5 text-slate-400">{p.data_gb} GB / {p.validity_days} Days</td>
+                    <td className="py-2.5 text-slate-400">${p.cost_price.toFixed(2)}</td>
+                    <td className="py-2.5">
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        defaultValue={p.retail_price}
+                        onBlur={(e) => handleUpdateProductPrice(p.id, e.target.value)}
+                        className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-20 text-white"
+                      />
+                    </td>
+                    <td className="py-2.5">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        p.is_active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
+                      }`}>{p.is_active ? 'ACTIVE' : 'INACTIVE'}</span>
+                    </td>
+                    <td className="py-2.5">
+                      <button 
+                        onClick={() => handleToggleProduct(p.id, p.is_active)}
+                        className="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1 rounded"
+                      >
+                        Toggle
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Staff & Users */}
+      {activeTab === "users" && (
+        <div className="glass-panel rounded-2xl p-6 border border-white/10">
+          <h3 className="text-base font-bold text-white mb-4">Staff & User Management</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="text-slate-400 border-b border-white/10">
+                <tr>
+                  <th className="py-2">User ID</th>
+                  <th className="py-2">Email</th>
+                  <th className="py-2">Role</th>
+                  <th className="py-2">Joined</th>
+                  <th className="py-2">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {users.map((u) => (
+                  <tr key={u.id}>
+                    <td className="py-2.5 font-mono text-slate-400">{u.id.substring(0,8)}...</td>
+                    <td className="py-2.5 text-slate-200">{u.email}</td>
+                    <td className="py-2.5 font-bold text-brand-400">{u.role}</td>
+                    <td className="py-2.5 text-slate-400">{new Date(u.created_at).toLocaleDateString()}</td>
+                    <td className="py-2.5 space-x-2">
+                      <select 
+                        value={u.role} 
+                        onChange={(e) => handleUpdateRole(u.id, e.target.value)}
+                        className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white"
+                      >
+                        <option value="USER">User</option>
+                        <option value="MERCHANT">Merchant</option>
+                        <option value="ADMIN">Admin</option>
+                        <option value="SUPER_ADMIN">Super Admin</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

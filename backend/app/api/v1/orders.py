@@ -181,3 +181,33 @@ async def list_my_esims(current_user: User = Depends(get_current_user), db: Asyn
             "is_beneficiary": profile.beneficiary_id == current_user.id
         })
     return results
+
+
+@router.get("/reseller-orders")
+async def list_reseller_orders(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if current_user.role not in [UserRole.MERCHANT, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+        raise HTTPException(status_code=403, detail="Not authorized for reseller orders")
+        
+    query = (
+        select(Order, User, Product, ESIMProfile)
+        .join(User, Order.beneficiary_id == User.id)
+        .join(Product, Order.product_id == Product.id)
+        .outerjoin(ESIMProfile, Order.id == ESIMProfile.order_id)
+        .where(Order.buyer_id == current_user.id, Order.is_reseller_order == True)
+        .order_by(Order.created_at.desc())
+    )
+    res = await db.execute(query)
+    results = []
+    for order, user, product, profile in res.all():
+        results.append({
+            "order_id": order.id,
+            "order_no": order.order_no,
+            "beneficiary_username": user.username,
+            "product_title": product.title_en,
+            "total_amount": float(order.total_amount),
+            "commission_earned": float(order.reseller_commission_amount or 0),
+            "status": order.status.value,
+            "iccid": profile.iccid if profile else None,
+            "created_at": order.created_at
+        })
+    return results

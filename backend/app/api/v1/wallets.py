@@ -55,3 +55,36 @@ async def submit_manual_deposit(
     await db.commit()
     await db.refresh(deposit)
     return deposit
+
+
+@router.get("/ledger/{wallet_type}")
+async def get_wallet_ledger(wallet_type: WalletType, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    from app.models.wallet import LedgerEntry
+    # Get the specific wallet
+    w_res = await db.execute(
+        select(Wallet).where(Wallet.user_id == current_user.id, Wallet.wallet_type == wallet_type)
+    )
+    wallet = w_res.scalar_one_or_none()
+    if not wallet:
+        raise HTTPException(status_code=404, detail="Wallet not found")
+        
+    # Get ledger entries
+    l_res = await db.execute(
+        select(LedgerEntry)
+        .where(LedgerEntry.wallet_id == wallet.id)
+        .order_by(LedgerEntry.created_at.desc())
+        .limit(100)
+    )
+    entries = l_res.scalars().all()
+    return [
+        {
+            "id": e.id,
+            "transaction_type": e.transaction_type.value,
+            "amount": float(e.amount),
+            "balance_after": float(e.balance_after),
+            "reference_type": e.reference_type.value if e.reference_type else None,
+            "description": e.description,
+            "created_at": e.created_at
+        }
+        for e in entries
+    ]

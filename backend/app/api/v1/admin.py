@@ -19,6 +19,20 @@ from app.services.audit_svc import AuditService
 from app.services.vivape_adapter import VivaPeAdapter
 from app.services.currency_svc import CurrencyService
 
+
+from pydantic import BaseModel
+from typing import Optional
+
+class ProductUpdateRequest(BaseModel):
+    retail_price: Optional[float] = None
+    is_active: Optional[bool] = None
+
+class UserRoleUpdateRequest(BaseModel):
+    role: UserRole
+
+class UserStatusUpdateRequest(BaseModel):
+    is_active: bool
+
 router = APIRouter(prefix="/admin", tags=["Admin & Super Admin"])
 
 # --- Overview & Analytics ---
@@ -295,3 +309,114 @@ async def get_audit_logs(limit: int = 50, db: AsyncSession = Depends(get_db)):
 async def get_supplier_logs(limit: int = 50, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(SupplierTransactionLog).order_by(SupplierTransactionLog.created_at.desc()).limit(limit))
     return res.scalars().all()
+
+
+# --- Admin Operations: Customer Orders Viewer ---
+@router.get("/orders", dependencies=[Depends(require_admin)])
+async def get_all_orders(limit: int = 100, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(
+        select(Order, User, Product)
+        .join(User, Order.buyer_id == User.id)
+        .join(Product, Order.product_id == Product.id)
+        .order_by(Order.created_at.desc())
+        .limit(limit)
+    )
+    return [
+        {
+            "id": o.id,
+            "order_no": o.order_no,
+            "username": u.username,
+            "email": u.email,
+            "product_title": p.title_en,
+            "total_amount": float(o.total_amount),
+            "currency": o.currency,
+            "status": o.status.value,
+            "created_at": o.created_at
+        }
+        for o, u, p in res.all()
+    ]
+
+# --- Admin Operations: Catalog Editor ---
+@router.get("/catalog", dependencies=[Depends(require_admin)])
+async def get_admin_catalog(limit: int = 200, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(
+        select(Product, Country)
+        .join(Country, Product.country_id == Country.id)
+        .order_by(Product.created_at.desc())
+        .limit(limit)
+    )
+    return [
+        {
+            "id": p.id,
+            "title": p.title_en,
+            "country": c.name_en,
+            "data_gb": float(p.data_amount_gb),
+            "validity_days": p.validity_days,
+            "cost_price": float(p.cost_price),
+            "retail_price": float(p.retail_price),
+            "currency": p.currency,
+            "is_active": p.is_active
+        }
+        for p, c in res.all()
+    ]
+
+@router.put("/catalog/{product_id}", dependencies=[Depends(require_admin)])
+async def update_product(
+    product_id: str,
+    req: ProductUpdateRequest,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(select(Product).where(Product.id == product_id))
+    p = res.scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    if req.retail_price is not None:
+        p.retail_price = Decimal(str(req.retail_price))
+    if req.is_active is not None:
+        p.is_active = req.is_active
+        
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_CATALOG_PRODUCT", after_state={"product_id": p.id, "retail_price": float(p.retail_price), "is_active": p.is_active}
+    )
+    await db.commit()
+    return {"status": "success", "product_id": p.id}
+
+# --- Super Admin: Staff Management ---
+@router.get("/users", dependencies=[Depends(require_super_admin)])
+async def get_all_users(limit: int = 100, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(User).order_by(User.created_at.desc()).limit(limit))
+    users = res.scalars().all()
+    return [
+        {
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "role": u.role.value,
+            "is_active": getattr(u, 'is_active', True),
+            "created_at": u.created_at
+        }
+        for u in users
+    ]
+
+@router.put("/users/{user_id}/role", dependencies=[Depends(require_super_admin)])
+async def update_user_role(
+    user_id: str,
+    req: UserRoleUpdateRequest,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(select(User).where(User.id == user_id))
+    u = res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    u.role = req.role
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_USER_ROLE", after_state={"user_id": u.id, "new_role": req.role.value}
+    )
+    await db.commit()
+    return {"status": "success"}
