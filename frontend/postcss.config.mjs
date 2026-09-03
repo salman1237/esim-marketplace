@@ -1,4 +1,4 @@
-﻿const postcssConfig = {
+const postcssConfig = {
   plugins: {
     tailwindcss: {},
     autoprefixer: {},
