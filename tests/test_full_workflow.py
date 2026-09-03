@@ -22,7 +22,7 @@ async def run_tests():
             "email": user_email,
             "username": username,
             "password": user_pass,
-            "phone_number": "+8801700000000"
+            "phone": "+8801700000000"
         })
         assert res.status_code == 200, f"Register failed: {res.text}"
         print(" -> Success!")
