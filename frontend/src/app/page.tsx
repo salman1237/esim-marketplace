@@ -8,6 +8,8 @@ import { useAppSettings } from "@/lib/AppSettingsContext";
 export default function HomePage() {
   const { formatPrice } = useAppSettings();
   const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [countries, setCountries] = useState<any[]>([]);
   const [selectedCountry, setSelectedCountry] = useState<any | null>(null);
   const [products, setProducts] = useState<any[]>([]);
@@ -37,6 +39,27 @@ export default function HomePage() {
         setCountries(defaultPopular.map((d, i) => ({ id: i + 1, iso2: d.iso2, name_en: d.name, flag_url: `https://flagcdn.com/w80/${d.iso2.toLowerCase()}.png` })));
       });
   }, []);
+
+  // Full-catalog autocomplete: the popular-destinations grid above only
+  // ever holds ~10 countries, so filtering it client-side silently found
+  // nothing for the other 200+ (e.g. "Vietnam", "Malaysia"). Debounced
+  // search against the real /catalog/countries?search= endpoint instead.
+  useEffect(() => {
+    const term = search.trim();
+    if (!term) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+    setSearchLoading(true);
+    const handle = setTimeout(() => {
+      api.getCountries(term)
+        .then((data) => setSearchResults(data || []))
+        .catch(() => setSearchResults([]))
+        .finally(() => setSearchLoading(false));
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [search]);
 
   const handleSelectCountry = async (c: any) => {
     setSelectedCountry(c);
@@ -79,10 +102,11 @@ export default function HomePage() {
     }
   };
 
-  const filtered = countries.filter((c) =>
-    (c.name_en || c.name || "").toLowerCase().includes(search.toLowerCase()) ||
-    c.iso2.toLowerCase().includes(search.toLowerCase())
-  );
+  const handleSelectSearchResult = (country: any) => {
+    setSearch("");
+    setSearchResults([]);
+    handleSelectCountry(country);
+  };
 
   return (
     <div className="space-y-16">
@@ -115,8 +139,37 @@ export default function HomePage() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Where are you traveling? (e.g. Thailand, USA, Japan)..."
               className="bg-transparent border-none focus:outline-none w-full px-3 py-2 text-sm text-white placeholder-slate-500"
+              autoComplete="off"
             />
           </div>
+
+          {search.trim() && (
+            <div className="absolute top-full inset-x-0 mt-2 glass-panel rounded-2xl shadow-2xl border border-white/10 max-h-80 overflow-y-auto text-start z-40">
+              {searchLoading ? (
+                <p className="px-4 py-3 text-xs text-slate-400">Searching...</p>
+              ) : searchResults.length === 0 ? (
+                <p className="px-4 py-3 text-xs text-slate-400">No destinations match "{search}"</p>
+              ) : (
+                searchResults.map((c) => (
+                  <button
+                    key={c.id ?? c.iso2}
+                    onClick={() => handleSelectSearchResult(c)}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 hover:bg-white/5 text-start"
+                  >
+                    <div className="w-7 h-5 rounded overflow-hidden shrink-0 border border-white/10 bg-slate-800 flex items-center justify-center">
+                      {c.flag_url ? (
+                        <img src={c.flag_url} alt={c.name_en || c.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-xs">🌍</span>
+                      )}
+                    </div>
+                    <span className="text-sm text-white">{c.name_en || c.name}</span>
+                    <span className="text-[10px] text-slate-500 ms-auto">{c.iso2}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
         </div>
 
         {/* Value Props */}
@@ -137,7 +190,7 @@ export default function HomePage() {
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-4">
-          {filtered.map((country) => (
+          {countries.map((country) => (
             <button
               key={country.iso2}
               onClick={() => handleSelectCountry(country)}
