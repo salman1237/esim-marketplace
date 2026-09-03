@@ -62,18 +62,20 @@ jobs:
             -d "$payload")
           echo "Trigger response: $trigger_response"
 
-          echo "Polling deployment status..."
+          echo "Polling deployment status via deployment.allByCompose (properly date-sorted — compose.one's embedded deployments array is not reliably ordered)..."
           for i in $(seq 1 40); do
             sleep 15
-            status=$(curl -sf -H "x-api-key: $DOKPLOY_API_KEY" "$DOKPLOY_URL/api/compose.one?composeId=$COMPOSE_ID" | python3 -c "import json,sys; print(json.load(sys.stdin)['deployments'][0]['status'])")
+            latest=$(curl -sf -H "x-api-key: $DOKPLOY_API_KEY" "$DOKPLOY_URL/api/deployment.allByCompose?composeId=$COMPOSE_ID" \
+              | python3 -c "import json,sys; d=sorted(json.load(sys.stdin), key=lambda x: x['createdAt'], reverse=True); print(d[0]['status'] + '|' + d[0]['logPath'])")
+            status="${latest%%|*}"
+            logpath="${latest#*|}"
             echo "  [$((i * 15))s] status: $status"
             if [ "$status" = "done" ]; then
               echo "Deployment succeeded."
               exit 0
             fi
             if [ "$status" = "error" ]; then
-              echo "Deployment failed. Fetching log path for diagnosis..."
-              curl -sf -H "x-api-key: $DOKPLOY_API_KEY" "$DOKPLOY_URL/api/compose.one?composeId=$COMPOSE_ID" | python3 -c "import json,sys; print(json.load(sys.stdin)['deployments'][0]['logPath'])"
+              echo "Deployment failed. Log: $logpath"
               exit 1
             fi
           done
