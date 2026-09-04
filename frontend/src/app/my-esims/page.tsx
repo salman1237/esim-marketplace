@@ -139,6 +139,7 @@ function EsimCard({ item }: { item: any }) {
 export default function MyESIMsPage() {
   const [esims, setEsims] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [paymentBanner, setPaymentBanner] = useState<{ kind: "success" | "failed"; reason?: string } | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("esim_token");
@@ -146,6 +147,16 @@ export default function MyESIMsPage() {
       window.location.href = "/auth/login";
       return;
     }
+
+    // ShurjoPay redirects the browser back here after a direct-gateway
+    // eSIM purchase — see GET /api/v1/payments/shurjopay/callback.
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get("payment");
+    if (payment === "success" || payment === "failed") {
+      setPaymentBanner({ kind: payment, reason: params.get("reason") || undefined });
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
     api.getMyESIMs(token)
       .then(setEsims)
       .catch(console.error)
@@ -160,6 +171,18 @@ export default function MyESIMsPage() {
           Scan the QR code or manually install the LPA string in your phone's cellular settings.
         </p>
       </div>
+
+      {paymentBanner && (
+        <div className={`mb-6 p-3 rounded-xl border text-xs font-medium ${
+          paymentBanner.kind === "success"
+            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
+            : "bg-rose-500/10 border-rose-500/20 text-rose-300"
+        }`}>
+          {paymentBanner.kind === "success"
+            ? "Payment received — your eSIM is ready below."
+            : `Payment was not completed${paymentBanner.reason ? ` (${paymentBanner.reason.replace(/_/g, " ")})` : ""}. No charge was made.`}
+        </div>
+      )}
 
       {loading ? (
         <div className="py-20 text-center text-sm text-slate-400">Loading your eSIM profiles...</div>

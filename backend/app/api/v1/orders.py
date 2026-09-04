@@ -1,24 +1,22 @@
 import uuid
 import asyncio
 from decimal import Decimal
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db, AsyncSessionLocal
 from app.core.deps import get_current_user
-from app.core.security import get_password_hash
 from app.models.user import User, UserRole
 from app.models.merchant import MerchantProfile
 from app.models.catalog import Product
 from app.models.wallet import Wallet, WalletType, LedgerRefType
-from app.models.order import Order, OrderStatus, PaymentMethod, ESIMProfile, ESIMStatus
+from app.models.order import Order, OrderStatus, PaymentMethod, ESIMProfile
 from app.schemas.order import OrderCreateRequest, OrderResponse, ESIMProfileResponse
 from app.services.ledger_svc import LedgerService
-from app.services.vivape_adapter import VivaPeAdapter
-from app.services.audit_svc import AuditService
 from app.services.email_svc import EmailService
+from app.services.checkout_svc import resolve_beneficiary, provision_esim, RESELLER_ROLES
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -32,8 +30,6 @@ async def _send_order_confirmation_background(email: str, order_no: str, product
             await EmailService.send_order_confirmation(bg_db, email, order_no, product_title, iccid, lpa_string)
         except Exception as e:
             logger.warning("order_confirmation_email_background_task_failed", email=email, error=str(e))
-
-RESELLER_ROLES = {UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MERCHANT}
 
 
 @router.post("/checkout", response_model=OrderResponse)
@@ -52,34 +48,20 @@ async def checkout_esim(
         raise HTTPException(status_code=404, detail="Product not found or inactive")
 
     # 2. Determine Beneficiary
-    beneficiary_id = current_user.id
-    if req.is_buy_for_user:
-        if req.auto_create_user:
-            auto_username = f"user_{uuid.uuid4().hex[:8]}"
-            auto_email = f"{auto_username}@customer.esim.local"
-            new_user = User(
-                email=auto_email,
-                username=auto_username,
-                hashed_password=get_password_hash(uuid.uuid4().hex),
-                role=UserRole.USER
-            )
-            db.add(new_user)
-            await db.flush()
-            await LedgerService.ensure_wallets_for_user(db, new_user.id, new_user.role)
-            beneficiary_id = new_user.id
-        elif req.beneficiary_username or req.beneficiary_email:
-            u_query = select(User).where(
-                (User.username == req.beneficiary_username) | (User.email == req.beneficiary_email)
-            )
-            b_res = await db.execute(u_query)
-            target = b_res.scalar_one_or_none()
-            if not target:
-                raise HTTPException(status_code=404, detail="Beneficiary user account not found")
-            beneficiary_id = target.id
+    try:
+        beneficiary_id = await resolve_beneficiary(
+            db, current_user, req.is_buy_for_user, req.auto_create_user,
+            req.beneficiary_username, req.beneficiary_email
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
-    # 3. Only WALLET checkout is handled here; gateway checkout goes through /payments
+    # 3. Only WALLET checkout is handled here; gateway checkout is
+    # POST /payments/shurjopay/order-initiate, which redirects to ShurjoPay
+    # and completes this same provisioning from the payment callback
+    # instead of synchronously (see checkout_svc.provision_esim).
     if req.payment_method != PaymentMethod.WALLET:
-        raise HTTPException(status_code=400, detail="Use /payments/shurjopay/initiate for gateway checkout")
+        raise HTTPException(status_code=400, detail="Use POST /payments/shurjopay/order-initiate for gateway checkout")
 
     total_cost = Decimal(str(product.retail_price))
 
@@ -139,82 +121,16 @@ async def checkout_esim(
             )
             order.reseller_commission_amount = commission_amount
 
-    # 4. Provision eSIM Profile from VivaPe. A supplier failure does NOT
-    # silently fabricate a working-looking profile — it's flagged via
-    # is_mock_fallback so admins can see and reconcile it, since the customer
-    # has already been charged.
-    iccid = f"89882{uuid.uuid4().hex[:14].upper()}"
-    matching_id = uuid.uuid4().hex[:12].upper()
-    smdp = "rsp.truphone.com"
-    lpa = f"LPA:1${smdp}${matching_id}"
-    qr_data = lpa
-    is_mock_fallback = True
-
-    if product.supplier_product_id and product.supplier_receiver_amount is not None:
-        try:
-            # receiver_amount is NOT the price — confirmed against VivaPe's
-            # live catalog it's a supplier-defined quantity whose meaning
-            # varies by product type (MB of data for esimgo_bundle, a
-            # different cost-like unit for worldmove_esim). It must be the
-            # exact value VivaPe's own catalog reported for this product at
-            # sync time (see catalog_parsing.py), never derived from
-            # cost_price — that was the previous behavior and would have
-            # provisioned drastically wrong data amounts on every real
-            # purchase.
-            trx = await VivaPeAdapter.create_transaction(
-                db, product.supplier_product_id, Decimal(str(product.supplier_receiver_amount))
-            )
-            # purchase_trx is a dict with "id" on success, but VivaPe
-            # returns it as an empty list ([]) alongside an "error" string
-            # on failure — confirmed live via supplier_transaction_logs
-            # (e.g. {"error": "Transaction Failed!!", "purchase_trx": []}).
-            purchase_trx = trx.get("purchase_trx") if isinstance(trx, dict) else None
-            trx_id = purchase_trx.get("id") if isinstance(purchase_trx, dict) else None
-            if trx_id:
-                esim_data = await VivaPeAdapter.get_esim_by_trx(db, trx_id)
-                if esim_data.get("iccid"):
-                    iccid = esim_data["iccid"]
-                    lpa = esim_data.get("lpa") or lpa
-                    qr_data = esim_data.get("qr_code") or lpa
-                    is_mock_fallback = False
-            else:
-                logger.warning(
-                    "vivape_provisioning_failed_using_mock_fallback",
-                    order_id=order.id,
-                    vivape_error=trx.get("error") if isinstance(trx, dict) else str(trx)
-                )
-        except Exception as e:
-            logger.warning("vivape_provisioning_failed_using_mock_fallback", order_id=order.id, error=str(e))
-
-    if is_mock_fallback:
-        await AuditService.log_action(
-            db, actor_id=current_user.id, actor_role=current_user.role.value,
-            action="MOCK_ESIM_FALLBACK",
-            after_state={"order_id": order.id, "product_id": product.id, "reason": "VivaPe provisioning unavailable or failed"}
-        )
-
-    profile = ESIMProfile(
-        order_id=order.id,
-        beneficiary_id=beneficiary_id,
-        iccid=iccid,
-        lpa_string=lpa,
-        qr_code_data=qr_data,
-        smdp_address=smdp,
-        matching_id=matching_id,
-        status=ESIMStatus.RELEASED,
-        is_mock_fallback=is_mock_fallback,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=product.validity_days)
-    )
-    db.add(profile)
-
-    order.status = OrderStatus.COMPLETED
+    # 4. Provision eSIM Profile from VivaPe (shared with the ShurjoPay
+    # gateway path, which calls this same function from its callback).
+    profile = await provision_esim(db, order, product, beneficiary_id, current_user.id, current_user.role.value)
     await db.commit()
 
     beneficiary_res = await db.execute(select(User.email).where(User.id == beneficiary_id))
     beneficiary_email = beneficiary_res.scalar_one_or_none()
     if beneficiary_email:
         asyncio.create_task(_send_order_confirmation_background(
-            beneficiary_email, order.order_no, product.title_en, iccid, lpa
+            beneficiary_email, order.order_no, product.title_en, profile.iccid, profile.lpa_string
         ))
 
     # Re-fetch with the eSIM profile eagerly loaded: Pydantic's response

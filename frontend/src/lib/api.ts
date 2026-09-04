@@ -63,6 +63,7 @@ export const api = {
 
   // Orders
   checkout: (token: string, data: any) => fetchApi("/api/v1/orders/checkout", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  initiateOrderPayment: (token: string, productId: string) => fetchApi("/api/v1/payments/shurjopay/order-initiate", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ product_id: productId, payment_method: "SHURJOPAY" }) }),
   getMyESIMs: (token: string) => fetchApi("/api/v1/orders/my-esims", { headers: { Authorization: `Bearer ${token}` } }),
   getResellerOrders: (token: string) => fetchApi("/api/v1/orders/reseller-orders", { headers: { Authorization: `Bearer ${token}` } }),
 

@@ -102,6 +102,29 @@ export default function HomePage() {
     }
   };
 
+  const handleBuyViaGateway = async (product: any) => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) {
+      window.location.href = "/auth/login";
+      return;
+    }
+
+    setPurchasing(true);
+    try {
+      const res = await api.initiateOrderPayment(token, product.id);
+      const checkoutUrl = res.checkout_url || res.checkoutUrl;
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
+      } else {
+        alert("ShurjoPay did not return a checkout link. Please try again or pay from your wallet.");
+      }
+    } catch (err: any) {
+      alert(err.message || "Failed to start checkout");
+    } finally {
+      setPurchasing(false);
+    }
+  };
+
   const handleSelectSearchResult = (country: any) => {
     setSearch("");
     setSearchResults([]);
@@ -251,13 +274,22 @@ export default function HomePage() {
                     </div>
                     <div className="text-end">
                       <div className="text-lg font-black text-emerald-400">{formatPrice(parseFloat(p.retail_price))}</div>
-                      <button
-                        onClick={() => handleBuy(p)}
-                        disabled={purchasing}
-                        className="mt-1 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
-                      >
-                        {purchasing ? "Processing..." : "Buy Now"}
-                      </button>
+                      <div className="mt-1 flex flex-col items-end gap-1">
+                        <button
+                          onClick={() => handleBuy(p)}
+                          disabled={purchasing}
+                          className="bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
+                        >
+                          {purchasing ? "Processing..." : "Buy with Wallet"}
+                        </button>
+                        <button
+                          onClick={() => handleBuyViaGateway(p)}
+                          disabled={purchasing}
+                          className="text-[11px] text-slate-400 hover:text-slate-200 underline underline-offset-2"
+                        >
+                          Pay by Card / Mobile Banking
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
