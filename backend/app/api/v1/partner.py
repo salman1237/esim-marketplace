@@ -1,15 +1,17 @@
 import uuid
 import asyncio
+import secrets
 from decimal import Decimal
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db, AsyncSessionLocal
 from app.core.partner_auth import get_current_partner, PartnerContext
+from app.core.rate_limit import limiter, get_partner_api_key
 from app.models.catalog import Country, Product
 from app.models.merchant import MerchantProfile
 from app.models.wallet import Wallet, WalletType, LedgerRefType
@@ -26,7 +28,9 @@ router = APIRouter(prefix="/partner", tags=["Partner API"])
 
 
 @router.get("/countries", response_model=List[CountryResponse])
+@limiter.limit("120/minute", key_func=get_partner_api_key)
 async def list_countries(
+    request: Request,
     search: Optional[str] = None,
     ctx: PartnerContext = Depends(get_current_partner),
     db: AsyncSession = Depends(get_db)
@@ -40,7 +44,9 @@ async def list_countries(
 
 
 @router.get("/countries/{iso2}/products", response_model=List[ProductResponse])
+@limiter.limit("120/minute", key_func=get_partner_api_key)
 async def list_country_products(
+    request: Request,
     iso2: str,
     ctx: PartnerContext = Depends(get_current_partner),
     db: AsyncSession = Depends(get_db)
@@ -57,7 +63,9 @@ async def list_country_products(
 
 
 @router.get("/me")
+@limiter.limit("120/minute", key_func=get_partner_api_key)
 async def get_partner_profile(
+    request: Request,
     ctx: PartnerContext = Depends(get_current_partner),
     db: AsyncSession = Depends(get_db)
 ):
@@ -121,7 +129,9 @@ async def _process_partner_order_background(order_id: str):
 
 
 @router.post("/orders")
+@limiter.limit("30/minute", key_func=get_partner_api_key)
 async def create_partner_order(
+    request: Request,
     req: PartnerOrderCreateRequest,
     ctx: PartnerContext = Depends(get_current_partner),
     db: AsyncSession = Depends(get_db)
@@ -179,7 +189,9 @@ async def create_partner_order(
 
 
 @router.get("/orders/{order_id}")
+@limiter.limit("120/minute", key_func=get_partner_api_key)
 async def get_partner_order(
+    request: Request,
     order_id: str,
     ctx: PartnerContext = Depends(get_current_partner),
     db: AsyncSession = Depends(get_db)
@@ -192,3 +204,38 @@ async def get_partner_order(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     return _serialize_order(order)
+
+
+class WebhookConfigRequest(BaseModel):
+    webhook_url: Optional[str] = None  # empty/null clears the webhook
+
+
+@router.put("/webhook-config")
+@limiter.limit("10/minute", key_func=get_partner_api_key)
+async def update_webhook_config(
+    request: Request,
+    req: WebhookConfigRequest,
+    ctx: PartnerContext = Depends(get_current_partner),
+    db: AsyncSession = Depends(get_db)
+):
+    m_res = await db.execute(select(MerchantProfile).where(MerchantProfile.id == ctx.merchant.id).with_for_update())
+    merchant = m_res.scalar_one()
+
+    if not req.webhook_url:
+        merchant.webhook_url = None
+        merchant.webhook_secret = None
+        await db.commit()
+        return {"webhook_url": None, "webhook_secret": None}
+
+    merchant.webhook_url = req.webhook_url
+    # A fresh secret every time the URL is (re)configured - never silently
+    # reuse a secret the new endpoint has no way of already knowing.
+    new_secret = f"whsec_{secrets.token_hex(16)}"
+    merchant.webhook_secret = new_secret
+    await db.commit()
+
+    return {
+        "webhook_url": merchant.webhook_url,
+        "webhook_secret": new_secret,
+        "warning": "Store this secret securely - it will not be shown again in full.",
+    }

@@ -24,6 +24,10 @@ export default function AdminConsolePage() {
   const [kycQueue, setKycQueue] = useState<any[]>([]);
   const [commissionTiers, setCommissionTiers] = useState<any[]>([]);
   const [newTier, setNewTier] = useState({ min_volume_usd: "", rate_pct: "" });
+  const [expandedApiPanel, setExpandedApiPanel] = useState<string | null>(null);
+  const [apiKeyStatuses, setApiKeyStatuses] = useState<Record<string, any>>({});
+  const [revealedApiKeys, setRevealedApiKeys] = useState<Record<string, string>>({});
+  const [apiKeyBusy, setApiKeyBusy] = useState<string | null>(null);
   const [viewingDoc, setViewingDoc] = useState<{ url: string; side: string; contentType: string } | null>(null);
 
   const [branding, setBranding] = useState({ platform_name: "eSIM Global", support_email: "support@esim.local", support_phone: "+880 1700-000000", maintenance_mode: false, default_currency: "USD", seo_title: "", seo_description: "" });
@@ -180,6 +184,53 @@ export default function AdminConsolePage() {
       setMerchants(merchants.map(m => m.id === id ? { ...m, commission_rate_pct: rate } : m));
     } catch (err: any) {
       alert("Failed to update commission: " + err.message);
+    }
+  };
+
+  const handleToggleApiPanel = async (merchantId: string) => {
+    if (expandedApiPanel === merchantId) {
+      setExpandedApiPanel(null);
+      return;
+    }
+    setExpandedApiPanel(merchantId);
+    const token = localStorage.getItem("esim_token");
+    if (!token || apiKeyStatuses[merchantId]) return;
+    try {
+      const status = await api.getPartnerApiKeyStatus(token, merchantId);
+      setApiKeyStatuses(prev => ({ ...prev, [merchantId]: status }));
+    } catch (err: any) {
+      alert("Failed to load API key status: " + err.message);
+    }
+  };
+
+  const handleGenerateApiKey = async (merchantId: string) => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    setApiKeyBusy(merchantId);
+    try {
+      const result = await api.generatePartnerApiKey(token, merchantId);
+      setRevealedApiKeys(prev => ({ ...prev, [merchantId]: result.api_key }));
+      setApiKeyStatuses(prev => ({ ...prev, [merchantId]: { has_active_key: true, key_prefix: result.key_prefix, created_at: new Date().toISOString(), last_used_at: null } }));
+    } catch (err: any) {
+      alert("Failed to generate API key: " + err.message);
+    } finally {
+      setApiKeyBusy(null);
+    }
+  };
+
+  const handleRevokeApiKey = async (merchantId: string) => {
+    if (!confirm("Revoke this partner's active API key? Their integration will stop working immediately.")) return;
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    setApiKeyBusy(merchantId);
+    try {
+      await api.revokePartnerApiKey(token, merchantId);
+      setApiKeyStatuses(prev => ({ ...prev, [merchantId]: { has_active_key: false } }));
+      setRevealedApiKeys(prev => { const next = { ...prev }; delete next[merchantId]; return next; });
+    } catch (err: any) {
+      alert("Failed to revoke API key: " + err.message);
+    } finally {
+      setApiKeyBusy(null);
     }
   };
 
@@ -390,7 +441,8 @@ export default function AdminConsolePage() {
               </thead>
               <tbody className="divide-y divide-white/5">
                 {merchants.map((m) => (
-                  <tr key={m.id}>
+                  <React.Fragment key={m.id}>
+                  <tr>
                     <td className="py-3 font-semibold text-white">{m.business_name}</td>
                     <td className="py-3 text-slate-300">{m.contact_phone}</td>
                     <td className="py-3">
@@ -414,7 +466,7 @@ export default function AdminConsolePage() {
                         <span className="text-slate-300">{m.commission_rate_pct}%</span>
                       )}
                     </td>
-                    <td className="py-3">
+                    <td className="py-3 flex gap-2">
                       {m.status === "PENDING" && (
                         <button
                           onClick={() => handleApproveMerchant(m.id)}
@@ -423,8 +475,67 @@ export default function AdminConsolePage() {
                           Approve Partner
                         </button>
                       )}
+                      {m.status === "APPROVED" && (
+                        <button
+                          onClick={() => handleToggleApiPanel(m.id)}
+                          className="bg-slate-700 hover:bg-slate-600 text-white px-2.5 py-1 rounded text-[11px] font-bold"
+                        >
+                          {expandedApiPanel === m.id ? "Hide API Access" : "API Access"}
+                        </button>
+                      )}
                     </td>
                   </tr>
+                  {expandedApiPanel === m.id && (
+                    <tr>
+                      <td colSpan={5} className="py-4 bg-slate-900/60">
+                        <div className="px-3">
+                          <h4 className="text-xs font-bold text-white mb-2">Partner Reseller API Access</h4>
+                          {!apiKeyStatuses[m.id] ? (
+                            <span className="text-xs text-slate-400">Loading...</span>
+                          ) : (
+                            <div className="flex flex-col gap-2">
+                              <div className="flex items-center gap-3 text-xs text-slate-300">
+                                <span>Status:</span>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${apiKeyStatuses[m.id].has_active_key ? "bg-emerald-500/10 text-emerald-400" : "bg-slate-700 text-slate-400"}`}>
+                                  {apiKeyStatuses[m.id].has_active_key ? "ACTIVE" : "NO KEY ISSUED"}
+                                </span>
+                                {apiKeyStatuses[m.id].has_active_key && (
+                                  <span className="font-mono text-slate-500">{apiKeyStatuses[m.id].key_prefix}...</span>
+                                )}
+                              </div>
+                              {revealedApiKeys[m.id] && (
+                                <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-[11px]">
+                                  <p className="text-amber-400 font-bold mb-1">Copy this key now — it will not be shown again:</p>
+                                  <code className="block break-all text-white bg-slate-950 rounded px-2 py-1">{revealedApiKeys[m.id]}</code>
+                                </div>
+                              )}
+                              {isSuperAdmin && (
+                                <div className="flex gap-2 mt-1">
+                                  <button
+                                    disabled={apiKeyBusy === m.id}
+                                    onClick={() => handleGenerateApiKey(m.id)}
+                                    className="bg-admin-600 hover:bg-admin-500 disabled:opacity-50 text-white px-2.5 py-1 rounded text-[11px] font-bold"
+                                  >
+                                    {apiKeyStatuses[m.id].has_active_key ? "Regenerate Key" : "Generate Key"}
+                                  </button>
+                                  {apiKeyStatuses[m.id].has_active_key && (
+                                    <button
+                                      disabled={apiKeyBusy === m.id}
+                                      onClick={() => handleRevokeApiKey(m.id)}
+                                      className="bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white px-2.5 py-1 rounded text-[11px] font-bold"
+                                    >
+                                      Revoke Key
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>

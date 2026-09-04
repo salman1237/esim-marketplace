@@ -16,3 +16,11 @@ from app.core.config import settings
 # nothing to do with what they're testing. Real abuse protection only
 # matters where it's actually exposed to the internet.
 limiter = Limiter(key_func=get_remote_address, enabled=settings.ENVIRONMENT == "production")
+
+
+def get_partner_api_key(request):
+    """Rate-limit key for /partner/* routes — keyed by the caller's raw
+    API key rather than IP, since a partner's own backend typically calls
+    from a small set of shared/NATed IPs that would otherwise pool every
+    partner behind that IP into one limit."""
+    return request.headers.get("X-API-Key") or get_remote_address(request)
