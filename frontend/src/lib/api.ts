@@ -76,6 +76,7 @@ export const api = {
   },
   overrideCurrency: (token: string, data: any) => fetchApi("/api/v1/admin/currencies/override", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
   getAuditLogs: (token: string) => fetchApi("/api/v1/admin/audit-logs", { headers: { Authorization: `Bearer ${token}` } }),
+  getAuditLogsSummary: (token: string) => fetchApi("/api/v1/admin/audit-logs/summary", { headers: { Authorization: `Bearer ${token}` } }),
   getSupplierLogs: (token: string) => fetchApi("/api/v1/admin/supplier-logs", { headers: { Authorization: `Bearer ${token}` } }),
   
   // New Admin endpoints

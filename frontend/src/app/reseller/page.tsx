@@ -180,6 +180,12 @@ export default function ResellerPortalPage() {
         </div>
 
         <div className="flex gap-3">
+          {userData?.merchant_profile && (
+            <div className="glass-panel px-4 py-2 rounded-xl border border-white/10 text-end">
+              <span className="text-[10px] text-slate-400 uppercase font-semibold block">Your Commission Rate</span>
+              <span className="text-base font-black text-amber-400 font-mono">{userData.merchant_profile.commission_rate_pct}%</span>
+            </div>
+          )}
           <div className="glass-panel px-4 py-2 rounded-xl border border-white/10 text-end">
             <span className="text-[10px] text-slate-400 uppercase font-semibold block">Commission Wallet</span>
             <span className="text-base font-black text-amber-400 font-mono">{formatPrice(commissionBalance)}</span>
@@ -254,7 +260,7 @@ export default function ResellerPortalPage() {
               </div>
 
               <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300 flex items-center justify-between">
-                <span>5% Partner Commission:</span>
+                <span>{userData?.merchant_profile?.commission_rate_pct ?? 5}% Partner Commission:</span>
                 <span className="font-bold">Instant Credit to Commission Wallet</span>
               </div>
 

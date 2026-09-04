@@ -532,6 +532,26 @@ async def get_audit_logs(limit: int = 50, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit))
     return res.scalars().all()
 
+@router.get("/audit-logs/summary", dependencies=[Depends(require_admin)])
+async def get_audit_logs_summary(limit: int = 50, db: AsyncSession = Depends(get_db)):
+    """Admin (Ops) gets a summarized view - action, actor, timestamp - with
+    none of the forensic detail (before/after diffs, IP, user agent) the
+    full /audit-logs endpoint carries. That detail stays Super-Admin-only;
+    plain Admins previously had no visibility into audit logs at all."""
+    res = await db.execute(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit))
+    logs = res.scalars().all()
+
+    action_counts_res = await db.execute(
+        select(AuditLog.action, func.count(AuditLog.id)).group_by(AuditLog.action)
+    )
+    return {
+        "action_counts": {action: count for action, count in action_counts_res.all()},
+        "recent": [
+            {"id": l.id, "action": l.action, "actor_role": l.actor_role, "created_at": l.created_at}
+            for l in logs
+        ],
+    }
+
 @router.get("/supplier-logs", dependencies=[Depends(require_admin)])
 async def get_supplier_logs(limit: int = 50, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(SupplierTransactionLog).order_by(SupplierTransactionLog.created_at.desc()).limit(limit))
@@ -542,9 +562,10 @@ async def get_supplier_logs(limit: int = 50, db: AsyncSession = Depends(get_db))
 @router.get("/orders", dependencies=[Depends(require_admin)])
 async def get_all_orders(limit: int = 100, db: AsyncSession = Depends(get_db)):
     res = await db.execute(
-        select(Order, User, Product)
+        select(Order, User, Product, ESIMProfile)
         .join(User, Order.buyer_id == User.id)
         .join(Product, Order.product_id == Product.id)
+        .outerjoin(ESIMProfile, Order.id == ESIMProfile.order_id)
         .order_by(Order.created_at.desc())
         .limit(limit)
     )
@@ -558,9 +579,18 @@ async def get_all_orders(limit: int = 100, db: AsyncSession = Depends(get_db)):
             "total_amount": float(o.total_amount),
             "currency": o.currency,
             "status": o.status.value,
-            "created_at": o.created_at
+            "created_at": o.created_at,
+            # Support-tooling data: without this an admin looking into a
+            # "my eSIM won't install" ticket had no way to see the actual
+            # ICCID/QR/LPA from this screen.
+            "iccid": profile.iccid if profile else None,
+            "lpa_string": profile.lpa_string if profile else None,
+            "qr_code_data": profile.qr_code_data if profile else None,
+            "smdp_address": profile.smdp_address if profile else None,
+            "esim_status": profile.status.value if profile else None,
+            "is_mock_fallback": profile.is_mock_fallback if profile else None,
         }
-        for o, u, p in res.all()
+        for o, u, p, profile in res.all()
     ]
 
 # --- Admin Operations: Catalog Editor ---

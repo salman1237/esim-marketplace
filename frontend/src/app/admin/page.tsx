@@ -15,13 +15,14 @@ export default function AdminConsolePage() {
   const [merchants, setMerchants] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditSummary, setAuditSummary] = useState<{ action_counts: Record<string, number>; recent: any[] } | null>(null);
   const [supplierLogs, setSupplierLogs] = useState<any[]>([]);
   const [allOrders, setAllOrders] = useState<any[]>([]);
   const [catalog, setCatalog] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [inspectingLog, setInspectingLog] = useState<any | null>(null);
 
-  const [branding, setBranding] = useState({ platform_name: "eSIM Global", support_email: "support@esim.local", support_phone: "+880 1700-000000", maintenance_mode: false });
+  const [branding, setBranding] = useState({ platform_name: "eSIM Global", support_email: "support@esim.local", support_phone: "+880 1700-000000", maintenance_mode: false, default_currency: "USD" });
   const [brandingAssets, setBrandingAssets] = useState<{ logo_light?: string; logo_dark?: string; favicon?: string }>({});
   const [uploadingKind, setUploadingKind] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
@@ -56,6 +57,7 @@ export default function AdminConsolePage() {
     // non-Super-Admin caller and these simply stay empty (RBAC is enforced
     // server-side; the tabs below just don't render for other roles).
     api.getAuditLogs(token).then(setAuditLogs).catch(() => {});
+    api.getAuditLogsSummary(token).then(setAuditSummary).catch(() => {});
     api.getAdminUsers(token).then(setUsers).catch(() => {});
 
     // Prefill the branding form with the real current values — without
@@ -69,6 +71,7 @@ export default function AdminConsolePage() {
         support_email: s.support_email ?? b.support_email,
         support_phone: s.support_phone ?? b.support_phone,
         maintenance_mode: !!s.maintenance_mode,
+        default_currency: s.default_currency ?? b.default_currency,
       }));
       setBrandingAssets({ logo_light: s.logo_light, logo_dark: s.logo_dark, favicon: s.favicon });
     }).catch(() => {});
@@ -370,6 +373,18 @@ export default function AdminConsolePage() {
                 />
               </div>
               <div>
+                <label className="text-xs text-slate-300 font-semibold block mb-1">Platform Base Currency</label>
+                <select
+                  value={branding.default_currency}
+                  onChange={(e) => setBranding({ ...branding, default_currency: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                >
+                  {["USD", "BDT", "EUR", "GBP", "AED", "SAR", "THB", "SGD"].map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <label className="text-xs text-slate-300 font-semibold block mb-1">Support Email</label>
                 <input
                   type="email"
@@ -497,6 +512,7 @@ export default function AdminConsolePage() {
                   <th className="py-2">Product</th>
                   <th className="py-2">Amount</th>
                   <th className="py-2">Status</th>
+                  <th className="py-2">eSIM</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -511,6 +527,15 @@ export default function AdminConsolePage() {
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                         o.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
                       }`}>{o.status}</span>
+                    </td>
+                    <td className="py-2.5">
+                      {o.iccid ? (
+                        <button onClick={() => setInspectingLog(o)} className="font-mono text-[10px] text-admin-300 hover:text-admin-200 underline underline-offset-2">
+                          {o.iccid.slice(0, 8)}... {o.is_mock_fallback && <span className="text-amber-400">(mock)</span>}
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-slate-600">—</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -691,8 +716,44 @@ export default function AdminConsolePage() {
               </div>
             </div>
           ) : (
-            <div className="glass-panel rounded-2xl p-6 border border-white/10 text-xs text-slate-400">
-              The full administrative audit trail is visible to Super Admins only. You can see supplier API traffic above.
+            <div className="glass-panel rounded-2xl p-6 border border-white/10">
+              <h3 className="text-base font-bold text-white mb-1 flex items-center space-x-2">
+                <FileText className="w-4 h-4 text-amber-400" />
+                <span>Administrative Activity Summary</span>
+              </h3>
+              <p className="text-xs text-slate-400 mb-4">The full audit trail (before/after state, IP, user agent) is Super-Admin-only. This is a summarized view of what's happened.</p>
+
+              {auditSummary && (
+                <>
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {Object.entries(auditSummary.action_counts).map(([action, count]) => (
+                      <span key={action} className="text-[10px] font-bold px-2 py-1 rounded bg-slate-900 border border-slate-700 text-slate-300">
+                        {action}: <span className="text-admin-400">{count}</span>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                    <table className="w-full text-start text-xs">
+                      <thead className="text-slate-400 border-b border-white/10 sticky top-0 bg-slate-900">
+                        <tr>
+                          <th className="py-2">Time</th>
+                          <th className="py-2">Role</th>
+                          <th className="py-2">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {auditSummary.recent.map((log) => (
+                          <tr key={log.id}>
+                            <td className="py-2.5 text-slate-400 font-mono">{new Date(log.created_at).toLocaleTimeString()}</td>
+                            <td className="py-2.5 font-bold text-amber-400">{log.actor_role}</td>
+                            <td className="py-2.5 font-semibold text-white">{log.action}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

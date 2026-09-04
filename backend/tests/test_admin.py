@@ -185,3 +185,55 @@ async def test_branding_upload_rejects_unknown_kind_and_bad_content_type(client,
         headers=sa["headers"],
     )
     assert bad_type.status_code == 400
+
+
+async def test_audit_log_summary_available_to_plain_admin(client, promote_role):
+    """Plain ADMIN gets no access at all to /admin/audit-logs (Super-Admin
+    only, per test_rbac.py), but the RBAC table says they should get a
+    summarized view - not nothing. /admin/audit-logs/summary is that view."""
+    admin = await register_and_login(client, "summaryadmin")
+    await promote_role(admin["user_id"], "ADMIN")
+
+    # Generate at least one real audit log entry to summarize.
+    await client.put("/api/v1/admin/branding", json={"support_email": "x@example.com"}, headers=admin["headers"])
+
+    full = await client.get("/api/v1/admin/audit-logs", headers=admin["headers"])
+    assert full.status_code == 403
+
+    summary = await client.get("/api/v1/admin/audit-logs/summary", headers=admin["headers"])
+    assert summary.status_code == 200, summary.text
+    body = summary.json()
+    assert "action_counts" in body
+    assert "recent" in body
+    # The forensic detail stays out of the summary view entirely.
+    for entry in body["recent"]:
+        assert "before_state" not in entry
+        assert "after_state" not in entry
+        assert "ip_address" not in entry
+
+
+async def test_admin_orders_includes_esim_support_data(client, db_session, promote_role):
+    """Regression test: /admin/orders previously returned no ICCID/QR/LPA
+    at all, so support staff had no way to look up a customer's actual
+    eSIM from this screen without a direct DB query."""
+    from conftest import fund_wallet, create_test_product
+
+    buyer = await register_and_login(client, "esimbuyer")
+    await fund_wallet(db_session, buyer["user_id"], Decimal("50.0000"))
+    product = await create_test_product(db_session, price=Decimal("5.0000"))
+    checkout = await client.post(
+        "/api/v1/orders/checkout",
+        json={"product_id": product.id, "payment_method": "WALLET"},
+        headers=buyer["headers"],
+    )
+    assert checkout.status_code == 200, checkout.text
+    iccid = checkout.json()["esim_profile"]["iccid"]
+
+    admin = await register_and_login(client, "supportadmin")
+    await promote_role(admin["user_id"], "ADMIN")
+    orders = await client.get("/api/v1/admin/orders", headers=admin["headers"])
+    assert orders.status_code == 200
+    matching = next(o for o in orders.json() if o["order_no"] == checkout.json()["order_no"])
+    assert matching["iccid"] == iccid
+    assert matching["qr_code_data"]
+    assert matching["is_mock_fallback"] is True
