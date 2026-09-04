@@ -75,6 +75,7 @@ export default function Footer() {
             <li><Link href="/my-esims" className="hover:text-slate-900">{t("common", "my_esims", "My eSIMs")}</Link></li>
             <li><Link href="/wallet" className="hover:text-slate-900">{t("common", "wallet", "Wallet")} & Top Up</Link></li>
             <li><Link href="/reseller" className="hover:text-slate-900">B2B Reseller Program</Link></li>
+            <li><Link href="/api-docs" className="hover:text-slate-900">API Documentation</Link></li>
           </ul>
         </div>
 
