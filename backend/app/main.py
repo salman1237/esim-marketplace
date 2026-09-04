@@ -20,6 +20,7 @@ from app.models.settings import PlatformSetting, CurrencyRate, Language, Transla
 from app.services.ledger_svc import LedgerService
 from app.services.currency_svc import CurrencyService
 from app.services.catalog_sync_svc import sync_vivape_catalog
+from app.services.webhook_svc import retry_failed_webhooks
 from app.core.seed_translations import SHIPPED_LOCALE_CODES, PLACEHOLDER_LANGUAGES, load_shipped_translations, flatten, EN_TRANSLATIONS
 from app.core.logging import configure_logging, get_logger
 from app.api.v1 import api_v1_router
@@ -141,6 +142,22 @@ async def lifespan(app: FastAPI):
         # catalog ever refreshed automatically. Backgrounded so a slow
         # VivaPe response doesn't delay the app's own startup/health check.
         asyncio.create_task(_scheduled_catalog_sync())
+
+    async def _scheduled_webhook_retry():
+        async with AsyncSessionLocal() as db:
+            try:
+                result = await retry_failed_webhooks(db)
+                if result["retried"]:
+                    logger.info("scheduled_webhook_retry_completed", **result)
+            except Exception as e:
+                logger.warning("scheduled_webhook_retry_failed", error=str(e))
+
+    scheduler.add_job(
+        _scheduled_webhook_retry, "interval", minutes=5,
+        id="partner_webhook_retry_sweep", max_instances=1,
+    )
+    if not scheduler.running:
+        scheduler.start()
 
     yield
 

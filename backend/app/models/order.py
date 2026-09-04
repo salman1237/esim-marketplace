@@ -33,6 +33,10 @@ class Order(Base):
     is_reseller_order = Column(Boolean, default=False)
     reseller_commission_amount = Column(Numeric(18, 4), default=0.0000)
     external_trx_id = Column(String(100), nullable=True)
+    # Partner Reseller API only — the partner's own identifier for this
+    # order, echoed back in GET /partner/orders/{id} and the webhook
+    # payload so they can reconcile without storing our order_id first.
+    partner_customer_reference = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

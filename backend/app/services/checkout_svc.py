@@ -9,9 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.core.security import get_password_hash
 from app.models.user import User, UserRole
+from app.models.merchant import MerchantProfile
 from app.models.order import Order, OrderStatus, ESIMProfile, ESIMStatus
 from app.models.catalog import Product
 from app.models.commission_tier import CommissionTier
+from app.models.wallet import Wallet, WalletType, LedgerRefType
 from app.services.ledger_svc import LedgerService
 from app.services.vivape_adapter import VivaPeAdapter
 from app.services.audit_svc import AuditService
@@ -142,3 +144,33 @@ async def get_effective_commission_rate(db: AsyncSession, merchant_user_id: str,
 
     # Below every configured tier's threshold - the flat rate is the floor.
     return flat_rate_pct
+
+
+async def distribute_commission(db: AsyncSession, order: Order, total_cost: Decimal, buyer: User) -> None:
+    """Credits `buyer`'s COMMISSION wallet for a reseller order, at the
+    tiered/flat rate from get_effective_commission_rate. Shared between
+    the wallet-checkout path (orders.py) and the Partner API order path
+    (partner.py) so the two can't drift apart. No-op for non-merchant or
+    non-reseller orders. Caller commits."""
+    if buyer.role != UserRole.MERCHANT or not order.is_reseller_order:
+        return
+
+    m_res = await db.execute(select(MerchantProfile).where(MerchantProfile.user_id == buyer.id))
+    merchant_profile = m_res.scalar_one_or_none()
+    flat_rate_pct = Decimal(str(merchant_profile.commission_rate_pct)) if merchant_profile else Decimal("5.0")
+    rate_pct = await get_effective_commission_rate(db, buyer.id, flat_rate_pct)
+    commission_amount = (total_cost * (rate_pct / Decimal("100"))).quantize(Decimal("0.0001"))
+
+    cw_res = await db.execute(
+        select(Wallet).where(Wallet.user_id == buyer.id, Wallet.wallet_type == WalletType.COMMISSION)
+    )
+    comm_wallet = cw_res.scalar_one_or_none()
+    if comm_wallet and commission_amount > Decimal("0"):
+        await LedgerService.credit(
+            db, comm_wallet.id, commission_amount,
+            LedgerRefType.COMMISSION_EARNED,
+            ref_id=order.id,
+            description=f"Commission for order {order.order_no} ({rate_pct}%)",
+            idempotency_key=f"order-commission-{order.id}"
+        )
+        order.reseller_commission_amount = commission_amount

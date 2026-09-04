@@ -8,15 +8,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db, AsyncSessionLocal
 from app.core.deps import get_current_user
-from app.models.user import User, UserRole
-from app.models.merchant import MerchantProfile
+from app.models.user import User
 from app.models.catalog import Product
 from app.models.wallet import Wallet, WalletType, LedgerRefType
 from app.models.order import Order, OrderStatus, PaymentMethod, ESIMProfile
 from app.schemas.order import OrderCreateRequest, OrderResponse, ESIMProfileResponse
 from app.services.ledger_svc import LedgerService
 from app.services.email_svc import EmailService
-from app.services.checkout_svc import resolve_beneficiary, provision_esim, get_effective_commission_rate, RESELLER_ROLES
+from app.services.checkout_svc import resolve_beneficiary, provision_esim, distribute_commission, RESELLER_ROLES
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -101,26 +100,7 @@ async def checkout_esim(
         raise HTTPException(status_code=400, detail=str(e))
 
     # Commission Distribution for Merchants buying on behalf of a customer
-    if current_user.role == UserRole.MERCHANT and req.is_buy_for_user:
-        m_res = await db.execute(select(MerchantProfile).where(MerchantProfile.user_id == current_user.id))
-        merchant_profile = m_res.scalar_one_or_none()
-        flat_rate_pct = Decimal(str(merchant_profile.commission_rate_pct)) if merchant_profile else Decimal("5.0")
-        rate_pct = await get_effective_commission_rate(db, current_user.id, flat_rate_pct)
-        commission_amount = (total_cost * (rate_pct / Decimal("100"))).quantize(Decimal("0.0001"))
-
-        cw_res = await db.execute(
-            select(Wallet).where(Wallet.user_id == current_user.id, Wallet.wallet_type == WalletType.COMMISSION)
-        )
-        comm_wallet = cw_res.scalar_one_or_none()
-        if comm_wallet and commission_amount > Decimal("0"):
-            await LedgerService.credit(
-                db, comm_wallet.id, commission_amount,
-                LedgerRefType.COMMISSION_EARNED,
-                ref_id=order.id,
-                description=f"Commission for order {order.order_no} ({rate_pct}%)",
-                idempotency_key=f"order-commission-{order.id}"
-            )
-            order.reseller_commission_amount = commission_amount
+    await distribute_commission(db, order, total_cost, current_user)
 
     # 4. Provision eSIM Profile from VivaPe (shared with the ShurjoPay
     # gateway path, which calls this same function from its callback).

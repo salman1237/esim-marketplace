@@ -9,7 +9,7 @@ from app.models.audit import AuditLog, SupplierTransactionLog
 from app.models.kyc import KYCSubmission, KYCStatus
 from app.models.password_reset import PasswordResetToken
 from app.models.commission_tier import CommissionTier
-from app.models.partner_api import ApiKey
+from app.models.partner_api import ApiKey, WebhookDeliveryLog
 
 __all__ = [
     "User", "UserRole", "UserStatus",
@@ -23,5 +23,5 @@ __all__ = [
     "KYCSubmission", "KYCStatus",
     "PasswordResetToken",
     "CommissionTier",
-    "ApiKey"
+    "ApiKey", "WebhookDeliveryLog"
 ]
