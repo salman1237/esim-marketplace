@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 import structlog
 from decimal import Decimal
@@ -130,6 +131,12 @@ async def lifespan(app: FastAPI):
         )
         scheduler.start()
         logger.info("catalog_sync_scheduler_started", interval_hours=settings.CATALOG_SYNC_INTERVAL_HOURS)
+        # APScheduler's interval trigger only fires after a full interval
+        # has elapsed, not on registration - without this, a deploy would
+        # otherwise wait up to CATALOG_SYNC_INTERVAL_HOURS before the
+        # catalog ever refreshed automatically. Backgrounded so a slow
+        # VivaPe response doesn't delay the app's own startup/health check.
+        asyncio.create_task(_scheduled_catalog_sync())
 
     yield
 
