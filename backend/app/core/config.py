@@ -17,16 +17,20 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     
-    # Upstream Supplier: VivaPe API
+    # Upstream Supplier: VivaPe API. No real credential default here — see
+    # the production boot guard below, which refuses to start with these
+    # dev-only placeholders when ENVIRONMENT=production (same pattern as
+    # SECRET_KEY). Local dev/tests never call the real API directly
+    # (mocked/monkeypatched), so a placeholder is fine there.
     VIVAPE_BASE_URL: str = os.getenv("VIVAPE_BASE_URL", "https://app.vivape.net/api")
-    VIVAPE_EMAIL: str = os.getenv("VIVAPE_EMAIL", "merchantusd@vivape.co")
-    VIVAPE_PASSWORD: str = os.getenv("VIVAPE_PASSWORD", "merchantusd@36")
+    VIVAPE_EMAIL: str = os.getenv("VIVAPE_EMAIL", "dev-only-not-a-real-account@example.com")
+    VIVAPE_PASSWORD: str = os.getenv("VIVAPE_PASSWORD", "dev-only-not-a-real-password")
     VIVAPE_CURRENCY: str = "USD"
-    
-    # Payment Gateway: ShurjoPay Sandbox
+
+    # Payment Gateway: ShurjoPay
     SHURJOPAY_BASE_URL: str = os.getenv("SHURJOPAY_BASE_URL", "https://sandbox.shurjopayment.com")
-    SHURJOPAY_USERNAME: str = os.getenv("SHURJOPAY_USERNAME", "sp_sandbox")
-    SHURJOPAY_PASSWORD: str = os.getenv("SHURJOPAY_PASSWORD", "pyyk97hu&6u6")
+    SHURJOPAY_USERNAME: str = os.getenv("SHURJOPAY_USERNAME", "dev-only-not-a-real-username")
+    SHURJOPAY_PASSWORD: str = os.getenv("SHURJOPAY_PASSWORD", "dev-only-not-a-real-password")
     SHURJOPAY_PREFIX: str = os.getenv("SHURJOPAY_PREFIX", "NOK")
     # Must be a URL the customer's browser can actually reach after leaving
     # the ShurjoPay checkout page — a localhost default here is a real bug,
@@ -68,8 +72,22 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-if settings.ENVIRONMENT == "production" and settings.SECRET_KEY == "dev-only-insecure-secret-key-do-not-use-in-production":
-    raise RuntimeError(
-        "SECRET_KEY environment variable must be set to a unique, random value in production "
-        "(the app refuses to boot with the committed development default)."
-    )
+if settings.ENVIRONMENT == "production":
+    if settings.SECRET_KEY == "dev-only-insecure-secret-key-do-not-use-in-production":
+        raise RuntimeError(
+            "SECRET_KEY environment variable must be set to a unique, random value in production "
+            "(the app refuses to boot with the committed development default)."
+        )
+    _dev_only_placeholders = {
+        "VIVAPE_EMAIL": "dev-only-not-a-real-account@example.com",
+        "VIVAPE_PASSWORD": "dev-only-not-a-real-password",
+        "SHURJOPAY_USERNAME": "dev-only-not-a-real-username",
+        "SHURJOPAY_PASSWORD": "dev-only-not-a-real-password",
+    }
+    _unset = [k for k, placeholder in _dev_only_placeholders.items() if getattr(settings, k) == placeholder]
+    if _unset:
+        raise RuntimeError(
+            f"{', '.join(_unset)} must be set via environment variables in production "
+            "(the app refuses to boot with committed development placeholders — these used to be "
+            "real credentials hardcoded in this file, which is exactly the problem this guard exists to prevent)."
+        )

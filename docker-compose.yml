@@ -32,11 +32,11 @@ services:
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
       VIVAPE_BASE_URL: ${VIVAPE_BASE_URL:-https://app.vivape.net/api}
-      VIVAPE_EMAIL: ${VIVAPE_EMAIL:-merchantusd@vivape.co}
-      VIVAPE_PASSWORD: ${VIVAPE_PASSWORD:-merchantusd@36}
+      VIVAPE_EMAIL: ${VIVAPE_EMAIL:?VIVAPE_EMAIL env var is required}
+      VIVAPE_PASSWORD: ${VIVAPE_PASSWORD:?VIVAPE_PASSWORD env var is required}
       SHURJOPAY_BASE_URL: ${SHURJOPAY_BASE_URL:-https://sandbox.shurjopayment.com}
-      SHURJOPAY_USERNAME: ${SHURJOPAY_USERNAME:-sp_sandbox}
-      SHURJOPAY_PASSWORD: ${SHURJOPAY_PASSWORD:-pyyk97hu&6u6}
+      SHURJOPAY_USERNAME: ${SHURJOPAY_USERNAME:?SHURJOPAY_USERNAME env var is required}
+      SHURJOPAY_PASSWORD: ${SHURJOPAY_PASSWORD:?SHURJOPAY_PASSWORD env var is required}
       SHURJOPAY_PREFIX: ${SHURJOPAY_PREFIX:-NOK}
       SHURJOPAY_RETURN_URL: ${SHURJOPAY_RETURN_URL:-https://esim.salmandev.io/api/v1/payments/shurjopay/callback}
       SHURJOPAY_CANCEL_URL: ${SHURJOPAY_CANCEL_URL:-https://esim.salmandev.io/wallet?topup=cancelled}
