@@ -45,6 +45,23 @@ class Settings(BaseSettings):
     # processing — the frontend's own origin, not this API's.
     FRONTEND_BASE_URL: str = os.getenv("FRONTEND_BASE_URL", "https://esim.salmandev.io")
 
+    # Transactional email (password reset, order confirmation, welcome).
+    # Deliberately optional, unlike the VivaPe/ShurjoPay/SECRET_KEY guards:
+    # an unconfigured SMTP_HOST means EmailService just logs a warning and
+    # skips sending rather than failing the request that triggered it -
+    # registration/checkout must never break because email isn't set up.
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USERNAME: str = os.getenv("SMTP_USERNAME", "")
+    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+    SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+    SMTP_FROM_EMAIL: str = os.getenv("SMTP_FROM_EMAIL", "no-reply@esim.local")
+    SMTP_FROM_NAME: str = os.getenv("SMTP_FROM_NAME", "eSIM Global")
+
+    @property
+    def smtp_configured(self) -> bool:
+        return bool(self.SMTP_HOST and self.SMTP_USERNAME)
+
     # Admin-uploaded branding assets (logo/favicon). Defaults to "uploads"
     # (relative to the process's working directory) so local dev and CI —
     # where /app doesn't exist and isn't creatable without root — just get

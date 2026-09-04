@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 style="color:#ffffff;font-size:20px;margin:0 0 12px 0;">Your eSIM is ready 🎉</h1>
+<p style="margin:0 0 16px 0;">Order <strong style="color:#ffffff;">{{ order_no }}</strong> for <strong style="color:#ffffff;">{{ product_title }}</strong> has been provisioned. Install it now to get connected.</p>
+<table role="presentation" width="100%" style="background:#0f172a;border-radius:12px;margin:0 0 16px 0;">
+  <tr>
+    <td style="padding:16px;">
+      <p style="margin:0 0 4px 0;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:700;">ICCID</p>
+      <p style="margin:0 0 12px 0;color:#e2e8f0;font-family:monospace;font-size:13px;">{{ iccid }}</p>
+      <p style="margin:0 0 4px 0;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:700;">Activation Code (LPA)</p>
+      <p style="margin:0;color:#e2e8f0;font-family:monospace;font-size:12px;word-break:break-all;">{{ lpa_string }}</p>
+    </td>
+  </tr>
+</table>
+<a href="{{ frontend_base_url }}/my-esims" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;font-weight:700;font-size:13px;padding:10px 20px;border-radius:10px;">View QR Code & Install Guide</a>
+{% endblock %}

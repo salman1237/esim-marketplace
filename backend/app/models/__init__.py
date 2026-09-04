@@ -7,6 +7,7 @@ from app.models.payment import ManualPaymentRequest, ManualPaymentStatus, Paymen
 from app.models.settings import PlatformSetting, CurrencyRate, Language, Translation
 from app.models.audit import AuditLog, SupplierTransactionLog
 from app.models.kyc import KYCSubmission, KYCStatus
+from app.models.password_reset import PasswordResetToken
 
 __all__ = [
     "User", "UserRole", "UserStatus",
@@ -17,5 +18,6 @@ __all__ = [
     "ManualPaymentRequest", "ManualPaymentStatus", "PaymentLog",
     "PlatformSetting", "CurrencyRate", "Language", "Translation",
     "AuditLog", "SupplierTransactionLog",
-    "KYCSubmission", "KYCStatus"
+    "KYCSubmission", "KYCStatus",
+    "PasswordResetToken"
 ]

@@ -33,6 +33,13 @@ class UserResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
 class MerchantApplicationRequest(BaseModel):
     business_name: str
     trade_license: Optional[str] = None

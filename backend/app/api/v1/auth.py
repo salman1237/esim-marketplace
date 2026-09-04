@@ -1,18 +1,48 @@
 import uuid
+import asyncio
+import secrets
+import hashlib
 from decimal import Decimal
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.core.database import get_db
+from app.core.database import get_db, AsyncSessionLocal
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.core.deps import get_current_user
+from app.core.logging import get_logger
 from app.models.user import User, UserRole, UserStatus
 from app.models.merchant import MerchantProfile, MerchantStatus
 from app.models.wallet import Wallet
-from app.schemas.auth import UserRegister, UserLogin, Token, UserResponse, MerchantApplicationRequest
+from app.models.password_reset import PasswordResetToken
+from app.schemas.auth import (
+    UserRegister, UserLogin, Token, UserResponse, MerchantApplicationRequest,
+    ForgotPasswordRequest, ResetPasswordRequest,
+)
 from app.services.ledger_svc import LedgerService
+from app.services.email_svc import EmailService
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+async def _send_welcome_email_background(email: str, username: str):
+    # Own session, not the request's - that one closes as soon as the
+    # response is returned, before this background task gets to run.
+    async with AsyncSessionLocal() as bg_db:
+        try:
+            await EmailService.send_welcome(bg_db, email, username)
+        except Exception as e:
+            logger.warning("welcome_email_background_task_failed", email=email, error=str(e))
+
+
+async def _send_password_reset_email_background(email: str, raw_token: str):
+    async with AsyncSessionLocal() as bg_db:
+        try:
+            await EmailService.send_password_reset(bg_db, email, raw_token)
+        except Exception as e:
+            logger.warning("password_reset_email_background_task_failed", email=email, error=str(e))
 
 @router.post("/register", response_model=Token)
 async def register(req: UserRegister, db: AsyncSession = Depends(get_db)):
@@ -36,6 +66,8 @@ async def register(req: UserRegister, db: AsyncSession = Depends(get_db)):
     # Initialize Wallets
     await LedgerService.ensure_wallets_for_user(db, user.id, user.role)
 
+    asyncio.create_task(_send_welcome_email_background(user.email, user.username))
+
     token = create_access_token(subject=user.id, role=user.role.value)
     return Token(access_token=token, token_type="bearer", role=user.role.value, user_id=user.id, username=user.username)
 
@@ -51,6 +83,55 @@ async def login(req: UserLogin, db: AsyncSession = Depends(get_db)):
 
     token = create_access_token(subject=user.id, role=user.role.value)
     return Token(access_token=token, token_type="bearer", role=user.role.value, user_id=user.id, username=user.username)
+
+@router.post("/forgot-password")
+async def forgot_password(req: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+    # Always returns the same success response regardless of whether the
+    # email exists - a differing response would let an attacker enumerate
+    # registered accounts by probing this endpoint.
+    generic_response = {"status": "success", "message": "If that email is registered, a reset link has been sent."}
+
+    res = await db.execute(select(User).where(User.email == req.email))
+    user = res.scalar_one_or_none()
+    if not user:
+        return generic_response
+
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    db.add(PasswordResetToken(
+        user_id=user.id,
+        token_hash=token_hash,
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    ))
+    await db.commit()
+
+    asyncio.create_task(_send_password_reset_email_background(user.email, raw_token))
+    return generic_response
+
+
+@router.post("/reset-password")
+async def reset_password(req: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    token_hash = hashlib.sha256(req.token.encode()).hexdigest()
+    res = await db.execute(select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash))
+    reset_token = res.scalar_one_or_none()
+
+    if not reset_token or reset_token.used_at is not None:
+        raise HTTPException(status_code=400, detail="Invalid or already-used reset link")
+    if reset_token.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="This reset link has expired")
+    if len(req.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    user_res = await db.execute(select(User).where(User.id == reset_token.user_id))
+    user = user_res.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or already-used reset link")
+
+    user.hashed_password = get_password_hash(req.new_password)
+    reset_token.used_at = datetime.now(timezone.utc)
+    await db.commit()
+    return {"status": "success", "message": "Password has been reset. You can now log in."}
+
 
 @router.get("/me")
 async def get_me(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):

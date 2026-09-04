@@ -1,11 +1,12 @@
 import uuid
+import asyncio
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from app.core.database import get_db
+from app.core.database import get_db, AsyncSessionLocal
 from app.core.deps import get_current_user
 from app.core.security import get_password_hash
 from app.models.user import User, UserRole
@@ -17,11 +18,20 @@ from app.schemas.order import OrderCreateRequest, OrderResponse, ESIMProfileResp
 from app.services.ledger_svc import LedgerService
 from app.services.vivape_adapter import VivaPeAdapter
 from app.services.audit_svc import AuditService
+from app.services.email_svc import EmailService
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/orders", tags=["Orders & eSIMs"])
+
+
+async def _send_order_confirmation_background(email: str, order_no: str, product_title: str, iccid: str, lpa_string: str):
+    async with AsyncSessionLocal() as bg_db:
+        try:
+            await EmailService.send_order_confirmation(bg_db, email, order_no, product_title, iccid, lpa_string)
+        except Exception as e:
+            logger.warning("order_confirmation_email_background_task_failed", email=email, error=str(e))
 
 RESELLER_ROLES = {UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MERCHANT}
 
@@ -199,6 +209,13 @@ async def checkout_esim(
 
     order.status = OrderStatus.COMPLETED
     await db.commit()
+
+    beneficiary_res = await db.execute(select(User.email).where(User.id == beneficiary_id))
+    beneficiary_email = beneficiary_res.scalar_one_or_none()
+    if beneficiary_email:
+        asyncio.create_task(_send_order_confirmation_background(
+            beneficiary_email, order.order_no, product.title_en, iccid, lpa
+        ))
 
     # Re-fetch with the eSIM profile eagerly loaded: Pydantic's response
     # serialization is synchronous and can't trigger an async lazy load.
