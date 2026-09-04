@@ -237,3 +237,18 @@ async def test_admin_orders_includes_esim_support_data(client, db_session, promo
     assert matching["iccid"] == iccid
     assert matching["qr_code_data"]
     assert matching["is_mock_fallback"] is True
+
+
+async def test_branding_social_links_roundtrip(client, promote_role):
+    sa = await register_and_login(client, "sociallinker")
+    await promote_role(sa["user_id"], "SUPER_ADMIN")
+
+    res = await client.put(
+        "/api/v1/admin/branding",
+        json={"social_links": {"facebook": "https://facebook.com/esim", "instagram": "https://instagram.com/esim"}},
+        headers=sa["headers"],
+    )
+    assert res.status_code == 200, res.text
+
+    public = await client.get("/api/v1/settings/public")
+    assert public.json()["social_links"] == {"facebook": "https://facebook.com/esim", "instagram": "https://instagram.com/esim"}

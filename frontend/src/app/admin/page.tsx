@@ -23,6 +23,7 @@ export default function AdminConsolePage() {
   const [inspectingLog, setInspectingLog] = useState<any | null>(null);
 
   const [branding, setBranding] = useState({ platform_name: "eSIM Global", support_email: "support@esim.local", support_phone: "+880 1700-000000", maintenance_mode: false, default_currency: "USD" });
+  const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
   const [brandingAssets, setBrandingAssets] = useState<{ logo_light?: string; logo_dark?: string; favicon?: string }>({});
   const [uploadingKind, setUploadingKind] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
@@ -74,6 +75,7 @@ export default function AdminConsolePage() {
         default_currency: s.default_currency ?? b.default_currency,
       }));
       setBrandingAssets({ logo_light: s.logo_light, logo_dark: s.logo_dark, favicon: s.favicon });
+      setSocialLinks(s.social_links || {});
     }).catch(() => {});
   }, []);
 
@@ -164,7 +166,7 @@ export default function AdminConsolePage() {
     e.preventDefault();
     const token = localStorage.getItem("esim_token");
     if (!token) return;
-    await api.updateBranding(token, branding);
+    await api.updateBranding(token, { ...branding, social_links: socialLinks });
     alert("Branding updated instantly! Changes live without redeploy.");
   };
 
@@ -431,6 +433,21 @@ export default function AdminConsolePage() {
                   onChange={(e) => setBranding({ ...branding, maintenance_mode: e.target.checked })}
                   className="w-5 h-5 rounded bg-slate-900 border-slate-700 accent-admin-500"
                 />
+              </div>
+              <div>
+                <label className="text-xs text-slate-300 font-semibold block mb-2">Social Links</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["facebook", "instagram", "twitter", "youtube", "linkedin"] as const).map((platform) => (
+                    <input
+                      key={platform}
+                      type="url"
+                      placeholder={`${platform.charAt(0).toUpperCase()}${platform.slice(1)} URL`}
+                      value={socialLinks[platform] || ""}
+                      onChange={(e) => setSocialLinks({ ...socialLinks, [platform]: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                    />
+                  ))}
+                </div>
               </div>
               <button
                 type="submit"

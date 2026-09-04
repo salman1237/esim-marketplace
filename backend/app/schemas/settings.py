@@ -14,6 +14,7 @@ class PublicSettingsResponse(BaseModel):
     support_whatsapp: Optional[str] = None
     default_currency: str = "USD"
     maintenance_mode: bool = False
+    social_links: Dict[str, str] = {}
 
 class UpdateBrandingRequest(BaseModel):
     platform_name: Optional[str] = None
@@ -27,6 +28,10 @@ class UpdateBrandingRequest(BaseModel):
     support_whatsapp: Optional[str] = None
     maintenance_mode: Optional[bool] = None
     default_currency: Optional[str] = None
+    # Keyed by platform (facebook/instagram/twitter/youtube/linkedin) -> URL.
+    # A JSON PlatformSetting value, so no migration needed - same generic
+    # upsert path as every other branding field.
+    social_links: Optional[Dict[str, str]] = None
 
 class CurrencyRateResponse(BaseModel):
     currency_code: str

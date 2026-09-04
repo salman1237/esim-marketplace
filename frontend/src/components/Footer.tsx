@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { Wifi, Phone, Mail, MessageCircle, ShieldCheck, Globe2 } from "lucide-react";
+import { Wifi, Phone, Mail, MessageCircle, ShieldCheck, Globe2, Facebook, Instagram, Twitter, Youtube, Linkedin } from "lucide-react";
 import { api, API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 
@@ -20,6 +20,10 @@ export default function Footer() {
   }, []);
 
   const whatsappDigits = (settings.support_whatsapp || "").replace(/[^0-9]/g, "");
+  const socialLinks: Record<string, string> = settings.social_links || {};
+  const SOCIAL_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+    facebook: Facebook, instagram: Instagram, twitter: Twitter, youtube: Youtube, linkedin: Linkedin,
+  };
 
   return (
     <footer className="bg-slate-950 border-t border-white/10 text-slate-400 text-sm mt-20">
@@ -48,6 +52,19 @@ export default function Footer() {
             <ShieldCheck className="w-4 h-4" />
             <span>Official VivaPe & ShurjoPay Partner</span>
           </div>
+          {Object.keys(socialLinks).some((k) => socialLinks[k]) && (
+            <div className="flex items-center space-x-3 pt-1">
+              {Object.entries(socialLinks).filter(([, url]) => url).map(([platform, url]) => {
+                const Icon = SOCIAL_ICONS[platform];
+                if (!Icon) return null;
+                return (
+                  <a key={platform} href={url} target="_blank" rel="noreferrer" aria-label={platform} className="text-slate-400 hover:text-white transition-colors">
+                    <Icon className="w-4 h-4" />
+                  </a>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Col 2: Quick Links */}
