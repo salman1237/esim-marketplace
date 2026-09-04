@@ -9,6 +9,7 @@ fleet - see docker-compose.yml.
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from app.core.config import settings
+from app.core.security import decode_access_token
 
 # Disabled outside production: the test suite (and local dev) calls
 # /auth/register and /auth/login many times in a tight loop, which would
@@ -19,8 +20,16 @@ limiter = Limiter(key_func=get_remote_address, enabled=settings.ENVIRONMENT == "
 
 
 def get_partner_api_key(request):
-    """Rate-limit key for /partner/* routes — keyed by the caller's raw
-    API key rather than IP, since a partner's own backend typically calls
-    from a small set of shared/NATed IPs that would otherwise pool every
-    partner behind that IP into one limit."""
-    return request.headers.get("X-API-Key") or get_remote_address(request)
+    """Rate-limit key for /partner/* routes — keyed by the caller's
+    partner access token (decoded just far enough to read its ApiKey id)
+    rather than IP, since a partner's own backend typically calls from a
+    small set of shared/NATed IPs that would otherwise pool every partner
+    behind that IP into one limit. Falls back to IP if the token is
+    missing/invalid — the route's own auth dependency is what actually
+    rejects bad tokens, this just needs *a* stable bucket key."""
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        payload = decode_access_token(auth_header[len("Bearer "):])
+        if payload and payload.get("role") == "PARTNER_API" and payload.get("sub"):
+            return payload["sub"]
+    return get_remote_address(request)

@@ -5,7 +5,7 @@ import pytest
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from sqlalchemy import select
-from conftest import register_and_login, fund_wallet, create_test_product
+from conftest import register_and_login, fund_wallet, create_test_product, partner_auth_headers
 import app.services.webhook_svc as webhook_svc_module
 from app.models.partner_api import WebhookDeliveryLog
 from app.models.wallet import Wallet, WalletType
@@ -63,7 +63,8 @@ async def _make_partner(client, db_session, promote_role, suffix: str, webhook_u
         m.webhook_secret = webhook_secret
         await db_session.commit()
 
-    return {"X-API-Key": raw_key}, merchant_user["user_id"], entry["id"]
+    headers = await partner_auth_headers(client, raw_key)
+    return headers, merchant_user["user_id"], entry["id"]
 
 
 async def test_create_order_requires_sufficient_balance(client, db_session, promote_role):

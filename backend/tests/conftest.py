@@ -122,6 +122,15 @@ async def register_and_login(client: AsyncClient, role_hint: str = "user") -> di
     }
 
 
+async def partner_auth_headers(client: AsyncClient, raw_api_key: str) -> dict:
+    """Exchanges a partner's raw API key for a short-lived access token
+    (POST /partner/auth/token) and returns the Bearer header for it - the
+    raw key itself is never sent to any other /partner/* route."""
+    res = await client.post("/api/v1/partner/auth/token", json={"api_key": raw_api_key})
+    assert res.status_code == 200, res.text
+    return {"Authorization": f"Bearer {res.json()['access_token']}"}
+
+
 async def fund_wallet(db_session, user_id: str, amount: Decimal = Decimal("100.0000")):
     """Directly credits a user's DEFAULT wallet for test setup (bypasses payment gateways)."""
     from sqlalchemy import select

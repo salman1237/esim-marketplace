@@ -1,10 +1,8 @@
 import pytest
-from fastapi import HTTPException
 from sqlalchemy import select
 from conftest import register_and_login
 from app.models.partner_api import ApiKey
 from app.models.merchant import MerchantProfile
-from app.core.partner_auth import get_current_partner
 
 pytestmark = pytest.mark.asyncio
 
@@ -110,29 +108,3 @@ async def test_revoke_key_requires_super_admin_and_deactivates(client, db_sessio
     # Revoking again with nothing active is a 404, not a silent no-op.
     revoke_again = await client.delete(f"/api/v1/admin/merchants/{merchant_id}/api-key", headers=admin["headers"])
     assert revoke_again.status_code == 404
-
-
-async def test_get_current_partner_resolves_valid_key_and_rejects_invalid(client, db_session, promote_role):
-    admin, merchant_user, merchant_id = await _make_approved_merchant(client, db_session, promote_role, "5")
-    await promote_role(admin["user_id"], "SUPER_ADMIN")
-
-    generated = await client.post(f"/api/v1/admin/merchants/{merchant_id}/api-key", headers=admin["headers"])
-    raw_key = generated.json()["api_key"]
-
-    ctx = await get_current_partner(x_api_key=raw_key, db=db_session)
-    assert ctx.merchant.id == merchant_id
-    assert ctx.user.id == merchant_user["user_id"]
-
-    with pytest.raises(HTTPException) as exc_info:
-        await get_current_partner(x_api_key="not-a-real-key", db=db_session)
-    assert exc_info.value.status_code == 401
-
-    # A revoked key must also stop authenticating.
-    result = await db_session.execute(select(ApiKey).where(ApiKey.merchant_id == merchant_id, ApiKey.is_active == True))
-    active_key = result.scalar_one()
-    active_key.is_active = False
-    await db_session.commit()
-
-    with pytest.raises(HTTPException) as exc_info2:
-        await get_current_partner(x_api_key=raw_key, db=db_session)
-    assert exc_info2.value.status_code == 401

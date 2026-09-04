@@ -2,7 +2,7 @@ import uuid
 import asyncio
 import secrets
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db, AsyncSessionLocal
-from app.core.partner_auth import get_current_partner, PartnerContext
+from app.core.security import create_access_token
+from app.core.partner_auth import get_current_partner, authenticate_partner_api_key, PartnerContext, PARTNER_TOKEN_ROLE
 from app.core.rate_limit import limiter, get_partner_api_key
 from app.models.catalog import Country, Product
 from app.models.merchant import MerchantProfile
@@ -26,6 +27,34 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/partner", tags=["Partner API"])
+
+PARTNER_TOKEN_EXPIRY = timedelta(hours=1)
+
+
+class PartnerTokenRequest(BaseModel):
+    api_key: str
+
+
+@router.post("/auth/token")
+@limiter.limit("10/minute")
+async def issue_partner_access_token(
+    request: Request,
+    req: PartnerTokenRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Exchanges a partner's long-lived API key for a short-lived access
+    token. The raw key is never accepted on any other /partner/* route -
+    every other call authenticates with the token this returns, via
+    `Authorization: Bearer <access_token>`."""
+    api_key = await authenticate_partner_api_key(req.api_key, db)
+    access_token = create_access_token(
+        subject=api_key.id, role=PARTNER_TOKEN_ROLE, expires_delta=PARTNER_TOKEN_EXPIRY
+    )
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "expires_in": int(PARTNER_TOKEN_EXPIRY.total_seconds()),
+    }
 
 
 @router.get("/countries", response_model=List[CountryResponse])

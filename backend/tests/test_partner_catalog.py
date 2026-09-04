@@ -1,7 +1,7 @@
 import pytest
 from decimal import Decimal
 from sqlalchemy import select
-from conftest import register_and_login, fund_wallet, create_test_product
+from conftest import register_and_login, fund_wallet, create_test_product, partner_auth_headers
 from app.models.catalog import Country
 
 pytestmark = pytest.mark.asyncio
@@ -25,8 +25,9 @@ async def _make_partner(client, db_session, promote_role, suffix: str):
 
     key_res = await client.post(f"/api/v1/admin/merchants/{entry['id']}/api-key", headers=admin["headers"])
     raw_key = key_res.json()["api_key"]
+    headers = await partner_auth_headers(client, raw_key)
 
-    return {"X-API-Key": raw_key}, merchant_user["user_id"], entry["id"]
+    return headers, merchant_user["user_id"], entry["id"]
 
 
 async def _seed_country_and_product(db_session, suffix: str):
@@ -36,14 +37,14 @@ async def _seed_country_and_product(db_session, suffix: str):
     return country, product
 
 
-async def test_partner_routes_reject_missing_or_invalid_key(client):
+async def test_partner_routes_reject_missing_or_invalid_token(client):
     res = await client.get("/api/v1/partner/countries")
-    assert res.status_code in (401, 422)  # missing required header
+    assert res.status_code == 401  # missing Authorization header
 
-    res2 = await client.get("/api/v1/partner/countries", headers={"X-API-Key": "bogus"})
+    res2 = await client.get("/api/v1/partner/countries", headers={"Authorization": "Bearer not-a-real-token"})
     assert res2.status_code == 401
 
-    res3 = await client.get("/api/v1/partner/me", headers={"X-API-Key": "bogus"})
+    res3 = await client.get("/api/v1/partner/me", headers={"Authorization": "Bearer not-a-real-token"})
     assert res3.status_code == 401
 
 

@@ -21,6 +21,13 @@ async def get_current_user(
     payload = decode_access_token(token)
     if not payload:
         raise credentials_exception
+    # A partner API access token (see app/core/partner_auth.py) is signed
+    # with the same SECRET_KEY but must never authenticate as a regular
+    # user - its "sub" is an ApiKey id, not a User id, and scoping it out
+    # explicitly here means that isolation doesn't rely only on the two
+    # id spaces happening not to collide.
+    if payload.get("role") == "PARTNER_API":
+        raise credentials_exception
     user_id: str = payload.get("sub")
     if not user_id:
         raise credentials_exception
