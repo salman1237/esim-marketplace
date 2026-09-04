@@ -6,11 +6,12 @@ import uuid
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.core.security import get_password_hash
 from app.models.user import User, UserRole
 from app.models.order import Order, OrderStatus, ESIMProfile, ESIMStatus
 from app.models.catalog import Product
+from app.models.commission_tier import CommissionTier
 from app.services.ledger_svc import LedgerService
 from app.services.vivape_adapter import VivaPeAdapter
 from app.services.audit_svc import AuditService
@@ -113,3 +114,31 @@ async def provision_esim(db: AsyncSession, order: Order, product: Product, benef
     db.add(profile)
     order.status = OrderStatus.COMPLETED
     return profile
+
+
+async def get_effective_commission_rate(db: AsyncSession, merchant_user_id: str, flat_rate_pct: Decimal) -> Decimal:
+    """Volume-based tiered commission, falling back to the merchant's own
+    flat MerchantProfile.commission_rate_pct - both because that's the
+    plan's "default flat %" requirement, and so tiers are fully optional:
+    a deployment with none configured behaves exactly as before this
+    feature existed."""
+    tiers_res = await db.execute(select(CommissionTier).order_by(CommissionTier.min_volume_usd.desc()))
+    tiers = tiers_res.scalars().all()
+    if not tiers:
+        return flat_rate_pct
+
+    volume_res = await db.execute(
+        select(func.coalesce(func.sum(Order.total_amount), 0)).where(
+            Order.buyer_id == merchant_user_id,
+            Order.is_reseller_order == True,
+            Order.status == OrderStatus.COMPLETED,
+        )
+    )
+    cumulative_volume = Decimal(str(volume_res.scalar_one()))
+
+    for tier in tiers:  # sorted highest-threshold-first
+        if cumulative_volume >= Decimal(str(tier.min_volume_usd)):
+            return Decimal(str(tier.rate_pct))
+
+    # Below every configured tier's threshold - the flat rate is the floor.
+    return flat_rate_pct

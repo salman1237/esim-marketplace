@@ -19,6 +19,7 @@ from app.models.payment import ManualPaymentRequest, ManualPaymentStatus
 from app.models.settings import PlatformSetting, CurrencyRate, Language, Translation
 from app.models.audit import AuditLog, SupplierTransactionLog
 from app.models.kyc import KYCSubmission, KYCStatus
+from app.models.commission_tier import CommissionTier
 from datetime import datetime, timezone
 from app.core.seed_translations import EN_TRANSLATIONS, flatten
 from app.schemas.settings import (
@@ -45,6 +46,10 @@ class UserStatusUpdateRequest(BaseModel):
     is_active: bool
 
 class MerchantCommissionUpdateRequest(BaseModel):
+    rate_pct: Decimal = Field(..., ge=0, le=100)
+
+class CommissionTierCreateRequest(BaseModel):
+    min_volume_usd: Decimal = Field(..., ge=0)
     rate_pct: Decimal = Field(..., ge=0, le=100)
 
 class StaffAccountCreateRequest(BaseModel):
@@ -124,6 +129,67 @@ async def update_merchant_commission(
     )
     await db.commit()
     return {"status": "success", "commission_rate_pct": float(req.rate_pct)}
+
+
+# --- Commission Tiers (global, volume-based - see
+# checkout_svc.get_effective_commission_rate for how these apply) ---
+@router.get("/commission-tiers", dependencies=[Depends(require_admin)])
+async def list_commission_tiers(db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(CommissionTier).order_by(CommissionTier.min_volume_usd.asc()))
+    return [
+        {"id": t.id, "min_volume_usd": float(t.min_volume_usd), "rate_pct": float(t.rate_pct)}
+        for t in res.scalars().all()
+    ]
+
+@router.post("/commission-tiers", dependencies=[Depends(require_super_admin)])
+async def create_commission_tier(
+    req: CommissionTierCreateRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    existing = await db.execute(select(CommissionTier).where(CommissionTier.min_volume_usd == req.min_volume_usd))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="A tier already exists at that volume threshold")
+
+    tier = CommissionTier(min_volume_usd=req.min_volume_usd, rate_pct=req.rate_pct)
+    db.add(tier)
+    await db.flush()
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="CREATE_COMMISSION_TIER",
+        after_state={"min_volume_usd": float(req.min_volume_usd), "rate_pct": float(req.rate_pct)},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"id": tier.id, "min_volume_usd": float(tier.min_volume_usd), "rate_pct": float(tier.rate_pct)}
+
+@router.delete("/commission-tiers/{tier_id}", dependencies=[Depends(require_super_admin)])
+async def delete_commission_tier(
+    tier_id: str,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(select(CommissionTier).where(CommissionTier.id == tier_id))
+    tier = res.scalar_one_or_none()
+    if not tier:
+        raise HTTPException(status_code=404, detail="Tier not found")
+
+    before = {"min_volume_usd": float(tier.min_volume_usd), "rate_pct": float(tier.rate_pct)}
+    await db.delete(tier)
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="DELETE_COMMISSION_TIER", before_state=before,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success"}
+
 
 @router.post("/merchants/{merchant_id}/approve", dependencies=[Depends(require_admin)])
 async def approve_merchant(

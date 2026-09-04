@@ -16,7 +16,7 @@ from app.models.order import Order, OrderStatus, PaymentMethod, ESIMProfile
 from app.schemas.order import OrderCreateRequest, OrderResponse, ESIMProfileResponse
 from app.services.ledger_svc import LedgerService
 from app.services.email_svc import EmailService
-from app.services.checkout_svc import resolve_beneficiary, provision_esim, RESELLER_ROLES
+from app.services.checkout_svc import resolve_beneficiary, provision_esim, get_effective_commission_rate, RESELLER_ROLES
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -104,7 +104,8 @@ async def checkout_esim(
     if current_user.role == UserRole.MERCHANT and req.is_buy_for_user:
         m_res = await db.execute(select(MerchantProfile).where(MerchantProfile.user_id == current_user.id))
         merchant_profile = m_res.scalar_one_or_none()
-        rate_pct = Decimal(str(merchant_profile.commission_rate_pct)) if merchant_profile else Decimal("5.0")
+        flat_rate_pct = Decimal(str(merchant_profile.commission_rate_pct)) if merchant_profile else Decimal("5.0")
+        rate_pct = await get_effective_commission_rate(db, current_user.id, flat_rate_pct)
         commission_amount = (total_cost * (rate_pct / Decimal("100"))).quantize(Decimal("0.0001"))
 
         cw_res = await db.execute(

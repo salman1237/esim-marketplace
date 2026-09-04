@@ -22,6 +22,8 @@ export default function AdminConsolePage() {
   const [users, setUsers] = useState<any[]>([]);
   const [inspectingLog, setInspectingLog] = useState<any | null>(null);
   const [kycQueue, setKycQueue] = useState<any[]>([]);
+  const [commissionTiers, setCommissionTiers] = useState<any[]>([]);
+  const [newTier, setNewTier] = useState({ min_volume_usd: "", rate_pct: "" });
   const [viewingDoc, setViewingDoc] = useState<{ url: string; side: string; contentType: string } | null>(null);
 
   const [branding, setBranding] = useState({ platform_name: "eSIM Global", support_email: "support@esim.local", support_phone: "+880 1700-000000", maintenance_mode: false, default_currency: "USD", seo_title: "", seo_description: "" });
@@ -57,6 +59,7 @@ export default function AdminConsolePage() {
     api.getAdminOrders(token).then(setAllOrders).catch(console.error);
     api.getAdminCatalog(token).then(setCatalog).catch(console.error);
     api.getKycQueue(token).then(setKycQueue).catch(console.error);
+    api.getCommissionTiers(token).then(setCommissionTiers).catch(console.error);
     // Super-Admin-only endpoints: fetched regardless, the backend 403s a
     // non-Super-Admin caller and these simply stay empty (RBAC is enforced
     // server-side; the tabs below just don't render for other roles).
@@ -178,6 +181,33 @@ export default function AdminConsolePage() {
     } catch (err: any) {
       alert("Failed to update commission: " + err.message);
     }
+  };
+
+  const handleCreateCommissionTier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    const minVolume = parseFloat(newTier.min_volume_usd);
+    const rate = parseFloat(newTier.rate_pct);
+    if (Number.isNaN(minVolume) || Number.isNaN(rate)) {
+      alert("Enter valid numbers for both fields.");
+      return;
+    }
+    try {
+      const tier = await api.createCommissionTier(token, minVolume, rate);
+      setCommissionTiers([...commissionTiers, tier].sort((a, b) => a.min_volume_usd - b.min_volume_usd));
+      setNewTier({ min_volume_usd: "", rate_pct: "" });
+    } catch (err: any) {
+      alert("Failed to create tier: " + err.message);
+    }
+  };
+
+  const handleDeleteCommissionTier = async (id: string) => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    if (!window.confirm("Remove this commission tier?")) return;
+    await api.deleteCommissionTier(token, id);
+    setCommissionTiers(commissionTiers.filter((t) => t.id !== id));
   };
 
   const handleApproveKyc = async (id: string) => {
@@ -309,6 +339,42 @@ export default function AdminConsolePage() {
 
       {/* Tab: Merchants */}
       {activeTab === "merchants" && (
+        <div className="space-y-6">
+        {isSuperAdmin && (
+          <div className="glass-panel rounded-2xl p-6 border border-white/10">
+            <h3 className="text-base font-bold text-white mb-1">Commission Tiers</h3>
+            <p className="text-xs text-slate-400 mb-4">
+              Volume-based rates that override a merchant's flat commission % once their cumulative completed reseller-order volume crosses a threshold. Leave empty for flat-rate-only.
+            </p>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {commissionTiers.length === 0 ? (
+                <span className="text-xs text-slate-500">No tiers configured — every merchant uses their own flat rate.</span>
+              ) : (
+                commissionTiers.map((t) => (
+                  <span key={t.id} className="flex items-center gap-2 text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-300">
+                    ${t.min_volume_usd}+ &rarr; <span className="text-admin-400">{t.rate_pct}%</span>
+                    {isSuperAdmin && (
+                      <button onClick={() => handleDeleteCommissionTier(t.id)} aria-label="Remove tier" className="text-slate-500 hover:text-rose-400">
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </span>
+                ))
+              )}
+            </div>
+            <form onSubmit={handleCreateCommissionTier} className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="text-xs text-slate-300 font-semibold block mb-1">Min. Volume (USD)</label>
+                <input type="number" min={0} step="0.01" required value={newTier.min_volume_usd} onChange={(e) => setNewTier({ ...newTier, min_volume_usd: e.target.value })} className="w-32 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white" />
+              </div>
+              <div>
+                <label className="text-xs text-slate-300 font-semibold block mb-1">Rate %</label>
+                <input type="number" min={0} max={100} step="0.01" required value={newTier.rate_pct} onChange={(e) => setNewTier({ ...newTier, rate_pct: e.target.value })} className="w-24 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white" />
+              </div>
+              <button type="submit" className="bg-admin-600 hover:bg-admin-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl">Add Tier</button>
+            </form>
+          </div>
+        )}
         <div className="glass-panel rounded-2xl p-6 border border-white/10">
           <h3 className="text-base font-bold text-white mb-4">Partner &amp; Reseller Applications</h3>
           <div className="overflow-x-auto frozen-col-table">
@@ -363,6 +429,7 @@ export default function AdminConsolePage() {
               </tbody>
             </table>
           </div>
+        </div>
         </div>
       )}
 

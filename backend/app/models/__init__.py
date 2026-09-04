@@ -8,6 +8,7 @@ from app.models.settings import PlatformSetting, CurrencyRate, Language, Transla
 from app.models.audit import AuditLog, SupplierTransactionLog
 from app.models.kyc import KYCSubmission, KYCStatus
 from app.models.password_reset import PasswordResetToken
+from app.models.commission_tier import CommissionTier
 
 __all__ = [
     "User", "UserRole", "UserStatus",
@@ -19,5 +20,6 @@ __all__ = [
     "PlatformSetting", "CurrencyRate", "Language", "Translation",
     "AuditLog", "SupplierTransactionLog",
     "KYCSubmission", "KYCStatus",
-    "PasswordResetToken"
+    "PasswordResetToken",
+    "CommissionTier"
 ]

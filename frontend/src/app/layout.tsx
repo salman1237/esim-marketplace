@@ -21,7 +21,10 @@ export async function generateMetadata(): Promise<Metadata> {
     const res = await fetch(`${API_BASE}/api/v1/settings/public`, { next: { revalidate: 300 } });
     if (!res.ok) throw new Error(`settings fetch failed: ${res.status}`);
     const settings = await res.json();
-    const title = settings.seo_title || settings.platform_name || DEFAULT_TITLE;
+    // seo_title is an explicit override; platform_name alone (just the
+    // brand name, e.g. "eSIM Global") is a worse page title than the
+    // crafted default, not a better one, so it's not part of this chain.
+    const title = settings.seo_title || DEFAULT_TITLE;
     const description = settings.seo_description || settings.tagline_en || DEFAULT_DESCRIPTION;
     const ogImageUrl = settings.og_image
       ? (settings.og_image.startsWith("http") ? settings.og_image : `${API_BASE}${settings.og_image}`)
