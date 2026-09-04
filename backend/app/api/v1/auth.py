@@ -4,10 +4,11 @@ import secrets
 import hashlib
 from decimal import Decimal
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.database import get_db, AsyncSessionLocal
+from app.core.rate_limit import limiter
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.core.deps import get_current_user
 from app.core.logging import get_logger
@@ -45,7 +46,8 @@ async def _send_password_reset_email_background(email: str, raw_token: str):
             logger.warning("password_reset_email_background_task_failed", email=email, error=str(e))
 
 @router.post("/register", response_model=Token)
-async def register(req: UserRegister, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def register(request: Request, req: UserRegister, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(User).where((User.email == req.email) | (User.username == req.username)))
     if res.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email or username already exists")
@@ -72,7 +74,8 @@ async def register(req: UserRegister, db: AsyncSession = Depends(get_db)):
     return Token(access_token=token, token_type="bearer", role=user.role.value, user_id=user.id, username=user.username)
 
 @router.post("/login", response_model=Token)
-async def login(req: UserLogin, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def login(request: Request, req: UserLogin, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(User).where((User.email == req.email) | (User.username == req.email)))
     user = res.scalar_one_or_none()
     if not user or not verify_password(req.password, user.hashed_password):
@@ -85,7 +88,8 @@ async def login(req: UserLogin, db: AsyncSession = Depends(get_db)):
     return Token(access_token=token, token_type="bearer", role=user.role.value, user_id=user.id, username=user.username)
 
 @router.post("/forgot-password")
-async def forgot_password(req: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def forgot_password(request: Request, req: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
     # Always returns the same success response regardless of whether the
     # email exists - a differing response would let an attacker enumerate
     # registered accounts by probing this endpoint.
@@ -110,7 +114,8 @@ async def forgot_password(req: ForgotPasswordRequest, db: AsyncSession = Depends
 
 
 @router.post("/reset-password")
-async def reset_password(req: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def reset_password(request: Request, req: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
     token_hash = hashlib.sha256(req.token.encode()).hexdigest()
     res = await db.execute(select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash))
     reset_token = res.scalar_one_or_none()
