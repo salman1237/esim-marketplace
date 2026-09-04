@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
 import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
+import { EsimListSkeleton } from "@/components/Skeleton";
 
 function EsimCard({ item }: { item: any }) {
   const { t } = useAppSettings();
@@ -185,7 +186,7 @@ export default function MyESIMsPage() {
       )}
 
       {loading ? (
-        <div className="py-20 text-center text-sm text-slate-400">Loading your eSIM profiles...</div>
+        <EsimListSkeleton />
       ) : esims.length === 0 ? (
         <div className="glass-card rounded-2xl p-12 text-center">
           <QrCode className="w-12 h-12 text-slate-600 mx-auto mb-4" />

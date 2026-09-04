@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { Search, Zap, ShieldCheck, Globe, ArrowRight, CheckCircle2, Sparkles, Check, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
+import { ProductListSkeleton } from "@/components/Skeleton";
 
 export default function HomePage() {
   const { formatPrice } = useAppSettings();
@@ -263,7 +264,7 @@ export default function HomePage() {
             </div>
 
             {loading ? (
-              <div className="py-12 text-center text-sm text-slate-400">Loading data packages...</div>
+              <ProductListSkeleton />
             ) : (
               <div className="space-y-3 max-h-[60vh] overflow-y-auto pe-1">
                 {products.map((p) => (

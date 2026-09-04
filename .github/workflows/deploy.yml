@@ -56,17 +56,36 @@ jobs:
           set -e
           echo "Triggering deploy via Dokploy API (the push webhook silently no-ops on a git-branch mismatch it reports as a redirect, which curl -f does not treat as failure — this endpoint gives an honest queued/error result instead)..."
           payload=$(python3 -c "import json,os; print(json.dumps({'composeId': os.environ['COMPOSE_ID'], 'title': os.environ['COMMIT_TITLE']}))")
-          trigger_response=$(curl -sf -X POST "$DOKPLOY_URL/api/compose.deploy" \
-            -H "x-api-key: $DOKPLOY_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d "$payload")
+          # --max-time/--connect-timeout so a network blip between the
+          # runner and the VPS fails fast (a few seconds) instead of
+          # hanging ~2 minutes on OS-level defaults - confirmed live: one
+          # run's trigger call hung the full 2m16s before curl gave up,
+          # while the exact same call from elsewhere succeeded in 0.2s.
+          # Retried since it's a one-shot call — a single blip shouldn't
+          # fail the whole deploy when a second attempt would work.
+          trigger_response=""
+          for attempt in 1 2 3; do
+            if trigger_response=$(curl -sf --connect-timeout 10 --max-time 30 -X POST "$DOKPLOY_URL/api/compose.deploy" \
+              -H "x-api-key: $DOKPLOY_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d "$payload"); then
+              break
+            fi
+            echo "Trigger attempt $attempt failed, retrying..."
+            trigger_response=""
+            sleep 5
+          done
+          if [ -z "$trigger_response" ]; then
+            echo "Could not trigger deployment after 3 attempts."
+            exit 1
+          fi
           echo "Trigger response: $trigger_response"
 
           echo "Polling deployment status via deployment.allByCompose (properly date-sorted — compose.one's embedded deployments array is not reliably ordered)..."
           for i in $(seq 1 40); do
             sleep 15
-            latest=$(curl -sf -H "x-api-key: $DOKPLOY_API_KEY" "$DOKPLOY_URL/api/deployment.allByCompose?composeId=$COMPOSE_ID" \
-              | python3 -c "import json,sys; d=sorted(json.load(sys.stdin), key=lambda x: x['createdAt'], reverse=True); print(d[0]['status'] + '|' + d[0]['logPath'])")
+            latest=$(curl -sf --connect-timeout 10 --max-time 30 -H "x-api-key: $DOKPLOY_API_KEY" "$DOKPLOY_URL/api/deployment.allByCompose?composeId=$COMPOSE_ID" \
+              | python3 -c "import json,sys; d=sorted(json.load(sys.stdin), key=lambda x: x['createdAt'], reverse=True); print(d[0]['status'] + '|' + d[0]['logPath'])") || { echo "  poll request failed, will retry"; continue; }
             status="${latest%%|*}"
             logpath="${latest#*|}"
             echo "  [$((i * 15))s] status: $status"

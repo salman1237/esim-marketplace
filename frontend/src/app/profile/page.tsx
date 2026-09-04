@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { User, ShieldCheck, ShieldAlert, LogOut, Wallet as WalletIcon, Mail, Phone, Upload } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
+import { ProfileSkeleton } from "@/components/Skeleton";
 
 export default function ProfilePage() {
   const { t } = useAppSettings();
@@ -57,7 +58,7 @@ export default function ProfilePage() {
   };
 
   if (loading) {
-    return <div className="py-20 text-center text-sm text-slate-400">Loading profile...</div>;
+    return <ProfileSkeleton />;
   }
 
   if (!userData) return null;
