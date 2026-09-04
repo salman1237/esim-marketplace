@@ -1,4 +1,6 @@
 import uuid
+import secrets
+import hashlib
 from decimal import Decimal
 from pathlib import Path
 from typing import List, Optional
@@ -20,6 +22,7 @@ from app.models.settings import PlatformSetting, CurrencyRate, Language, Transla
 from app.models.audit import AuditLog, SupplierTransactionLog
 from app.models.kyc import KYCSubmission, KYCStatus
 from app.models.commission_tier import CommissionTier
+from app.models.partner_api import ApiKey
 from datetime import datetime, timezone
 from app.core.seed_translations import EN_TRANSLATIONS, flatten
 from app.schemas.settings import (
@@ -129,6 +132,92 @@ async def update_merchant_commission(
     )
     await db.commit()
     return {"status": "success", "commission_rate_pct": float(req.rate_pct)}
+
+
+# --- Partner Reseller API Keys ---
+@router.get("/merchants/{merchant_id}/api-key", dependencies=[Depends(require_admin)])
+async def get_partner_api_key_status(merchant_id: str, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(
+        select(ApiKey).where(ApiKey.merchant_id == merchant_id, ApiKey.is_active == True)
+    )
+    key = res.scalar_one_or_none()
+    if not key:
+        return {"has_active_key": False}
+    return {
+        "has_active_key": True,
+        "key_prefix": key.key_prefix,
+        "created_at": key.created_at,
+        "last_used_at": key.last_used_at,
+    }
+
+@router.post("/merchants/{merchant_id}/api-key", dependencies=[Depends(require_super_admin)])
+async def generate_partner_api_key(
+    merchant_id: str,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(select(MerchantProfile).where(MerchantProfile.id == merchant_id))
+    m = res.scalar_one_or_none()
+    if not m:
+        raise HTTPException(status_code=404, detail="Merchant not found")
+    if m.status != MerchantStatus.APPROVED:
+        raise HTTPException(status_code=400, detail="Merchant must be approved before issuing a Partner API key")
+
+    # One active key per merchant for v1 - generating a new one retires
+    # any existing key rather than allowing several live at once.
+    existing_res = await db.execute(
+        select(ApiKey).where(ApiKey.merchant_id == merchant_id, ApiKey.is_active == True)
+    )
+    for existing in existing_res.scalars().all():
+        existing.is_active = False
+        existing.revoked_at = datetime.now(timezone.utc)
+
+    raw_key = f"esim_live_{secrets.token_hex(16)}"
+    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+    new_key = ApiKey(merchant_id=merchant_id, key_prefix=raw_key[:16], key_hash=key_hash)
+    db.add(new_key)
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="GENERATE_PARTNER_API_KEY",
+        after_state={"merchant_id": merchant_id, "key_prefix": new_key.key_prefix},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {
+        "status": "success",
+        "api_key": raw_key,
+        "key_prefix": new_key.key_prefix,
+        "warning": "This is the only time the full key is shown - store it securely.",
+    }
+
+@router.delete("/merchants/{merchant_id}/api-key", dependencies=[Depends(require_super_admin)])
+async def revoke_partner_api_key(
+    merchant_id: str,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(
+        select(ApiKey).where(ApiKey.merchant_id == merchant_id, ApiKey.is_active == True)
+    )
+    keys = res.scalars().all()
+    if not keys:
+        raise HTTPException(status_code=404, detail="No active API key for this merchant")
+    for k in keys:
+        k.is_active = False
+        k.revoked_at = datetime.now(timezone.utc)
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="REVOKE_PARTNER_API_KEY", before_state={"merchant_id": merchant_id},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success"}
 
 
 # --- Commission Tiers (global, volume-based - see

@@ -24,6 +24,10 @@ class MerchantProfile(Base):
     contact_phone = Column(String(50), nullable=False)
     website = Column(String(255), nullable=True)
     commission_rate_pct = Column(Numeric(5, 2), default=5.00, nullable=False)
+    # Partner Reseller API (see app/models/partner_api.py) - null until the
+    # merchant/admin configures a webhook receiver for async order events.
+    webhook_url = Column(String(500), nullable=True)
+    webhook_secret = Column(String(64), nullable=True)
     status = Column(Enum(MerchantStatus), default=MerchantStatus.PENDING, nullable=False)
     rejection_reason = Column(Text, nullable=True)
     reviewed_by_id = Column(String(36), ForeignKey("users.id"), nullable=True)
