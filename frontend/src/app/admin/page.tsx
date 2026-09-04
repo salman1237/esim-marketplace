@@ -322,11 +322,11 @@ export default function AdminConsolePage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center space-x-2 text-admin-400 text-xs font-bold uppercase tracking-wider mb-1">
+          <div className="flex items-center space-x-2 text-admin-600 text-xs font-bold uppercase tracking-wider mb-1">
             <Shield className="w-4 h-4" />
             <span>Operations &amp; Governance Center</span>
           </div>
-          <h1 className="text-3xl font-extrabold text-white">Admin Control Console</h1>
+          <h1 className="text-3xl font-extrabold text-slate-900">Admin Control Console</h1>
         </div>
 
         <button
@@ -341,21 +341,21 @@ export default function AdminConsolePage() {
 
       {/* Metrics Ticker */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="glass-panel rounded-2xl p-5 border border-white/10">
-          <div className="text-xs font-semibold text-slate-400">Total Users</div>
-          <div className="text-2xl font-black text-white mt-1">{stats.total_users}</div>
+        <div className="glass-panel rounded-2xl p-5 border border-gray-200">
+          <div className="text-xs font-semibold text-slate-500">Total Users</div>
+          <div className="text-2xl font-black text-slate-900 mt-1">{stats.total_users}</div>
         </div>
-        <div className="glass-panel rounded-2xl p-5 border border-white/10">
-          <div className="text-xs font-semibold text-slate-400">Total Orders</div>
-          <div className="text-2xl font-black text-white mt-1">{stats.total_orders}</div>
+        <div className="glass-panel rounded-2xl p-5 border border-gray-200">
+          <div className="text-xs font-semibold text-slate-500">Total Orders</div>
+          <div className="text-2xl font-black text-slate-900 mt-1">{stats.total_orders}</div>
         </div>
-        <div className="glass-panel rounded-2xl p-5 border border-white/10">
-          <div className="text-xs font-semibold text-slate-400">Total Revenue (USD)</div>
-          <div className="text-2xl font-black text-emerald-400 mt-1">{formatPrice(parseFloat(stats.total_revenue_usd || 0))}</div>
+        <div className="glass-panel rounded-2xl p-5 border border-gray-200">
+          <div className="text-xs font-semibold text-slate-500">Total Revenue (USD)</div>
+          <div className="text-2xl font-black text-emerald-600 mt-1">{formatPrice(parseFloat(stats.total_revenue_usd || 0))}</div>
         </div>
-        <div className="glass-panel rounded-2xl p-5 border border-white/10">
-          <div className="text-xs font-semibold text-slate-400">Active eSIMs Issued</div>
-          <div className="text-2xl font-black text-cyan-400 mt-1">{stats.total_esims_issued}</div>
+        <div className="glass-panel rounded-2xl p-5 border border-gray-200">
+          <div className="text-xs font-semibold text-slate-500">Active eSIMs Issued</div>
+          <div className="text-2xl font-black text-cyan-600 mt-1">{stats.total_esims_issued}</div>
         </div>
       </div>
 
@@ -363,7 +363,7 @@ export default function AdminConsolePage() {
           Admin+Super-Admin operations; Branding, Users, Translations, and
           the audit-log half of "360° Logs" are Super-Admin-only, matching
           the backend's require_super_admin gate on those endpoints. */}
-      <div className="flex space-x-2 border-b border-white/10 overflow-x-auto hide-scrollbar">
+      <div className="flex space-x-2 border-b border-gray-200 overflow-x-auto hide-scrollbar">
         {[
           { id: "overview", label: "Overview" },
           { id: "merchants", label: `Merchants (${merchants.filter(m => m.status === "PENDING").length})` },
@@ -380,7 +380,7 @@ export default function AdminConsolePage() {
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
             className={`py-2 px-4 text-xs font-bold border-b-2 transition-colors ${
-              activeTab === tab.id ? "border-admin-500 text-white" : "border-transparent text-slate-400 hover:text-slate-200"
+              activeTab === tab.id ? "border-admin-500 text-admin-700" : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
             {tab.label}
@@ -392,9 +392,9 @@ export default function AdminConsolePage() {
       {activeTab === "merchants" && (
         <div className="space-y-6">
         {isSuperAdmin && (
-          <div className="glass-panel rounded-2xl p-6 border border-white/10">
-            <h3 className="text-base font-bold text-white mb-1">Commission Tiers</h3>
-            <p className="text-xs text-slate-400 mb-4">
+          <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+            <h3 className="text-base font-bold text-slate-900 mb-1">Commission Tiers</h3>
+            <p className="text-xs text-slate-500 mb-4">
               Volume-based rates that override a merchant's flat commission % once their cumulative completed reseller-order volume crosses a threshold. Leave empty for flat-rate-only.
             </p>
             <div className="flex flex-wrap gap-2 mb-4">
@@ -402,10 +402,10 @@ export default function AdminConsolePage() {
                 <span className="text-xs text-slate-500">No tiers configured — every merchant uses their own flat rate.</span>
               ) : (
                 commissionTiers.map((t) => (
-                  <span key={t.id} className="flex items-center gap-2 text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-300">
-                    ${t.min_volume_usd}+ &rarr; <span className="text-admin-400">{t.rate_pct}%</span>
+                  <span key={t.id} className="flex items-center gap-2 text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-white border border-gray-300 text-slate-700">
+                    ${t.min_volume_usd}+ &rarr; <span className="text-admin-600">{t.rate_pct}%</span>
                     {isSuperAdmin && (
-                      <button onClick={() => handleDeleteCommissionTier(t.id)} aria-label="Remove tier" className="text-slate-500 hover:text-rose-400">
+                      <button onClick={() => handleDeleteCommissionTier(t.id)} aria-label="Remove tier" className="text-slate-500 hover:text-rose-600">
                         <X className="w-3 h-3" />
                       </button>
                     )}
@@ -415,22 +415,22 @@ export default function AdminConsolePage() {
             </div>
             <form onSubmit={handleCreateCommissionTier} className="flex flex-wrap items-end gap-3">
               <div>
-                <label className="text-xs text-slate-300 font-semibold block mb-1">Min. Volume (USD)</label>
-                <input type="number" min={0} step="0.01" required value={newTier.min_volume_usd} onChange={(e) => setNewTier({ ...newTier, min_volume_usd: e.target.value })} className="w-32 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white" />
+                <label className="text-xs text-slate-700 font-semibold block mb-1">Min. Volume (USD)</label>
+                <input type="number" min={0} step="0.01" required value={newTier.min_volume_usd} onChange={(e) => setNewTier({ ...newTier, min_volume_usd: e.target.value })} className="w-32 bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900" />
               </div>
               <div>
-                <label className="text-xs text-slate-300 font-semibold block mb-1">Rate %</label>
-                <input type="number" min={0} max={100} step="0.01" required value={newTier.rate_pct} onChange={(e) => setNewTier({ ...newTier, rate_pct: e.target.value })} className="w-24 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white" />
+                <label className="text-xs text-slate-700 font-semibold block mb-1">Rate %</label>
+                <input type="number" min={0} max={100} step="0.01" required value={newTier.rate_pct} onChange={(e) => setNewTier({ ...newTier, rate_pct: e.target.value })} className="w-24 bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900" />
               </div>
               <button type="submit" className="bg-admin-600 hover:bg-admin-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl">Add Tier</button>
             </form>
           </div>
         )}
-        <div className="glass-panel rounded-2xl p-6 border border-white/10">
-          <h3 className="text-base font-bold text-white mb-4">Partner &amp; Reseller Applications</h3>
+        <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+          <h3 className="text-base font-bold text-slate-900 mb-4">Partner &amp; Reseller Applications</h3>
           <div className="overflow-x-auto frozen-col-table">
             <table className="w-full text-start text-xs">
-              <thead className="text-slate-400 border-b border-white/10">
+              <thead className="text-slate-500 border-b border-gray-200">
                 <tr>
                   <th className="py-2">Business</th>
                   <th className="py-2">Contact</th>
@@ -439,15 +439,15 @@ export default function AdminConsolePage() {
                   <th className="py-2">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-gray-100">
                 {merchants.map((m) => (
                   <React.Fragment key={m.id}>
                   <tr>
-                    <td className="py-3 font-semibold text-white">{m.business_name}</td>
-                    <td className="py-3 text-slate-300">{m.contact_phone}</td>
+                    <td className="py-3 font-semibold text-slate-900">{m.business_name}</td>
+                    <td className="py-3 text-slate-700">{m.contact_phone}</td>
                     <td className="py-3">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        m.status === "APPROVED" ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"
+                        m.status === "APPROVED" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
                       }`}>{m.status}</span>
                     </td>
                     <td className="py-3">
@@ -460,10 +460,10 @@ export default function AdminConsolePage() {
                           defaultValue={m.commission_rate_pct}
                           key={`${m.id}-${m.commission_rate_pct}`}
                           onBlur={(e) => e.target.value !== String(m.commission_rate_pct) && handleUpdateCommission(m.id, e.target.value)}
-                          className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white"
+                          className="w-16 bg-white border border-gray-300 rounded px-2 py-1 text-xs text-slate-900"
                         />
                       ) : (
-                        <span className="text-slate-300">{m.commission_rate_pct}%</span>
+                        <span className="text-slate-700">{m.commission_rate_pct}%</span>
                       )}
                     </td>
                     <td className="py-3 flex gap-2">
@@ -478,7 +478,7 @@ export default function AdminConsolePage() {
                       {m.status === "APPROVED" && (
                         <button
                           onClick={() => handleToggleApiPanel(m.id)}
-                          className="bg-slate-700 hover:bg-slate-600 text-white px-2.5 py-1 rounded text-[11px] font-bold"
+                          className="bg-gray-100 hover:bg-gray-200 text-slate-700 px-2.5 py-1 rounded text-[11px] font-bold"
                         >
                           {expandedApiPanel === m.id ? "Hide API Access" : "API Access"}
                         </button>
@@ -487,16 +487,16 @@ export default function AdminConsolePage() {
                   </tr>
                   {expandedApiPanel === m.id && (
                     <tr>
-                      <td colSpan={5} className="py-4 bg-slate-900/60">
+                      <td colSpan={5} className="py-4 bg-gray-50">
                         <div className="px-3">
-                          <h4 className="text-xs font-bold text-white mb-2">Partner Reseller API Access</h4>
+                          <h4 className="text-xs font-bold text-slate-900 mb-2">Partner Reseller API Access</h4>
                           {!apiKeyStatuses[m.id] ? (
-                            <span className="text-xs text-slate-400">Loading...</span>
+                            <span className="text-xs text-slate-500">Loading...</span>
                           ) : (
                             <div className="flex flex-col gap-2">
-                              <div className="flex items-center gap-3 text-xs text-slate-300">
+                              <div className="flex items-center gap-3 text-xs text-slate-700">
                                 <span>Status:</span>
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${apiKeyStatuses[m.id].has_active_key ? "bg-emerald-500/10 text-emerald-400" : "bg-slate-700 text-slate-400"}`}>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${apiKeyStatuses[m.id].has_active_key ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-slate-500"}`}>
                                   {apiKeyStatuses[m.id].has_active_key ? "ACTIVE" : "NO KEY ISSUED"}
                                 </span>
                                 {apiKeyStatuses[m.id].has_active_key && (
@@ -504,9 +504,9 @@ export default function AdminConsolePage() {
                                 )}
                               </div>
                               {revealedApiKeys[m.id] && (
-                                <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-[11px]">
-                                  <p className="text-amber-400 font-bold mb-1">Copy this key now — it will not be shown again:</p>
-                                  <code className="block break-all text-white bg-slate-950 rounded px-2 py-1">{revealedApiKeys[m.id]}</code>
+                                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-[11px]">
+                                  <p className="text-amber-600 font-bold mb-1">Copy this key now — it will not be shown again:</p>
+                                  <code className="block break-all text-slate-900 bg-gray-50 rounded px-2 py-1">{revealedApiKeys[m.id]}</code>
                                 </div>
                               )}
                               {isSuperAdmin && (
@@ -546,11 +546,11 @@ export default function AdminConsolePage() {
 
       {/* Tab: Payments */}
       {activeTab === "payments" && (
-        <div className="glass-panel rounded-2xl p-6 border border-white/10">
-          <h3 className="text-base font-bold text-white mb-4">Manual Payment Verification Queue</h3>
+        <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+          <h3 className="text-base font-bold text-slate-900 mb-4">Manual Payment Verification Queue</h3>
           <div className="overflow-x-auto frozen-col-table">
             <table className="w-full text-start text-xs">
-              <thead className="text-slate-400 border-b border-white/10">
+              <thead className="text-slate-500 border-b border-gray-200">
                 <tr>
                   <th className="py-2">Amount</th>
                   <th className="py-2">Method</th>
@@ -559,15 +559,15 @@ export default function AdminConsolePage() {
                   <th className="py-2">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-gray-100">
                 {payments.map((p) => (
                   <tr key={p.id}>
-                    <td className="py-3 font-bold font-mono text-emerald-400">{p.amount} {p.currency}</td>
-                    <td className="py-3 text-slate-300">{p.bank_name}</td>
-                    <td className="py-3 font-mono text-slate-400">{p.transaction_id}</td>
+                    <td className="py-3 font-bold font-mono text-emerald-600">{p.amount} {p.currency}</td>
+                    <td className="py-3 text-slate-700">{p.bank_name}</td>
+                    <td className="py-3 font-mono text-slate-500">{p.transaction_id}</td>
                     <td className="py-3">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        p.status === "APPROVED" ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"
+                        p.status === "APPROVED" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
                       }`}>{p.status}</span>
                     </td>
                     <td className="py-3">
@@ -591,26 +591,26 @@ export default function AdminConsolePage() {
       {/* Tab: Branding & Rates */}
       {activeTab === "branding" && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="glass-panel rounded-2xl p-6 border border-white/10">
-            <h3 className="text-base font-bold text-white mb-1">Dynamic Branding Editor</h3>
-            <p className="text-xs text-slate-400 mb-6">Updates reflect instantly across all pages without redeployment.</p>
+          <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+            <h3 className="text-base font-bold text-slate-900 mb-1">Dynamic Branding Editor</h3>
+            <p className="text-xs text-slate-500 mb-6">Updates reflect instantly across all pages without redeployment.</p>
             
             <form onSubmit={handleUpdateBranding} className="space-y-4">
               <div>
-                <label className="text-xs text-slate-300 font-semibold block mb-1">Platform Brand Name</label>
+                <label className="text-xs text-slate-700 font-semibold block mb-1">Platform Brand Name</label>
                 <input
                   type="text"
                   value={branding.platform_name}
                   onChange={(e) => setBranding({ ...branding, platform_name: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-300 font-semibold block mb-1">Platform Base Currency</label>
+                <label className="text-xs text-slate-700 font-semibold block mb-1">Platform Base Currency</label>
                 <select
                   value={branding.default_currency}
                   onChange={(e) => setBranding({ ...branding, default_currency: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
                 >
                   {["USD", "BDT", "EUR", "GBP", "AED", "SAR", "THB", "SGD"].map((c) => (
                     <option key={c} value={c}>{c}</option>
@@ -618,32 +618,32 @@ export default function AdminConsolePage() {
                 </select>
               </div>
               <div>
-                <label className="text-xs text-slate-300 font-semibold block mb-1">Support Email</label>
+                <label className="text-xs text-slate-700 font-semibold block mb-1">Support Email</label>
                 <input
                   type="email"
                   value={branding.support_email}
                   onChange={(e) => setBranding({ ...branding, support_email: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-300 font-semibold block mb-1">SEO Title</label>
+                <label className="text-xs text-slate-700 font-semibold block mb-1">SEO Title</label>
                 <input
                   type="text"
                   placeholder={branding.platform_name || "eSIM Global"}
                   value={branding.seo_title}
                   onChange={(e) => setBranding({ ...branding, seo_title: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-300 font-semibold block mb-1">SEO Meta Description</label>
+                <label className="text-xs text-slate-700 font-semibold block mb-1">SEO Meta Description</label>
                 <textarea
                   rows={2}
                   placeholder="Shown in search results and social previews"
                   value={branding.seo_description}
                   onChange={(e) => setBranding({ ...branding, seo_description: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white resize-none"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900 resize-none"
                 />
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -654,8 +654,8 @@ export default function AdminConsolePage() {
                   { kind: "og_image" as const, label: "OG Share Image" },
                 ]).map(({ kind, label }) => (
                   <div key={kind}>
-                    <label className="text-xs text-slate-300 font-semibold block mb-1">{label}</label>
-                    <div className="w-full aspect-square rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center overflow-hidden mb-1.5">
+                    <label className="text-xs text-slate-700 font-semibold block mb-1">{label}</label>
+                    <div className="w-full aspect-square rounded-lg bg-white border border-gray-300 flex items-center justify-center overflow-hidden mb-1.5">
                       {brandingAssets[kind] ? (
                         <img src={`${API_BASE}${brandingAssets[kind]}`} alt={label} className="w-full h-full object-contain" />
                       ) : (
@@ -667,15 +667,15 @@ export default function AdminConsolePage() {
                       accept="image/png,image/jpeg,image/svg+xml,image/webp,image/x-icon"
                       disabled={uploadingKind === kind}
                       onChange={(e) => handleUploadBrandingAsset(kind, e.target.files?.[0] ?? null)}
-                      className="w-full text-[10px] text-slate-400 file:me-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-semibold file:bg-slate-800 file:text-slate-300"
+                      className="w-full text-[10px] text-slate-500 file:me-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-semibold file:bg-gray-100 file:text-slate-700"
                     />
-                    {uploadingKind === kind && <p className="text-[10px] text-admin-400 mt-1">Uploading...</p>}
+                    {uploadingKind === kind && <p className="text-[10px] text-admin-600 mt-1">Uploading...</p>}
                   </div>
                 ))}
               </div>
-              <div className="flex items-center justify-between bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5">
+              <div className="flex items-center justify-between bg-white border border-gray-300 rounded-lg px-3 py-2.5">
                 <div>
-                  <label htmlFor="maintenanceMode" className="text-xs text-slate-300 font-semibold block">Maintenance Mode</label>
+                  <label htmlFor="maintenanceMode" className="text-xs text-slate-700 font-semibold block">Maintenance Mode</label>
                   <p className="text-[11px] text-slate-500 mt-0.5">Shows a maintenance page to everyone except admins.</p>
                 </div>
                 <input
@@ -683,11 +683,11 @@ export default function AdminConsolePage() {
                   type="checkbox"
                   checked={branding.maintenance_mode}
                   onChange={(e) => setBranding({ ...branding, maintenance_mode: e.target.checked })}
-                  className="w-5 h-5 rounded bg-slate-900 border-slate-700 accent-admin-500"
+                  className="w-5 h-5 rounded bg-white border-gray-300 accent-admin-500"
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-300 font-semibold block mb-2">Social Links</label>
+                <label className="text-xs text-slate-700 font-semibold block mb-2">Social Links</label>
                 <div className="grid grid-cols-2 gap-2">
                   {(["facebook", "instagram", "twitter", "youtube", "linkedin"] as const).map((platform) => (
                     <input
@@ -696,7 +696,7 @@ export default function AdminConsolePage() {
                       placeholder={`${platform.charAt(0).toUpperCase()}${platform.slice(1)} URL`}
                       value={socialLinks[platform] || ""}
                       onChange={(e) => setSocialLinks({ ...socialLinks, [platform]: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
                     />
                   ))}
                 </div>
@@ -710,17 +710,17 @@ export default function AdminConsolePage() {
             </form>
           </div>
 
-          <div className="glass-panel rounded-2xl p-6 border border-white/10">
-            <h3 className="text-base font-bold text-white mb-1">Currency Rate Override</h3>
-            <p className="text-xs text-slate-400 mb-6">Lock custom exchange rates to protect margins against volatility.</p>
+          <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+            <h3 className="text-base font-bold text-slate-900 mb-1">Currency Rate Override</h3>
+            <p className="text-xs text-slate-500 mb-6">Lock custom exchange rates to protect margins against volatility.</p>
 
             <form onSubmit={handleSaveRateOverride} className="space-y-4">
               <div>
-                <label className="text-xs text-slate-300 font-semibold block mb-1">Currency</label>
+                <label className="text-xs text-slate-700 font-semibold block mb-1">Currency</label>
                 <select
                   value={overrideCurrency}
                   onChange={(e) => setOverrideCurrency(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
                 >
                   <option value="BDT">BDT — Bangladeshi Taka</option>
                   <option value="EUR">EUR — Euro</option>
@@ -730,13 +730,13 @@ export default function AdminConsolePage() {
               </div>
 
               <div>
-                <label className="text-xs text-slate-300 font-semibold block mb-1">Manual Rate per 1 USD</label>
+                <label className="text-xs text-slate-700 font-semibold block mb-1">Manual Rate per 1 USD</label>
                 <input
                   type="number"
                   step="0.01"
                   value={manualRate}
                   onChange={(e) => setManualRate(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
                 />
               </div>
 
@@ -746,9 +746,9 @@ export default function AdminConsolePage() {
                   id="lockRate"
                   checked={isOverride}
                   onChange={(e) => setIsOverride(e.target.checked)}
-                  className="rounded bg-slate-900 border-slate-700"
+                  className="rounded bg-white border-gray-300"
                 />
-                <label htmlFor="lockRate" className="text-xs text-slate-300">Lock Manual Rate (Ignore auto live API)</label>
+                <label htmlFor="lockRate" className="text-xs text-slate-700">Lock Manual Rate (Ignore auto live API)</label>
               </div>
 
               <button
@@ -769,11 +769,11 @@ export default function AdminConsolePage() {
 
       {/* Tab: Orders Viewer */}
       {activeTab === "orders" && (
-        <div className="glass-panel rounded-2xl p-6 border border-white/10">
-          <h3 className="text-base font-bold text-white mb-4">Customer Orders & Support</h3>
+        <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+          <h3 className="text-base font-bold text-slate-900 mb-4">Customer Orders & Support</h3>
           <div className="overflow-x-auto frozen-col-table">
             <table className="w-full text-start text-xs">
-              <thead className="text-slate-400 border-b border-white/10">
+              <thead className="text-slate-500 border-b border-gray-200">
                 <tr>
                   <th className="py-2">Order No</th>
                   <th className="py-2">Date</th>
@@ -784,23 +784,23 @@ export default function AdminConsolePage() {
                   <th className="py-2">eSIM</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-gray-100">
                 {allOrders.map((o) => (
                   <tr key={o.id}>
-                    <td className="py-2.5 font-mono text-admin-400">{o.order_no}</td>
-                    <td className="py-2.5 text-slate-400">{new Date(o.created_at).toLocaleString()}</td>
-                    <td className="py-2.5 text-slate-200">{o.email}</td>
-                    <td className="py-2.5 text-slate-200">{o.product_title}</td>
-                    <td className="py-2.5 font-bold text-emerald-400">{formatPrice(o.total_amount)}</td>
+                    <td className="py-2.5 font-mono text-admin-600">{o.order_no}</td>
+                    <td className="py-2.5 text-slate-500">{new Date(o.created_at).toLocaleString()}</td>
+                    <td className="py-2.5 text-slate-700">{o.email}</td>
+                    <td className="py-2.5 text-slate-700">{o.product_title}</td>
+                    <td className="py-2.5 font-bold text-emerald-600">{formatPrice(o.total_amount)}</td>
                     <td className="py-2.5">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        o.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
+                        o.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
                       }`}>{o.status}</span>
                     </td>
                     <td className="py-2.5">
                       {o.iccid ? (
-                        <button onClick={() => setInspectingLog(o)} className="font-mono text-[10px] text-admin-300 hover:text-admin-200 underline underline-offset-2">
-                          {o.iccid.slice(0, 8)}... {o.is_mock_fallback && <span className="text-amber-400">(mock)</span>}
+                        <button onClick={() => setInspectingLog(o)} className="font-mono text-[10px] text-admin-600 hover:text-admin-700 underline underline-offset-2">
+                          {o.iccid.slice(0, 8)}... {o.is_mock_fallback && <span className="text-amber-600">(mock)</span>}
                         </button>
                       ) : (
                         <span className="text-[10px] text-slate-600">—</span>
@@ -816,11 +816,11 @@ export default function AdminConsolePage() {
 
       {/* Tab: Catalog Editor */}
       {activeTab === "catalog" && (
-        <div className="glass-panel rounded-2xl p-6 border border-white/10">
-          <h3 className="text-base font-bold text-white mb-4">Product Catalog & Pricing Editor</h3>
+        <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+          <h3 className="text-base font-bold text-slate-900 mb-4">Product Catalog & Pricing Editor</h3>
           <div className="overflow-x-auto max-h-[600px] overflow-y-auto frozen-col-table">
             <table className="w-full text-start text-xs relative">
-              <thead className="text-slate-400 border-b border-white/10 sticky top-0 bg-slate-900">
+              <thead className="text-slate-500 border-b border-gray-200 sticky top-0 bg-white">
                 <tr>
                   <th className="py-2">Country</th>
                   <th className="py-2">Product</th>
@@ -831,31 +831,31 @@ export default function AdminConsolePage() {
                   <th className="py-2">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-gray-100">
                 {catalog.map((p) => (
                   <tr key={p.id}>
-                    <td className="py-2.5 font-bold text-white">{p.country}</td>
-                    <td className="py-2.5 text-admin-300">{p.title}</td>
-                    <td className="py-2.5 text-slate-400">{p.data_gb} GB / {p.validity_days} Days</td>
-                    <td className="py-2.5 text-slate-400">{formatPrice(p.cost_price)}</td>
+                    <td className="py-2.5 font-bold text-slate-900">{p.country}</td>
+                    <td className="py-2.5 text-slate-700">{p.title}</td>
+                    <td className="py-2.5 text-slate-500">{p.data_gb} GB / {p.validity_days} Days</td>
+                    <td className="py-2.5 text-slate-500">{formatPrice(p.cost_price)}</td>
                     <td className="py-2.5">
                       <input 
                         type="number" 
                         step="0.01" 
                         defaultValue={p.retail_price}
                         onBlur={(e) => handleUpdateProductPrice(p.id, e.target.value)}
-                        className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-20 text-white"
+                        className="bg-gray-50 border border-gray-300 rounded px-2 py-1 w-20 text-slate-900"
                       />
                     </td>
                     <td className="py-2.5">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        p.is_active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
+                        p.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
                       }`}>{p.is_active ? 'ACTIVE' : 'INACTIVE'}</span>
                     </td>
                     <td className="py-2.5">
                       <button 
                         onClick={() => handleToggleProduct(p.id, p.is_active)}
-                        className="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1 rounded"
+                        className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded"
                       >
                         Toggle
                       </button>
@@ -871,25 +871,25 @@ export default function AdminConsolePage() {
       {/* Tab: Staff & Users */}
       {activeTab === "users" && (
         <div className="space-y-6">
-        <div className="glass-panel rounded-2xl p-6 border border-white/10">
-          <h3 className="text-base font-bold text-white mb-1">Create Staff Account</h3>
-          <p className="text-xs text-slate-400 mb-4">Directly creates an Admin or Super Admin account - existing users are promoted via the role dropdown below instead.</p>
+        <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+          <h3 className="text-base font-bold text-slate-900 mb-1">Create Staff Account</h3>
+          <p className="text-xs text-slate-500 mb-4">Directly creates an Admin or Super Admin account - existing users are promoted via the role dropdown below instead.</p>
           <form onSubmit={handleCreateStaff} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
             <div>
-              <label className="text-xs text-slate-300 font-semibold block mb-1">Email</label>
-              <input type="email" required value={newStaff.email} onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white" />
+              <label className="text-xs text-slate-700 font-semibold block mb-1">Email</label>
+              <input type="email" required value={newStaff.email} onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })} className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900" />
             </div>
             <div>
-              <label className="text-xs text-slate-300 font-semibold block mb-1">Username</label>
-              <input type="text" required value={newStaff.username} onChange={(e) => setNewStaff({ ...newStaff, username: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white" />
+              <label className="text-xs text-slate-700 font-semibold block mb-1">Username</label>
+              <input type="text" required value={newStaff.username} onChange={(e) => setNewStaff({ ...newStaff, username: e.target.value })} className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900" />
             </div>
             <div>
-              <label className="text-xs text-slate-300 font-semibold block mb-1">Password</label>
-              <input type="password" required minLength={8} value={newStaff.password} onChange={(e) => setNewStaff({ ...newStaff, password: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white" />
+              <label className="text-xs text-slate-700 font-semibold block mb-1">Password</label>
+              <input type="password" required minLength={8} value={newStaff.password} onChange={(e) => setNewStaff({ ...newStaff, password: e.target.value })} className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900" />
             </div>
             <div>
-              <label className="text-xs text-slate-300 font-semibold block mb-1">Role</label>
-              <select value={newStaff.role} onChange={(e) => setNewStaff({ ...newStaff, role: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white">
+              <label className="text-xs text-slate-700 font-semibold block mb-1">Role</label>
+              <select value={newStaff.role} onChange={(e) => setNewStaff({ ...newStaff, role: e.target.value })} className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900">
                 <option value="ADMIN">Admin</option>
                 <option value="SUPER_ADMIN">Super Admin</option>
               </select>
@@ -900,11 +900,11 @@ export default function AdminConsolePage() {
           </form>
         </div>
 
-        <div className="glass-panel rounded-2xl p-6 border border-white/10">
-          <h3 className="text-base font-bold text-white mb-4">Staff & User Management</h3>
+        <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+          <h3 className="text-base font-bold text-slate-900 mb-4">Staff & User Management</h3>
           <div className="overflow-x-auto frozen-col-table">
             <table className="w-full text-start text-xs">
-              <thead className="text-slate-400 border-b border-white/10">
+              <thead className="text-slate-500 border-b border-gray-200">
                 <tr>
                   <th className="py-2">User ID</th>
                   <th className="py-2">Email</th>
@@ -913,18 +913,18 @@ export default function AdminConsolePage() {
                   <th className="py-2">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-gray-100">
                 {users.map((u) => (
                   <tr key={u.id}>
-                    <td className="py-2.5 font-mono text-slate-400">{u.id.substring(0,8)}...</td>
-                    <td className="py-2.5 text-slate-200">{u.email}</td>
-                    <td className="py-2.5 font-bold text-admin-400">{u.role}</td>
-                    <td className="py-2.5 text-slate-400">{new Date(u.created_at).toLocaleDateString()}</td>
+                    <td className="py-2.5 font-mono text-slate-500">{u.id.substring(0,8)}...</td>
+                    <td className="py-2.5 text-slate-700">{u.email}</td>
+                    <td className="py-2.5 font-bold text-admin-600">{u.role}</td>
+                    <td className="py-2.5 text-slate-500">{new Date(u.created_at).toLocaleDateString()}</td>
                     <td className="py-2.5 space-x-2">
                       <select 
                         value={u.role} 
                         onChange={(e) => handleUpdateRole(u.id, e.target.value)}
-                        className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white"
+                        className="bg-gray-50 border border-gray-300 rounded px-2 py-1 text-slate-900"
                       >
                         <option value="USER">User</option>
                         <option value="MERCHANT">Merchant</option>
@@ -945,16 +945,16 @@ export default function AdminConsolePage() {
       {activeTab === "logs" && (
         <div className="space-y-6">
           {/* Supplier API Logs */}
-          <div className="glass-panel rounded-2xl p-6 border border-white/10">
-            <h3 className="text-base font-bold text-white mb-1 flex items-center space-x-2">
-              <Activity className="w-4 h-4 text-cyan-400" />
+          <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+            <h3 className="text-base font-bold text-slate-900 mb-1 flex items-center space-x-2">
+              <Activity className="w-4 h-4 text-cyan-600" />
               <span>VivaPe Upstream Supplier API Traffic Log</span>
             </h3>
-            <p className="text-xs text-slate-400 mb-4">Every external supplier API request, status, and latency.</p>
+            <p className="text-xs text-slate-500 mb-4">Every external supplier API request, status, and latency.</p>
 
             <div className="overflow-x-auto max-h-80 overflow-y-auto">
               <table className="w-full text-start text-xs">
-                <thead className="text-slate-400 border-b border-white/10 sticky top-0 bg-slate-900">
+                <thead className="text-slate-500 border-b border-gray-200 sticky top-0 bg-white">
                   <tr>
                     <th className="py-2">Time</th>
                     <th className="py-2">Method</th>
@@ -963,18 +963,18 @@ export default function AdminConsolePage() {
                     <th className="py-2">Latency</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5 font-mono">
+                <tbody className="divide-y divide-gray-100 font-mono">
                   {supplierLogs.map((log) => (
-                    <tr key={log.id} onClick={() => setInspectingLog(log)} className="cursor-pointer hover:bg-white/5">
-                      <td className="py-2.5 text-slate-400">{new Date(log.created_at).toLocaleTimeString()}</td>
-                      <td className="py-2.5 font-bold text-admin-400">{log.method}</td>
-                      <td className="py-2.5 text-slate-200">/{log.endpoint}</td>
+                    <tr key={log.id} onClick={() => setInspectingLog(log)} className="cursor-pointer hover:bg-gray-50">
+                      <td className="py-2.5 text-slate-500">{new Date(log.created_at).toLocaleTimeString()}</td>
+                      <td className="py-2.5 font-bold text-admin-600">{log.method}</td>
+                      <td className="py-2.5 text-slate-700">/{log.endpoint}</td>
                       <td className="py-2.5">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          log.status_code === 200 ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"
+                          log.status_code === 200 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
                         }`}>{log.status_code}</span>
                       </td>
-                      <td className="py-2.5 text-slate-400">{log.latency_ms} ms</td>
+                      <td className="py-2.5 text-slate-500">{log.latency_ms} ms</td>
                     </tr>
                   ))}
                 </tbody>
@@ -985,16 +985,16 @@ export default function AdminConsolePage() {
           {/* Audit Logs — Super Admin only, matching the backend's
               require_super_admin gate on GET /admin/audit-logs. */}
           {isSuperAdmin ? (
-            <div className="glass-panel rounded-2xl p-6 border border-white/10">
-              <h3 className="text-base font-bold text-white mb-1 flex items-center space-x-2">
-                <FileText className="w-4 h-4 text-amber-400" />
+            <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+              <h3 className="text-base font-bold text-slate-900 mb-1 flex items-center space-x-2">
+                <FileText className="w-4 h-4 text-amber-600" />
                 <span>Administrative Audit Trail ("Log of Everything")</span>
               </h3>
-              <p className="text-xs text-slate-400 mb-4">Tamper-evident logs of all administrative actions and parameter changes. Click a row to inspect the full before/after state.</p>
+              <p className="text-xs text-slate-500 mb-4">Tamper-evident logs of all administrative actions and parameter changes. Click a row to inspect the full before/after state.</p>
 
               <div className="overflow-x-auto max-h-80 overflow-y-auto">
                 <table className="w-full text-start text-xs">
-                  <thead className="text-slate-400 border-b border-white/10 sticky top-0 bg-slate-900">
+                  <thead className="text-slate-500 border-b border-gray-200 sticky top-0 bg-white">
                     <tr>
                       <th className="py-2">Time</th>
                       <th className="py-2">Role</th>
@@ -1002,13 +1002,13 @@ export default function AdminConsolePage() {
                       <th className="py-2">State Diff</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/5">
+                  <tbody className="divide-y divide-gray-100">
                     {auditLogs.map((log) => (
-                      <tr key={log.id} onClick={() => setInspectingLog(log)} className="cursor-pointer hover:bg-white/5">
-                        <td className="py-2.5 text-slate-400 font-mono">{new Date(log.created_at).toLocaleTimeString()}</td>
-                        <td className="py-2.5 font-bold text-amber-400">{log.actor_role}</td>
-                        <td className="py-2.5 font-semibold text-white">{log.action}</td>
-                        <td className="py-2.5 font-mono text-[11px] text-slate-400 truncate max-w-xs">{JSON.stringify(log.after_state)}</td>
+                      <tr key={log.id} onClick={() => setInspectingLog(log)} className="cursor-pointer hover:bg-gray-50">
+                        <td className="py-2.5 text-slate-500 font-mono">{new Date(log.created_at).toLocaleTimeString()}</td>
+                        <td className="py-2.5 font-bold text-amber-600">{log.actor_role}</td>
+                        <td className="py-2.5 font-semibold text-slate-900">{log.action}</td>
+                        <td className="py-2.5 font-mono text-[11px] text-slate-500 truncate max-w-xs">{JSON.stringify(log.after_state)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1016,37 +1016,37 @@ export default function AdminConsolePage() {
               </div>
             </div>
           ) : (
-            <div className="glass-panel rounded-2xl p-6 border border-white/10">
-              <h3 className="text-base font-bold text-white mb-1 flex items-center space-x-2">
-                <FileText className="w-4 h-4 text-amber-400" />
+            <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+              <h3 className="text-base font-bold text-slate-900 mb-1 flex items-center space-x-2">
+                <FileText className="w-4 h-4 text-amber-600" />
                 <span>Administrative Activity Summary</span>
               </h3>
-              <p className="text-xs text-slate-400 mb-4">The full audit trail (before/after state, IP, user agent) is Super-Admin-only. This is a summarized view of what's happened.</p>
+              <p className="text-xs text-slate-500 mb-4">The full audit trail (before/after state, IP, user agent) is Super-Admin-only. This is a summarized view of what's happened.</p>
 
               {auditSummary && (
                 <>
                   <div className="flex flex-wrap gap-2 mb-4">
                     {Object.entries(auditSummary.action_counts).map(([action, count]) => (
-                      <span key={action} className="text-[10px] font-bold px-2 py-1 rounded bg-slate-900 border border-slate-700 text-slate-300">
-                        {action}: <span className="text-admin-400">{count}</span>
+                      <span key={action} className="text-[10px] font-bold px-2 py-1 rounded bg-white border border-gray-300 text-slate-700">
+                        {action}: <span className="text-admin-600">{count}</span>
                       </span>
                     ))}
                   </div>
                   <div className="overflow-x-auto max-h-80 overflow-y-auto">
                     <table className="w-full text-start text-xs">
-                      <thead className="text-slate-400 border-b border-white/10 sticky top-0 bg-slate-900">
+                      <thead className="text-slate-500 border-b border-gray-200 sticky top-0 bg-white">
                         <tr>
                           <th className="py-2">Time</th>
                           <th className="py-2">Role</th>
                           <th className="py-2">Action</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-white/5">
+                      <tbody className="divide-y divide-gray-100">
                         {auditSummary.recent.map((log) => (
                           <tr key={log.id}>
-                            <td className="py-2.5 text-slate-400 font-mono">{new Date(log.created_at).toLocaleTimeString()}</td>
-                            <td className="py-2.5 font-bold text-amber-400">{log.actor_role}</td>
-                            <td className="py-2.5 font-semibold text-white">{log.action}</td>
+                            <td className="py-2.5 text-slate-500 font-mono">{new Date(log.created_at).toLocaleTimeString()}</td>
+                            <td className="py-2.5 font-bold text-amber-600">{log.actor_role}</td>
+                            <td className="py-2.5 font-semibold text-slate-900">{log.action}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1061,12 +1061,12 @@ export default function AdminConsolePage() {
 
       {/* Tab: KYC Review */}
       {activeTab === "kyc" && (
-        <div className="glass-panel rounded-2xl p-6 border border-white/10">
-          <h3 className="text-base font-bold text-white mb-1">National ID Verification Queue</h3>
-          <p className="text-xs text-slate-400 mb-4">Review submitted NID numbers and photo documents. Approving sets the user's account as KYC Verified.</p>
+        <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+          <h3 className="text-base font-bold text-slate-900 mb-1">National ID Verification Queue</h3>
+          <p className="text-xs text-slate-500 mb-4">Review submitted NID numbers and photo documents. Approving sets the user's account as KYC Verified.</p>
           <div className="overflow-x-auto frozen-col-table">
             <table className="w-full text-start text-xs">
-              <thead className="text-slate-400 border-b border-white/10">
+              <thead className="text-slate-500 border-b border-gray-200">
                 <tr>
                   <th className="py-2">User</th>
                   <th className="py-2">NID Number</th>
@@ -1076,24 +1076,24 @@ export default function AdminConsolePage() {
                   <th className="py-2">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-gray-100">
                 {kycQueue.map((k) => (
                   <tr key={k.id}>
-                    <td className="py-2.5 text-slate-200">{k.email}</td>
-                    <td className="py-2.5 font-mono text-slate-300">{k.nid_number}</td>
+                    <td className="py-2.5 text-slate-700">{k.email}</td>
+                    <td className="py-2.5 font-mono text-slate-700">{k.nid_number}</td>
                     <td className="py-2.5 space-x-2">
-                      <button onClick={() => handleViewKycDocument(k.id, "front")} className="text-admin-300 hover:text-admin-200 underline underline-offset-2">Front</button>
+                      <button onClick={() => handleViewKycDocument(k.id, "front")} className="text-admin-600 hover:text-admin-700 underline underline-offset-2">Front</button>
                       {k.has_back_document && (
-                        <button onClick={() => handleViewKycDocument(k.id, "back")} className="text-admin-300 hover:text-admin-200 underline underline-offset-2">Back</button>
+                        <button onClick={() => handleViewKycDocument(k.id, "back")} className="text-admin-600 hover:text-admin-700 underline underline-offset-2">Back</button>
                       )}
                     </td>
                     <td className="py-2.5">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        k.status === "APPROVED" ? "bg-emerald-500/10 text-emerald-400" :
-                        k.status === "REJECTED" ? "bg-rose-500/10 text-rose-400" : "bg-amber-500/10 text-amber-400"
+                        k.status === "APPROVED" ? "bg-emerald-50 text-emerald-700" :
+                        k.status === "REJECTED" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700"
                       }`}>{k.status}</span>
                     </td>
-                    <td className="py-2.5 text-slate-400">{new Date(k.submitted_at).toLocaleDateString()}</td>
+                    <td className="py-2.5 text-slate-500">{new Date(k.submitted_at).toLocaleDateString()}</td>
                     <td className="py-2.5 space-x-2">
                       {k.status === "PENDING" && (
                         <>
@@ -1112,11 +1112,11 @@ export default function AdminConsolePage() {
 
       {/* KYC Document Viewer Modal */}
       {viewingDoc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4" onClick={() => { URL.revokeObjectURL(viewingDoc.url); setViewingDoc(null); }}>
-          <div className="glass-panel rounded-2xl max-w-2xl w-full p-6 border border-white/20 shadow-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4" onClick={() => { URL.revokeObjectURL(viewingDoc.url); setViewingDoc(null); }}>
+          <div className="glass-panel rounded-2xl max-w-2xl w-full p-6 border border-gray-300 shadow-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold text-white capitalize">NID {viewingDoc.side} Document</h3>
-              <button onClick={() => { URL.revokeObjectURL(viewingDoc.url); setViewingDoc(null); }} aria-label="Close" className="p-1 rounded-lg text-slate-400 hover:text-white">
+              <h3 className="text-sm font-bold text-slate-900 capitalize">NID {viewingDoc.side} Document</h3>
+              <button onClick={() => { URL.revokeObjectURL(viewingDoc.url); setViewingDoc(null); }} aria-label="Close" className="p-1 rounded-lg text-slate-500 hover:text-slate-900">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1131,15 +1131,15 @@ export default function AdminConsolePage() {
 
       {/* JSON Inspect Modal — for both supplier and audit log rows */}
       {inspectingLog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4" onClick={() => setInspectingLog(null)}>
-          <div className="glass-panel rounded-2xl max-w-2xl w-full p-6 border border-white/20 shadow-2xl max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4" onClick={() => setInspectingLog(null)}>
+          <div className="glass-panel rounded-2xl max-w-2xl w-full p-6 border border-gray-300 shadow-2xl max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold text-white">Log Entry Detail</h3>
-              <button onClick={() => setInspectingLog(null)} aria-label="Close" className="p-1 rounded-lg text-slate-400 hover:text-white">
+              <h3 className="text-sm font-bold text-slate-900">Log Entry Detail</h3>
+              <button onClick={() => setInspectingLog(null)} aria-label="Close" className="p-1 rounded-lg text-slate-500 hover:text-slate-900">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <pre className="text-[11px] font-mono text-slate-300 bg-slate-950 p-4 rounded-xl overflow-x-auto whitespace-pre-wrap break-all">
+            <pre className="text-[11px] font-mono text-slate-700 bg-gray-50 p-4 rounded-xl overflow-x-auto whitespace-pre-wrap break-all">
               {JSON.stringify(inspectingLog, null, 2)}
             </pre>
           </div>
@@ -1148,8 +1148,8 @@ export default function AdminConsolePage() {
 
       {/* Tab: Overview */}
       {activeTab === "overview" && (
-        <div className="glass-panel rounded-2xl p-6 border border-white/10 text-xs text-slate-400 space-y-2">
-          <p className="font-semibold text-white">System Status: Operational &bull; Live Domain https://esim.salmandev.io</p>
+        <div className="glass-panel rounded-2xl p-6 border border-gray-200 text-xs text-slate-500 space-y-2">
+          <p className="font-semibold text-slate-900">System Status: Operational &bull; Live Domain https://esim.salmandev.io</p>
           <p>Connected to Upstream VivaPe API &amp; ShurjoPay Sandbox Gateway.</p>
           <p>Exchange rates synchronized keylessly from open.er-api.com with manual admin override support.</p>
         </div>

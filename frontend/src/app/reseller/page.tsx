@@ -125,36 +125,36 @@ export default function ResellerPortalPage() {
   if (!isMerchant) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-16">
-        <div className="glass-panel rounded-2xl p-8 border border-white/10 shadow-2xl">
-          <div className="w-12 h-12 bg-merchant-500/20 text-merchant-400 rounded-xl flex items-center justify-center mx-auto mb-4">
+        <div className="glass-panel rounded-2xl p-8 border border-gray-200 shadow-lg">
+          <div className="w-12 h-12 bg-merchant-50 text-merchant-600 rounded-xl flex items-center justify-center mx-auto mb-4">
             <Briefcase className="w-6 h-6" />
           </div>
-          <h2 className="text-2xl font-bold text-white text-center">B2B Travel Partner Program</h2>
-          <p className="text-xs text-slate-400 text-center mt-1 mb-6">
+          <h2 className="text-2xl font-bold text-slate-900 text-center">B2B Travel Partner Program</h2>
+          <p className="text-xs text-slate-500 text-center mt-1 mb-6">
             Apply to become an authorized reseller. Earn a 5% instant commission on every eSIM you issue to your clients.
           </p>
 
           {applySuccess ? (
-            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 text-center">
-              <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto mb-2" />
-              <h4 className="font-bold text-emerald-400">Application Submitted!</h4>
-              <p className="text-xs text-emerald-300 mt-1">Our team is reviewing your application. You will be notified via email.</p>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
+              <CheckCircle2 className="w-6 h-6 text-emerald-600 mx-auto mb-2" />
+              <h4 className="font-bold text-emerald-700">Application Submitted!</h4>
+              <p className="text-xs text-emerald-700 mt-1">Our team is reviewing your application. You will be notified via email.</p>
             </div>
           ) : (
             <form onSubmit={handleApplyMerchant} className="space-y-4">
               <div>
-                <label className="text-xs text-slate-300 font-semibold block mb-1">Registered Business Name (Travel Agency / Tech)</label>
-                <input type="text" required value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white" />
+                <label className="text-xs text-slate-700 font-semibold block mb-1">Registered Business Name (Travel Agency / Tech)</label>
+                <input type="text" required value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900" />
               </div>
               <div>
-                <label className="text-xs text-slate-300 font-semibold block mb-1">Trade License / Corporate ID</label>
-                <input type="text" required value={tradeLicense} onChange={(e) => setTradeLicense(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white" />
+                <label className="text-xs text-slate-700 font-semibold block mb-1">Trade License / Corporate ID</label>
+                <input type="text" required value={tradeLicense} onChange={(e) => setTradeLicense(e.target.value)} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900" />
               </div>
               <div>
-                <label className="text-xs text-slate-300 font-semibold block mb-1">Business Contact Phone</label>
-                <input type="tel" required value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white" />
+                <label className="text-xs text-slate-700 font-semibold block mb-1">Business Contact Phone</label>
+                <input type="tel" required value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900" />
               </div>
-              <button type="submit" disabled={applying} className="w-full py-2.5 rounded-xl bg-merchant-600 hover:bg-merchant-500 text-white text-xs font-bold transition-all shadow-lg shadow-merchant-900/30">
+              <button type="submit" disabled={applying} className="w-full py-2.5 rounded-xl bg-merchant-600 hover:bg-merchant-500 text-white text-xs font-bold transition-all shadow-md shadow-merchant-900/10">
                 {applying ? "Submitting..." : "Submit B2B Application"}
               </button>
             </form>
@@ -172,45 +172,45 @@ export default function ResellerPortalPage() {
       {/* Reseller Header & Commission Ticker */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center space-x-1.5 text-amber-400 text-xs font-bold uppercase tracking-wider mb-1">
+          <div className="inline-flex items-center space-x-1.5 text-merchant-600 text-xs font-bold uppercase tracking-wider mb-1">
             <Briefcase className="w-4 h-4" />
             <span>Authorized B2B Partner Portal</span>
           </div>
-          <h1 className="text-3xl font-extrabold text-white">Reseller Operations &amp; eSIM Provisioning</h1>
+          <h1 className="text-3xl font-extrabold text-slate-900">Reseller Operations &amp; eSIM Provisioning</h1>
         </div>
 
         <div className="flex gap-3">
           {userData?.merchant_profile && (
-            <div className="glass-panel px-4 py-2 rounded-xl border border-white/10 text-end">
-              <span className="text-[10px] text-slate-400 uppercase font-semibold block">Your Commission Rate</span>
-              <span className="text-base font-black text-amber-400 font-mono">{userData.merchant_profile.commission_rate_pct}%</span>
+            <div className="glass-panel px-4 py-2 rounded-xl border border-gray-200 text-end">
+              <span className="text-[10px] text-slate-500 uppercase font-semibold block">Your Commission Rate</span>
+              <span className="text-base font-black text-merchant-600 font-mono">{userData.merchant_profile.commission_rate_pct}%</span>
             </div>
           )}
-          <div className="glass-panel px-4 py-2 rounded-xl border border-white/10 text-end">
-            <span className="text-[10px] text-slate-400 uppercase font-semibold block">Commission Wallet</span>
-            <span className="text-base font-black text-amber-400 font-mono">{formatPrice(commissionBalance)}</span>
+          <div className="glass-panel px-4 py-2 rounded-xl border border-gray-200 text-end">
+            <span className="text-[10px] text-slate-500 uppercase font-semibold block">Commission Wallet</span>
+            <span className="text-base font-black text-merchant-600 font-mono">{formatPrice(commissionBalance)}</span>
           </div>
-          <div className="glass-panel px-4 py-2 rounded-xl border border-white/10 text-end">
-            <span className="text-[10px] text-slate-400 uppercase font-semibold block">Default Wallet</span>
-            <span className="text-base font-black text-emerald-400 font-mono">
+          <div className="glass-panel px-4 py-2 rounded-xl border border-gray-200 text-end">
+            <span className="text-[10px] text-slate-500 uppercase font-semibold block">Default Wallet</span>
+            <span className="text-base font-black text-emerald-600 font-mono">
               {formatPrice(userData?.wallets?.find((w: any) => w.wallet_type === "DEFAULT")?.balance || 0)}
             </span>
           </div>
         </div>
       </div>
-      
+
       {/* Tabs */}
-      <div className="flex space-x-2 border-b border-white/10 pb-4 overflow-x-auto hide-scrollbar">
-        <button 
-          onClick={() => setActiveTab("provision")} 
-          className={`px-4 py-2.5 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex items-center space-x-2 ${activeTab === "provision" ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "text-slate-400 hover:text-white bg-slate-900 border border-white/5"}`}
+      <div className="flex space-x-2 border-b border-gray-200 pb-4 overflow-x-auto hide-scrollbar">
+        <button
+          onClick={() => setActiveTab("provision")}
+          className={`px-4 py-2.5 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex items-center space-x-2 ${activeTab === "provision" ? "bg-merchant-50 text-merchant-700 border border-merchant-200" : "text-slate-500 hover:text-slate-900 bg-gray-50 border border-gray-200"}`}
         >
           <Send className="w-3.5 h-3.5" />
           <span>Provision eSIM</span>
         </button>
-        <button 
-          onClick={() => setActiveTab("ledger")} 
-          className={`px-4 py-2.5 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex items-center space-x-2 ${activeTab === "ledger" ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "text-slate-400 hover:text-white bg-slate-900 border border-white/5"}`}
+        <button
+          onClick={() => setActiveTab("ledger")}
+          className={`px-4 py-2.5 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex items-center space-x-2 ${activeTab === "ledger" ? "bg-merchant-50 text-merchant-700 border border-merchant-200" : "text-slate-500 hover:text-slate-900 bg-gray-50 border border-gray-200"}`}
         >
           <History className="w-3.5 h-3.5" />
           <span>Sales & Ledger</span>
@@ -220,14 +220,14 @@ export default function ResellerPortalPage() {
       {activeTab === "provision" && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Form */}
-          <div className="glass-panel rounded-2xl p-6 border border-white/10">
-            <h3 className="text-base font-bold text-white mb-1">Instant "Buy-for-User" Provisioning</h3>
-            <p className="text-xs text-slate-400 mb-6">Allocate and issue an eSIM on behalf of your traveler customer.</p>
+          <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+            <h3 className="text-base font-bold text-slate-900 mb-1">Instant "Buy-for-User" Provisioning</h3>
+            <p className="text-xs text-slate-500 mb-6">Allocate and issue an eSIM on behalf of your traveler customer.</p>
 
             <form onSubmit={handleBuyForUser} className="space-y-4">
               <div>
-                <label className="text-xs text-slate-300 font-semibold block mb-1">Destination Country</label>
-                <select value={selectedCountry} onChange={(e) => setSelectedCountry(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white" required>
+                <label className="text-xs text-slate-700 font-semibold block mb-1">Destination Country</label>
+                <select value={selectedCountry} onChange={(e) => setSelectedCountry(e.target.value)} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900" required>
                   <option value="">-- Select Destination Country --</option>
                   {countries.map((c) => (
                     <option key={c.iso2} value={c.iso2}>{c.name_en || c.name} ({c.iso2})</option>
@@ -237,8 +237,8 @@ export default function ResellerPortalPage() {
 
               {selectedCountry && (
                 <div>
-                  <label className="text-xs text-slate-300 font-semibold block mb-1">eSIM Package Bundle</label>
-                  <select value={selectedProduct} onChange={(e) => setSelectedProduct(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white" required>
+                  <label className="text-xs text-slate-700 font-semibold block mb-1">eSIM Package Bundle</label>
+                  <select value={selectedProduct} onChange={(e) => setSelectedProduct(e.target.value)} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900" required>
                     {products.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.title_en} — {p.data_amount_gb} GB ({p.validity_days} Days) — {formatPrice(parseFloat(p.retail_price))}
@@ -250,21 +250,21 @@ export default function ResellerPortalPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-300 font-semibold block mb-1">Customer Email</label>
-                  <input type="email" required placeholder="traveler@gmail.com" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white" />
+                  <label className="text-xs text-slate-700 font-semibold block mb-1">Customer Email</label>
+                  <input type="email" required placeholder="traveler@gmail.com" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900" />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-300 font-semibold block mb-1">Customer WhatsApp / Phone</label>
-                  <input type="tel" placeholder="+880 1800-000000" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white" />
+                  <label className="text-xs text-slate-700 font-semibold block mb-1">Customer WhatsApp / Phone</label>
+                  <input type="tel" placeholder="+880 1800-000000" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900" />
                 </div>
               </div>
 
-              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300 flex items-center justify-between">
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 flex items-center justify-between">
                 <span>{userData?.merchant_profile?.commission_rate_pct ?? 5}% Partner Commission:</span>
                 <span className="font-bold">Instant Credit to Commission Wallet</span>
               </div>
 
-              <button type="submit" disabled={loading || !selectedProduct} className="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold transition-all shadow-lg shadow-brand-900/30 flex items-center justify-center space-x-2">
+              <button type="submit" disabled={loading || !selectedProduct} className="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold transition-all shadow-md shadow-brand-900/10 flex items-center justify-center space-x-2">
                 <Send className="w-3.5 h-3.5" />
                 <span>{loading ? "Provisioning eSIM..." : "Issue eSIM for Customer"}</span>
               </button>
@@ -272,19 +272,19 @@ export default function ResellerPortalPage() {
           </div>
 
           {/* Result Preview */}
-          <div className="glass-panel rounded-2xl p-6 border border-white/10 flex flex-col justify-center">
+          <div className="glass-panel rounded-2xl p-6 border border-gray-200 flex flex-col justify-center">
             {orderResult ? (
               <div className="text-center space-y-4">
-                <div className="w-12 h-12 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto">
+                <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
                   <CheckCircle2 className="w-6 h-6" />
                 </div>
-                <h4 className="text-lg font-bold text-white">eSIM Successfully Allocated!</h4>
-                <p className="text-xs text-slate-400">Order #{orderResult.order_no} created and ready for delivery.</p>
+                <h4 className="text-lg font-bold text-slate-900">eSIM Successfully Allocated!</h4>
+                <p className="text-xs text-slate-500">Order #{orderResult.order_no} created and ready for delivery.</p>
 
-                <div className="bg-slate-900/80 p-4 rounded-xl text-start text-xs space-y-2 font-mono border border-white/5">
+                <div className="bg-gray-50 p-4 rounded-xl text-start text-xs space-y-2 font-mono border border-gray-200">
                   <div><span className="text-slate-500">Target Customer:</span> {customerEmail}</div>
                   <div><span className="text-slate-500">Order Amount:</span> {formatPrice(parseFloat(orderResult.total_amount))}</div>
-                  <div><span className="text-slate-500">Status:</span> <span className="text-emerald-400">{orderResult.status}</span></div>
+                  <div><span className="text-slate-500">Status:</span> <span className="text-emerald-600">{orderResult.status}</span></div>
                 </div>
 
                 <div className="flex gap-2">
@@ -307,11 +307,11 @@ export default function ResellerPortalPage() {
 
       {activeTab === "ledger" && (
         <div className="space-y-6">
-          <div className="glass-panel rounded-2xl p-6 border border-white/10">
-            <h3 className="text-base font-bold text-white mb-4">Your Issued eSIMs (Sales History)</h3>
+          <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+            <h3 className="text-base font-bold text-slate-900 mb-4">Your Issued eSIMs (Sales History)</h3>
             <div className="overflow-x-auto frozen-col-table">
               <table className="w-full text-start text-xs">
-                <thead className="text-slate-400 border-b border-white/10">
+                <thead className="text-slate-500 border-b border-gray-200">
                   <tr>
                     <th className="py-2">Date</th>
                     <th className="py-2">Order No</th>
@@ -322,15 +322,15 @@ export default function ResellerPortalPage() {
                     <th className="py-2">ICCID</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5">
+                <tbody className="divide-y divide-gray-100">
                   {resellerOrders.map((o, idx) => (
                     <tr key={idx}>
-                      <td className="py-2.5 text-slate-400">{new Date(o.created_at).toLocaleString()}</td>
-                      <td className="py-2.5 font-mono text-brand-400">{o.order_no}</td>
-                      <td className="py-2.5 text-slate-200">{o.beneficiary_username}</td>
-                      <td className="py-2.5 text-slate-200">{o.product_title}</td>
-                      <td className="py-2.5 text-slate-400 font-bold">{formatPrice(o.total_amount)}</td>
-                      <td className="py-2.5 text-amber-400 font-bold">+{formatPrice(o.commission_earned)}</td>
+                      <td className="py-2.5 text-slate-500">{new Date(o.created_at).toLocaleString()}</td>
+                      <td className="py-2.5 font-mono text-brand-600">{o.order_no}</td>
+                      <td className="py-2.5 text-slate-700">{o.beneficiary_username}</td>
+                      <td className="py-2.5 text-slate-700">{o.product_title}</td>
+                      <td className="py-2.5 text-slate-600 font-bold">{formatPrice(o.total_amount)}</td>
+                      <td className="py-2.5 text-merchant-600 font-bold">+{formatPrice(o.commission_earned)}</td>
                       <td className="py-2.5 font-mono text-[10px] text-slate-500">{o.iccid || "N/A"}</td>
                     </tr>
                   ))}
@@ -344,11 +344,11 @@ export default function ResellerPortalPage() {
             </div>
           </div>
 
-          <div className="glass-panel rounded-2xl p-6 border border-white/10">
-            <h3 className="text-base font-bold text-white mb-4">Commission Wallet Ledger</h3>
+          <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+            <h3 className="text-base font-bold text-slate-900 mb-4">Commission Wallet Ledger</h3>
             <div className="overflow-x-auto frozen-col-table">
               <table className="w-full text-start text-xs">
-                <thead className="text-slate-400 border-b border-white/10">
+                <thead className="text-slate-500 border-b border-gray-200">
                   <tr>
                     <th className="py-2">Date</th>
                     <th className="py-2">Description</th>
@@ -356,15 +356,15 @@ export default function ResellerPortalPage() {
                     <th className="py-2">Balance After</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5">
+                <tbody className="divide-y divide-gray-100">
                   {commissionLedger.map((l, idx) => (
                     <tr key={idx}>
-                      <td className="py-2.5 text-slate-400">{new Date(l.created_at).toLocaleString()}</td>
-                      <td className="py-2.5 text-slate-200">{l.description}</td>
-                      <td className={`py-2.5 font-bold ${l.tx_type === 'CREDIT' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      <td className="py-2.5 text-slate-500">{new Date(l.created_at).toLocaleString()}</td>
+                      <td className="py-2.5 text-slate-700">{l.description}</td>
+                      <td className={`py-2.5 font-bold ${l.tx_type === 'CREDIT' ? 'text-emerald-600' : 'text-rose-600'}`}>
                         {l.tx_type === 'CREDIT' ? '+' : '-'}{formatPrice(l.amount)}
                       </td>
-                      <td className="py-2.5 text-amber-400 font-mono">{formatPrice(l.balance_after)}</td>
+                      <td className="py-2.5 text-merchant-600 font-mono">{formatPrice(l.balance_after)}</td>
                     </tr>
                   ))}
                   {commissionLedger.length === 0 && (

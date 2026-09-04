@@ -25,10 +25,10 @@ export default function MaintenanceGate({ children }: { children: React.ReactNod
         <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-accent-500 flex items-center justify-center mb-6">
           <Wrench className="w-8 h-8 text-white" />
         </div>
-        <h1 className="text-2xl font-bold text-white mb-2">
+        <h1 className="text-2xl font-bold text-slate-900 mb-2">
           {platformName} — {t("common", "maintenance_title", "Down for maintenance")}
         </h1>
-        <p className="text-sm text-slate-400 max-w-md">
+        <p className="text-sm text-slate-500 max-w-md">
           {t("common", "maintenance_body", "We're making some improvements and will be back shortly. Thanks for your patience.")}
         </p>
       </div>

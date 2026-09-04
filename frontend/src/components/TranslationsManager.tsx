@@ -126,15 +126,15 @@ export default function TranslationsManager({ languages: initialLanguages }: { l
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
       {/* Active Languages List */}
-      <div className="glass-panel rounded-2xl p-6 border border-white/10 lg:col-span-2">
-        <h3 className="text-base font-bold text-white mb-1 flex items-center space-x-2">
-          <Languages className="w-4 h-4 text-admin-400" />
+      <div className="glass-panel rounded-2xl p-6 border border-gray-200 lg:col-span-2">
+        <h3 className="text-base font-bold text-slate-900 mb-1 flex items-center space-x-2">
+          <Languages className="w-4 h-4 text-admin-600" />
           <span>Language Catalog</span>
         </h3>
-        <p className="text-xs text-slate-400 mb-4">Activate/deactivate languages and trigger a bulk auto-translate pass (English placeholders, flagged for human review — no external MT provider is wired up in this deployment).</p>
+        <p className="text-xs text-slate-500 mb-4">Activate/deactivate languages and trigger a bulk auto-translate pass (English placeholders, flagged for human review — no external MT provider is wired up in this deployment).</p>
         <div className="overflow-x-auto">
           <table className="w-full text-start text-xs">
-            <thead className="text-slate-400 border-b border-white/10">
+            <thead className="text-slate-500 border-b border-gray-200">
               <tr>
                 <th className="py-2">Language</th>
                 <th className="py-2">Code</th>
@@ -143,19 +143,19 @@ export default function TranslationsManager({ languages: initialLanguages }: { l
                 <th className="py-2">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y divide-gray-100">
               {languages.map((l) => (
                 <tr key={l.code}>
-                  <td className="py-2.5 text-white font-semibold">{l.flag_emoji} {l.native_name}</td>
-                  <td className="py-2.5 font-mono text-slate-400">{l.code}</td>
-                  <td className="py-2.5 text-slate-400">{l.is_rtl ? "Yes" : "No"}</td>
+                  <td className="py-2.5 text-slate-900 font-semibold">{l.flag_emoji} {l.native_name}</td>
+                  <td className="py-2.5 font-mono text-slate-500">{l.code}</td>
+                  <td className="py-2.5 text-slate-500">{l.is_rtl ? "Yes" : "No"}</td>
                   <td className="py-2.5">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${l.is_active ? "bg-emerald-500/10 text-emerald-400" : "bg-slate-700/30 text-slate-400"}`}>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${l.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-slate-500"}`}>
                       {l.is_active ? "ACTIVE" : "INACTIVE"}
                     </span>
                   </td>
                   <td className="py-2.5 space-x-2">
-                    <button onClick={() => handleToggleLanguage(l.code, l.is_active)} className="bg-slate-800 hover:bg-slate-700 px-2.5 py-1 rounded text-[11px] font-bold">
+                    <button onClick={() => handleToggleLanguage(l.code, l.is_active)} className="bg-gray-100 hover:bg-gray-200 text-slate-700 px-2.5 py-1 rounded text-[11px] font-bold">
                       {l.is_active ? "Deactivate" : "Activate"}
                     </button>
                     {l.code !== "en" && (
@@ -177,25 +177,25 @@ export default function TranslationsManager({ languages: initialLanguages }: { l
       </div>
 
       {/* Add New Language */}
-      <div className="glass-panel rounded-2xl p-6 border border-white/10">
-        <h3 className="text-base font-bold text-white mb-1">Add a Language</h3>
-        <p className="text-xs text-slate-400 mb-6">Any ISO code. Seeds with English placeholder strings so it's usable immediately.</p>
+      <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+        <h3 className="text-base font-bold text-slate-900 mb-1">Add a Language</h3>
+        <p className="text-xs text-slate-500 mb-6">Any ISO code. Seeds with English placeholder strings so it's usable immediately.</p>
         <form onSubmit={handleCreateLanguage} className="space-y-3">
           <div>
-            <label className="text-xs text-slate-300 font-semibold block mb-1">ISO Code (e.g. ko, vi, id)</label>
-            <input required maxLength={10} value={newCode} onChange={(e) => setNewCode(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white" />
+            <label className="text-xs text-slate-700 font-semibold block mb-1">ISO Code (e.g. ko, vi, id)</label>
+            <input required maxLength={10} value={newCode} onChange={(e) => setNewCode(e.target.value)} className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900" />
           </div>
           <div>
-            <label className="text-xs text-slate-300 font-semibold block mb-1">English Name (e.g. Korean)</label>
-            <input required value={newName} onChange={(e) => setNewName(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white" />
+            <label className="text-xs text-slate-700 font-semibold block mb-1">English Name (e.g. Korean)</label>
+            <input required value={newName} onChange={(e) => setNewName(e.target.value)} className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900" />
           </div>
           <div>
-            <label className="text-xs text-slate-300 font-semibold block mb-1">Native Name (e.g. 한국어)</label>
-            <input value={newNative} onChange={(e) => setNewNative(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white" />
+            <label className="text-xs text-slate-700 font-semibold block mb-1">Native Name (e.g. 한국어)</label>
+            <input value={newNative} onChange={(e) => setNewNative(e.target.value)} className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900" />
           </div>
           <div className="flex items-center space-x-2">
-            <input type="checkbox" id="newIsRTL" checked={newIsRTL} onChange={(e) => setNewIsRTL(e.target.checked)} className="rounded bg-slate-900 border-slate-700" />
-            <label htmlFor="newIsRTL" className="text-xs text-slate-300">Right-to-left script</label>
+            <input type="checkbox" id="newIsRTL" checked={newIsRTL} onChange={(e) => setNewIsRTL(e.target.checked)} className="rounded border-gray-300" />
+            <label htmlFor="newIsRTL" className="text-xs text-slate-700">Right-to-left script</label>
           </div>
           <button type="submit" disabled={creating} className="bg-admin-600 hover:bg-admin-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl inline-flex items-center space-x-2">
             <Plus className="w-3.5 h-3.5" />
@@ -205,31 +205,31 @@ export default function TranslationsManager({ languages: initialLanguages }: { l
       </div>
 
       {/* Translation String Editor */}
-      <div className="glass-panel rounded-2xl p-6 border border-white/10">
-        <h3 className="text-base font-bold text-white mb-1">Translation String Editor</h3>
-        <p className="text-xs text-slate-400 mb-6">Edit any string per language and namespace — including English itself. Takes effect immediately, no redeploy.</p>
+      <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+        <h3 className="text-base font-bold text-slate-900 mb-1">Translation String Editor</h3>
+        <p className="text-xs text-slate-500 mb-6">Edit any string per language and namespace — including English itself. Takes effect immediately, no redeploy.</p>
         <form onSubmit={handleSaveTranslation} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-slate-300 font-semibold block mb-1">Language</label>
-              <select value={editLang} onChange={(e) => setEditLang(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white">
+              <label className="text-xs text-slate-700 font-semibold block mb-1">Language</label>
+              <select value={editLang} onChange={(e) => setEditLang(e.target.value)} className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900">
                 {languages.map((l) => (<option key={l.code} value={l.code}>{l.native_name} ({l.code})</option>))}
               </select>
             </div>
             <div>
-              <label className="text-xs text-slate-300 font-semibold block mb-1">Namespace</label>
-              <select value={editNamespace} onChange={(e) => setEditNamespace(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white">
+              <label className="text-xs text-slate-700 font-semibold block mb-1">Namespace</label>
+              <select value={editNamespace} onChange={(e) => setEditNamespace(e.target.value)} className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900">
                 {NAMESPACES.map((ns) => (<option key={ns} value={ns}>{ns}</option>))}
               </select>
             </div>
           </div>
           <div>
-            <label className="text-xs text-slate-300 font-semibold block mb-1">Key (e.g. site_name, login, buy_now)</label>
-            <input required value={editKey} onChange={(e) => setEditKey(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono" />
+            <label className="text-xs text-slate-700 font-semibold block mb-1">Key (e.g. site_name, login, buy_now)</label>
+            <input required value={editKey} onChange={(e) => setEditKey(e.target.value)} className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900 font-mono" />
           </div>
           <div>
-            <label className="text-xs text-slate-300 font-semibold block mb-1">Value</label>
-            <textarea required value={editValue} onChange={(e) => setEditValue(e.target.value)} rows={3} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white" />
+            <label className="text-xs text-slate-700 font-semibold block mb-1">Value</label>
+            <textarea required value={editValue} onChange={(e) => setEditValue(e.target.value)} rows={3} className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900" />
           </div>
           <button type="submit" disabled={saving} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl inline-flex items-center space-x-2">
             <Save className="w-3.5 h-3.5" />

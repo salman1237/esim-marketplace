@@ -3,10 +3,10 @@
 @tailwind utilities;
 
 :root {
-  --background: #090d16;
-  --foreground: #f8fafc;
-  --card-bg: #111827;
-  --card-border: #1f2937;
+  --background: #f9fafb;
+  --foreground: #0f172a;
+  --card-bg: #ffffff;
+  --card-border: #e5e7eb;
 }
 
 body {
@@ -16,24 +16,24 @@ body {
   overflow-x: hidden;
 }
 
-/* Glassmorphism */
+/* Card surfaces — plain white cards on the light gray page canvas, soft
+   shadow instead of the blur/glow effects a dark theme needs. */
 .glass-panel {
-  background: rgba(17, 24, 39, 0.75);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
 }
 
 .glass-card {
-  background: rgba(30, 41, 59, 0.6);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
   transition: all 0.2s ease-in-out;
 }
 
 .glass-card:hover {
-  border-color: rgba(99, 102, 241, 0.4);
+  border-color: rgba(79, 70, 229, 0.35);
   transform: translateY(-2px);
-  box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.15);
+  box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.12);
 }
 
 /* Shimmer Loading */
@@ -43,7 +43,7 @@ body {
 }
 
 .shimmer {
-  background: linear-gradient(90deg, #1f2937 25%, #374151 50%, #1f2937 75%);
+  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
@@ -57,5 +57,5 @@ body {
   position: sticky;
   left: 0;
   z-index: 2;
-  background-color: #111827;
+  background-color: #ffffff;
 }

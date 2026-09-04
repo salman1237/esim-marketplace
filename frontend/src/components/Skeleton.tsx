@@ -27,7 +27,7 @@ export function EsimListSkeleton() {
   return (
     <div className="space-y-6">
       {[0, 1].map((i) => (
-        <div key={i} className="glass-panel rounded-2xl p-6 border border-white/10 space-y-4">
+        <div key={i} className="glass-panel rounded-2xl p-6 border border-gray-200 space-y-4">
           <div className="flex items-center justify-between">
             <div className="space-y-2">
               <Skeleton className="h-5 w-40" />
@@ -49,7 +49,7 @@ export function ProfileSkeleton() {
         <Skeleton className="h-8 w-32" />
         <Skeleton className="h-3 w-56" />
       </div>
-      <div className="glass-panel rounded-2xl p-6 border border-white/10 mb-6 space-y-4">
+      <div className="glass-panel rounded-2xl p-6 border border-gray-200 mb-6 space-y-4">
         <div className="flex items-center space-x-4">
           <Skeleton className="w-16 h-16 rounded-2xl shrink-0" />
           <div className="space-y-2">

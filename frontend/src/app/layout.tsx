@@ -51,7 +51,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" dir="ltr">
-      <body className="min-h-screen flex flex-col bg-slate-950 text-slate-100 antialiased selection:bg-brand-500 selection:text-white pb-16 md:pb-0">
+      <body className="min-h-screen flex flex-col bg-gray-50 text-slate-900 antialiased selection:bg-brand-500 selection:text-white pb-16 md:pb-0">
         <AppSettingsProvider>
           <MaintenanceGate>
             <Header />
