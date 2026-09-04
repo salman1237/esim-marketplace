@@ -18,6 +18,7 @@ class PublicSettingsResponse(BaseModel):
     seo_title: Optional[str] = None
     seo_description: Optional[str] = None
     og_image: Optional[str] = None
+    bangla_qr_image: Optional[str] = None
 
 class UpdateBrandingRequest(BaseModel):
     platform_name: Optional[str] = None
@@ -38,6 +39,7 @@ class UpdateBrandingRequest(BaseModel):
     seo_title: Optional[str] = None
     seo_description: Optional[str] = None
     og_image: Optional[str] = None
+    bangla_qr_image: Optional[str] = None
 
 class CurrencyRateResponse(BaseModel):
     currency_code: str

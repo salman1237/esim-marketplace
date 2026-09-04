@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { Wallet, ArrowDownRight, ArrowUpRight, Plus, Upload, CheckCircle2 } from "lucide-react";
 import { animate } from "framer-motion";
-import { api } from "@/lib/api";
+import { api, API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 
 function CountUpBalance({ value, formatPrice }: { value: number; formatPrice: (n: number) => string }) {
@@ -31,6 +31,7 @@ export default function WalletPage() {
   const [slipSuccess, setSlipSuccess] = useState(false);
   const [payingViaGateway, setPayingViaGateway] = useState(false);
   const [topupBanner, setTopupBanner] = useState<{ kind: "success" | "failed"; reason?: string } | null>(null);
+  const [settings, setSettings] = useState<{ bangla_qr_image?: string }>({});
 
   useEffect(() => {
     const token = localStorage.getItem("esim_token");
@@ -55,6 +56,8 @@ export default function WalletPage() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
+
+    api.getPublicSettings().then(setSettings).catch(() => {});
   }, []);
 
   const handleGatewayTopup = async () => {
@@ -200,8 +203,24 @@ export default function WalletPage() {
                   <option value="bKash">bKash (01700-000000)</option>
                   <option value="Nagad">Nagad (01700-000000)</option>
                   <option value="City Bank">City Bank (A/C: 1234567890)</option>
+                  <option value="Bangla QR">Bangla QR</option>
                 </select>
               </div>
+
+              {bankName === "Bangla QR" && (
+                <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl text-center">
+                  {settings.bangla_qr_image ? (
+                    <img
+                      src={`${API_BASE}${settings.bangla_qr_image}`}
+                      alt="Bangla QR payment code"
+                      className="w-40 h-40 mx-auto rounded-lg bg-white p-2 border border-gray-200"
+                    />
+                  ) : (
+                    <p className="text-xs text-slate-500 py-4">Bangla QR code not configured yet — please use another method.</p>
+                  )}
+                  <p className="text-[11px] text-slate-500 mt-2">Scan to pay, then submit the transaction ID below for approval.</p>
+                </div>
+              )}
 
               <div>
                 <label className="text-xs text-slate-700 font-semibold block mb-1">Transaction ID (TxID)</label>

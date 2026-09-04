@@ -31,6 +31,7 @@ async def get_public_settings(db: AsyncSession = Depends(get_db)):
         seo_title=cfg.get("seo_title"),
         seo_description=cfg.get("seo_description"),
         og_image=cfg.get("og_image"),
+        bangla_qr_image=cfg.get("bangla_qr_image"),
     )
 
 @router.get("/languages", response_model=List[LanguageResponse])

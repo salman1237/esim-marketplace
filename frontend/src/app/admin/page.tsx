@@ -6,7 +6,7 @@ import { api, API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 import TranslationsManager from "@/components/TranslationsManager";
 
-type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "branding" | "translations" | "logs" | "kyc";
+type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet";
 
 export default function AdminConsolePage() {
   const { formatPrice, languages: appLanguages } = useAppSettings();
@@ -30,9 +30,24 @@ export default function AdminConsolePage() {
   const [apiKeyBusy, setApiKeyBusy] = useState<string | null>(null);
   const [viewingDoc, setViewingDoc] = useState<{ url: string; side: string; contentType: string } | null>(null);
 
+  // Customer Wallet tab — admin-triggered wallet recharge & purchase-for-customer
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [customerResults, setCustomerResults] = useState<any[]>([]);
+  const [customerSearching, setCustomerSearching] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
+  const [rechargeAmount, setRechargeAmount] = useState("");
+  const [rechargeNote, setRechargeNote] = useState("");
+  const [rechargingWallet, setRechargingWallet] = useState(false);
+  const [purchaseCountries, setPurchaseCountries] = useState<any[]>([]);
+  const [purchaseCountry, setPurchaseCountry] = useState("");
+  const [purchaseProducts, setPurchaseProducts] = useState<any[]>([]);
+  const [purchaseProductId, setPurchaseProductId] = useState("");
+  const [purchasingEsim, setPurchasingEsim] = useState(false);
+  const [purchaseResult, setPurchaseResult] = useState<{ ok: boolean; message: string } | null>(null);
+
   const [branding, setBranding] = useState({ platform_name: "eSIM Global", support_email: "support@esim.local", support_phone: "+880 1700-000000", maintenance_mode: false, default_currency: "USD", seo_title: "", seo_description: "" });
   const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
-  const [brandingAssets, setBrandingAssets] = useState<{ logo_light?: string; logo_dark?: string; favicon?: string; og_image?: string }>({});
+  const [brandingAssets, setBrandingAssets] = useState<{ logo_light?: string; logo_dark?: string; favicon?: string; og_image?: string; bangla_qr_image?: string }>({});
   const [uploadingKind, setUploadingKind] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [syncing, setSyncing] = useState(false);
@@ -86,12 +101,12 @@ export default function AdminConsolePage() {
         seo_title: s.seo_title ?? "",
         seo_description: s.seo_description ?? "",
       }));
-      setBrandingAssets({ logo_light: s.logo_light, logo_dark: s.logo_dark, favicon: s.favicon, og_image: s.og_image });
+      setBrandingAssets({ logo_light: s.logo_light, logo_dark: s.logo_dark, favicon: s.favicon, og_image: s.og_image, bangla_qr_image: s.bangla_qr_image });
       setSocialLinks(s.social_links || {});
     }).catch(() => {});
   }, []);
 
-  const handleUploadBrandingAsset = async (kind: "logo_light" | "logo_dark" | "favicon" | "og_image", file: File | null) => {
+  const handleUploadBrandingAsset = async (kind: "logo_light" | "logo_dark" | "favicon" | "og_image" | "bangla_qr_image", file: File | null) => {
     if (!file) return;
     const token = localStorage.getItem("esim_token");
     if (!token) return;
@@ -234,6 +249,93 @@ export default function AdminConsolePage() {
     }
   };
 
+  const handleSearchCustomers = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = localStorage.getItem("esim_token");
+    if (!token || customerQuery.trim().length < 2) return;
+    setCustomerSearching(true);
+    try {
+      const results = await api.searchAdminCustomers(token, customerQuery.trim());
+      setCustomerResults(results);
+    } catch (err: any) {
+      alert("Search failed: " + err.message);
+    } finally {
+      setCustomerSearching(false);
+    }
+  };
+
+  const handleSelectCustomer = (customer: any) => {
+    setSelectedCustomer(customer);
+    setRechargeAmount("");
+    setRechargeNote("");
+    setPurchaseCountry("");
+    setPurchaseProducts([]);
+    setPurchaseProductId("");
+    setPurchaseResult(null);
+    if (purchaseCountries.length === 0) {
+      api.getCountries(undefined, true).then(setPurchaseCountries).catch(console.error);
+    }
+  };
+
+  const handleRechargeWallet = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = localStorage.getItem("esim_token");
+    if (!token || !selectedCustomer) return;
+    const amount = parseFloat(rechargeAmount);
+    if (Number.isNaN(amount) || amount <= 0) {
+      alert("Enter a valid positive amount.");
+      return;
+    }
+    setRechargingWallet(true);
+    try {
+      const res = await api.rechargeCustomerWallet(token, selectedCustomer.id, rechargeAmount, rechargeNote || undefined);
+      setSelectedCustomer({ ...selectedCustomer, wallet_balance: res.new_balance });
+      setCustomerResults(customerResults.map(c => c.id === selectedCustomer.id ? { ...c, wallet_balance: res.new_balance } : c));
+      setRechargeAmount("");
+      setRechargeNote("");
+    } catch (err: any) {
+      alert("Recharge failed: " + err.message);
+    } finally {
+      setRechargingWallet(false);
+    }
+  };
+
+  const handleSelectPurchaseCountry = async (iso2: string) => {
+    setPurchaseCountry(iso2);
+    setPurchaseProductId("");
+    if (!iso2) {
+      setPurchaseProducts([]);
+      return;
+    }
+    try {
+      const products = await api.getCountryProducts(iso2);
+      setPurchaseProducts(products);
+    } catch (err: any) {
+      alert("Failed to load products: " + err.message);
+    }
+  };
+
+  const handlePurchaseEsimForCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = localStorage.getItem("esim_token");
+    if (!token || !selectedCustomer || !purchaseProductId) return;
+    setPurchasingEsim(true);
+    setPurchaseResult(null);
+    try {
+      const res = await api.adminPurchaseEsimForCustomer(token, selectedCustomer.id, purchaseProductId);
+      setPurchaseResult({ ok: true, message: `Order ${res.order_no} completed — eSIM issued.` });
+      const product = purchaseProducts.find(p => p.id === purchaseProductId);
+      const price = product ? parseFloat(product.retail_price) : 0;
+      const newBalance = selectedCustomer.wallet_balance - price;
+      setSelectedCustomer({ ...selectedCustomer, wallet_balance: newBalance });
+      setCustomerResults(customerResults.map(c => c.id === selectedCustomer.id ? { ...c, wallet_balance: newBalance } : c));
+    } catch (err: any) {
+      setPurchaseResult({ ok: false, message: err.message || "Purchase failed." });
+    } finally {
+      setPurchasingEsim(false);
+    }
+  };
+
   const handleCreateCommissionTier = async (e: React.FormEvent) => {
     e.preventDefault();
     const token = localStorage.getItem("esim_token");
@@ -370,6 +472,7 @@ export default function AdminConsolePage() {
           { id: "payments", label: `Manual Deposits (${payments.filter(p => p.status === "PENDING").length})` },
           { id: "orders", label: "Orders" },
           { id: "catalog", label: "Catalog" },
+          { id: "customer-wallet", label: "Customer Wallet" },
           ...(isSuperAdmin ? [{ id: "users", label: "Staff & Users" }] : []),
           ...(isSuperAdmin ? [{ id: "branding", label: "Dynamic Branding & Rates" }] : []),
           ...(isSuperAdmin ? [{ id: "translations", label: "Languages & Translations" }] : []),
@@ -652,6 +755,7 @@ export default function AdminConsolePage() {
                   { kind: "logo_dark" as const, label: "Logo (Dark)" },
                   { kind: "favicon" as const, label: "Favicon" },
                   { kind: "og_image" as const, label: "OG Share Image" },
+                  { kind: "bangla_qr_image" as const, label: "Bangla QR Code" },
                 ]).map(({ kind, label }) => (
                   <div key={kind}>
                     <label className="text-xs text-slate-700 font-semibold block mb-1">{label}</label>
@@ -865,6 +969,144 @@ export default function AdminConsolePage() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Tab: Customer Wallet — recharge any customer's balance or purchase
+          an eSIM on their behalf (charged to their own wallet), available
+          to Admin and Super Admin alike. */}
+      {activeTab === "customer-wallet" && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="glass-panel rounded-2xl p-6 border border-gray-200 lg:col-span-2">
+            <h3 className="text-base font-bold text-slate-900 mb-1">Find a Customer</h3>
+            <p className="text-xs text-slate-500 mb-4">Search by username or email to recharge their wallet or purchase an eSIM on their behalf.</p>
+            <form onSubmit={handleSearchCustomers} className="flex gap-2 mb-4">
+              <input
+                type="text"
+                required
+                minLength={2}
+                placeholder="Username or email..."
+                value={customerQuery}
+                onChange={(e) => setCustomerQuery(e.target.value)}
+                className="flex-1 bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
+              />
+              <button type="submit" disabled={customerSearching} className="bg-admin-600 hover:bg-admin-500 text-white text-xs font-bold px-4 py-2 rounded-lg">
+                {customerSearching ? "Searching..." : "Search"}
+              </button>
+            </form>
+            {customerResults.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-start text-xs">
+                  <thead className="text-slate-500 border-b border-gray-200">
+                    <tr>
+                      <th className="py-2">Username</th>
+                      <th className="py-2">Email</th>
+                      <th className="py-2">Role</th>
+                      <th className="py-2">Wallet Balance</th>
+                      <th className="py-2">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {customerResults.map((c) => (
+                      <tr key={c.id} className={selectedCustomer?.id === c.id ? "bg-brand-50" : ""}>
+                        <td className="py-2.5 font-semibold text-slate-900">{c.username}</td>
+                        <td className="py-2.5 text-slate-700">{c.email}</td>
+                        <td className="py-2.5 text-slate-500">{c.role}</td>
+                        <td className="py-2.5 font-mono text-emerald-600">${c.wallet_balance.toFixed(2)}</td>
+                        <td className="py-2.5">
+                          <button onClick={() => handleSelectCustomer(c)} className="bg-gray-100 hover:bg-gray-200 text-slate-700 px-2.5 py-1 rounded text-[11px] font-bold">
+                            {selectedCustomer?.id === c.id ? "Selected" : "Select"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {selectedCustomer && (
+            <>
+              <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+                <h3 className="text-base font-bold text-slate-900 mb-1">Recharge Wallet</h3>
+                <p className="text-xs text-slate-500 mb-4">
+                  {selectedCustomer.username} — current balance <span className="font-mono text-emerald-600">${selectedCustomer.wallet_balance.toFixed(2)}</span>
+                </p>
+                <form onSubmit={handleRechargeWallet} className="space-y-3">
+                  <div>
+                    <label className="text-xs text-slate-700 font-semibold block mb-1">Amount (USD)</label>
+                    <input
+                      type="number" min="0.01" step="0.01" required
+                      value={rechargeAmount}
+                      onChange={(e) => setRechargeAmount(e.target.value)}
+                      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-700 font-semibold block mb-1">Note (optional)</label>
+                    <input
+                      type="text"
+                      value={rechargeNote}
+                      onChange={(e) => setRechargeNote(e.target.value)}
+                      placeholder="Reason for this recharge"
+                      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
+                    />
+                  </div>
+                  <button type="submit" disabled={rechargingWallet} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl">
+                    {rechargingWallet ? "Recharging..." : "Recharge Wallet"}
+                  </button>
+                </form>
+              </div>
+
+              <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+                <h3 className="text-base font-bold text-slate-900 mb-1">Purchase eSIM for Customer</h3>
+                <p className="text-xs text-slate-500 mb-4">Charged to {selectedCustomer.username}&apos;s own wallet balance.</p>
+                <form onSubmit={handlePurchaseEsimForCustomer} className="space-y-3">
+                  <div>
+                    <label className="text-xs text-slate-700 font-semibold block mb-1">Destination Country</label>
+                    <select
+                      value={purchaseCountry}
+                      onChange={(e) => handleSelectPurchaseCountry(e.target.value)}
+                      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
+                      required
+                    >
+                      <option value="">-- Select Country --</option>
+                      {purchaseCountries.map((c) => (
+                        <option key={c.iso2} value={c.iso2}>{c.name_en || c.name} ({c.iso2})</option>
+                      ))}
+                    </select>
+                  </div>
+                  {purchaseCountry && (
+                    <div>
+                      <label className="text-xs text-slate-700 font-semibold block mb-1">Product</label>
+                      <select
+                        value={purchaseProductId}
+                        onChange={(e) => setPurchaseProductId(e.target.value)}
+                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
+                        required
+                      >
+                        <option value="">-- Select Product --</option>
+                        {purchaseProducts.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.title_en} — {p.data_amount_gb} GB ({p.validity_days} Days) — ${parseFloat(p.retail_price).toFixed(2)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <button type="submit" disabled={purchasingEsim || !purchaseProductId} className="w-full bg-admin-600 hover:bg-admin-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl">
+                    {purchasingEsim ? "Processing..." : "Purchase eSIM"}
+                  </button>
+                  {purchaseResult && (
+                    <div className={`p-3 rounded-lg text-xs ${purchaseResult.ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"}`}>
+                      {purchaseResult.message}
+                    </div>
+                  )}
+                </form>
+              </div>
+            </>
+          )}
         </div>
       )}
 

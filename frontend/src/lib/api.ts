@@ -81,6 +81,9 @@ export const api = {
   deleteCommissionTier: (token: string, id: string) => fetchApi(`/api/v1/admin/commission-tiers/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }),
   getPaymentQueue: (token: string) => fetchApi("/api/v1/admin/payments/manual-queue", { headers: { Authorization: `Bearer ${token}` } }),
   approvePayment: (token: string, id: string) => fetchApi(`/api/v1/admin/payments/manual/${id}/approve`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+  searchAdminCustomers: (token: string, q: string) => fetchApi(`/api/v1/admin/customers/search?q=${encodeURIComponent(q)}`, { headers: { Authorization: `Bearer ${token}` } }),
+  rechargeCustomerWallet: (token: string, userId: string, amount: string, description?: string) => fetchApi(`/api/v1/admin/customers/${userId}/wallet/recharge`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ amount, description }) }),
+  adminPurchaseEsimForCustomer: (token: string, userId: string, productId: string) => fetchApi(`/api/v1/admin/customers/${userId}/purchase-esim`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ product_id: productId }) }),
   updateBranding: (token: string, data: any) => fetchApi("/api/v1/admin/branding", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
   uploadBrandingAsset: async (token: string, kind: string, file: File) => {
     const form = new FormData();

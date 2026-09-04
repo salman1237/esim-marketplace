@@ -15,7 +15,7 @@ from app.core.security import get_password_hash
 from app.models.user import User, UserRole, UserStatus
 from app.models.merchant import MerchantProfile, MerchantStatus
 from app.models.wallet import Wallet, WalletType, LedgerRefType
-from app.models.order import Order, ESIMProfile
+from app.models.order import Order, ESIMProfile, OrderStatus, PaymentMethod
 from app.models.catalog import Country, Product
 from app.models.payment import ManualPaymentRequest, ManualPaymentStatus
 from app.models.settings import PlatformSetting, CurrencyRate, Language, Translation
@@ -33,6 +33,7 @@ from app.services.ledger_svc import LedgerService
 from app.services.audit_svc import AuditService
 from app.services.catalog_sync_svc import sync_vivape_catalog
 from app.services.currency_svc import CurrencyService
+from app.services.checkout_svc import provision_esim
 
 
 from pydantic import BaseModel, Field, EmailStr
@@ -437,6 +438,150 @@ async def reject_manual_payment(
     await db.commit()
     return {"status": "success", "message": "Payment request rejected"}
 
+
+# --- Customer Wallet & Order Actions (Admin console "Customer Wallet" tab) ---
+# Available to both Admin and Super Admin, matching the manual-deposit
+# approval gate above - the admin action here *is* the approval, there's
+# no separate review step. A narrower search endpoint than GET /users
+# (which is Super-Admin-only, since it also exposes role editing) so a
+# plain Admin can find a customer without gaining that broader access.
+
+@router.get("/customers/search", dependencies=[Depends(require_admin)])
+async def search_customers(q: str = Query(..., min_length=2), db: AsyncSession = Depends(get_db)):
+    res = await db.execute(
+        select(User).where(
+            (User.username.ilike(f"%{q}%")) | (User.email.ilike(f"%{q}%"))
+        ).limit(10)
+    )
+    users = res.scalars().all()
+    results = []
+    for u in users:
+        w_res = await db.execute(
+            select(Wallet).where(Wallet.user_id == u.id, Wallet.wallet_type == WalletType.DEFAULT)
+        )
+        wallet = w_res.scalar_one_or_none()
+        results.append({
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "role": u.role.value,
+            "wallet_balance": float(wallet.balance) if wallet else 0.0,
+        })
+    return results
+
+
+class RechargeWalletRequest(BaseModel):
+    amount: Decimal = Field(..., gt=0)
+    description: Optional[str] = None
+
+
+@router.post("/customers/{user_id}/wallet/recharge", dependencies=[Depends(require_admin)])
+async def recharge_customer_wallet(
+    user_id: str,
+    req: RechargeWalletRequest,
+    request: Request,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    w_res = await db.execute(select(Wallet).where(Wallet.user_id == user_id, Wallet.wallet_type == WalletType.DEFAULT))
+    wallet = w_res.scalar_one_or_none()
+    if not wallet:
+        raise HTTPException(status_code=404, detail="Customer wallet not found")
+
+    entry = await LedgerService.credit(
+        db, wallet.id, req.amount,
+        LedgerRefType.ADMIN_ADJUSTMENT,
+        ref_id=None,
+        description=req.description or f"Admin balance recharge by {admin_user.username}",
+        idempotency_key=None
+    )
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="ADMIN_RECHARGE_CUSTOMER_WALLET",
+        after_state={"target_user_id": user_id, "amount": str(req.amount), "new_balance": str(entry.balance_after)},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success", "new_balance": float(entry.balance_after)}
+
+
+class AdminPurchaseEsimRequest(BaseModel):
+    product_id: str
+
+
+@router.post("/customers/{user_id}/purchase-esim", dependencies=[Depends(require_admin)])
+async def admin_purchase_esim_for_customer(
+    user_id: str,
+    req: AdminPurchaseEsimRequest,
+    request: Request,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Admin-triggered purchase on behalf of an existing customer - charges
+    the customer's own wallet (not the admin's), same as if they'd bought
+    it themselves. Not a reseller order (no commission)."""
+    target_res = await db.execute(select(User).where(User.id == user_id))
+    target = target_res.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    p_res = await db.execute(select(Product).where(Product.id == req.product_id, Product.is_active == True))
+    product = p_res.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found or inactive")
+
+    total_cost = Decimal(str(product.retail_price))
+    w_res = await db.execute(select(Wallet).where(Wallet.user_id == target.id, Wallet.wallet_type == WalletType.DEFAULT))
+    wallet = w_res.scalar_one_or_none()
+    if not wallet or Decimal(str(wallet.balance)) < total_cost:
+        raise HTTPException(status_code=400, detail="Customer has insufficient wallet balance.")
+
+    order_no = f"ADM-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+    order = Order(
+        order_no=order_no,
+        buyer_id=target.id,
+        beneficiary_id=target.id,
+        product_id=product.id,
+        total_amount=total_cost,
+        currency=product.currency,
+        payment_method=PaymentMethod.WALLET,
+        status=OrderStatus.PROCESSING,
+        is_reseller_order=False,
+    )
+    db.add(order)
+    await db.flush()
+
+    try:
+        await LedgerService.debit(
+            db, wallet.id, total_cost,
+            LedgerRefType.ORDER_PURCHASE,
+            ref_id=order.id,
+            description=f"Purchase eSIM (admin-assisted): {product.title_en}",
+            idempotency_key=f"order-debit-{order.id}"
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    profile = await provision_esim(db, order, product, target.id, admin_user.id, admin_user.role.value)
+
+    if not profile:
+        await db.commit()
+        raise HTTPException(status_code=502, detail="eSIM provisioning failed. The customer's payment has been refunded to their wallet.")
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="ADMIN_PURCHASE_ESIM_FOR_CUSTOMER",
+        after_state={"order_id": order.id, "target_user_id": target.id, "product_id": product.id},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+
+    return {"order_id": order.id, "order_no": order_no, "status": order.status.value, "iccid": profile.iccid}
+
+
 # --- Super Admin Controls: Branding, Currency, Languages ---
 @router.put("/branding", dependencies=[Depends(require_super_admin)])
 async def update_branding(
@@ -470,7 +615,7 @@ async def update_branding(
 UPLOAD_DIR = Path(settings.UPLOADS_DIR) / "branding"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-BRANDING_UPLOAD_KINDS = {"logo_light", "logo_dark", "favicon", "og_image"}
+BRANDING_UPLOAD_KINDS = {"logo_light", "logo_dark", "favicon", "og_image", "bangla_qr_image"}
 UPLOAD_CONTENT_TYPES = {
     "image/png": ".png",
     "image/jpeg": ".jpg",
