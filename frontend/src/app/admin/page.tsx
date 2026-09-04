@@ -6,7 +6,7 @@ import { api, API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 import TranslationsManager from "@/components/TranslationsManager";
 
-type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "branding" | "translations" | "logs";
+type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "branding" | "translations" | "logs" | "kyc";
 
 export default function AdminConsolePage() {
   const { formatPrice, languages: appLanguages } = useAppSettings();
@@ -21,6 +21,8 @@ export default function AdminConsolePage() {
   const [catalog, setCatalog] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [inspectingLog, setInspectingLog] = useState<any | null>(null);
+  const [kycQueue, setKycQueue] = useState<any[]>([]);
+  const [viewingDoc, setViewingDoc] = useState<{ url: string; side: string; contentType: string } | null>(null);
 
   const [branding, setBranding] = useState({ platform_name: "eSIM Global", support_email: "support@esim.local", support_phone: "+880 1700-000000", maintenance_mode: false, default_currency: "USD" });
   const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
@@ -54,6 +56,7 @@ export default function AdminConsolePage() {
     api.getSupplierLogs(token).then(setSupplierLogs).catch(console.error);
     api.getAdminOrders(token).then(setAllOrders).catch(console.error);
     api.getAdminCatalog(token).then(setCatalog).catch(console.error);
+    api.getKycQueue(token).then(setKycQueue).catch(console.error);
     // Super-Admin-only endpoints: fetched regardless, the backend 403s a
     // non-Super-Admin caller and these simply stay empty (RBAC is enforced
     // server-side; the tabs below just don't render for other roles).
@@ -175,6 +178,33 @@ export default function AdminConsolePage() {
     }
   };
 
+  const handleApproveKyc = async (id: string) => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    await api.approveKyc(token, id);
+    setKycQueue(kycQueue.map(k => k.id === id ? { ...k, status: "APPROVED" } : k));
+  };
+
+  const handleRejectKyc = async (id: string) => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    const reason = window.prompt("Reason for rejection (shown to the user):");
+    if (reason === null) return;
+    await api.rejectKyc(token, id, reason);
+    setKycQueue(kycQueue.map(k => k.id === id ? { ...k, status: "REJECTED", rejection_reason: reason } : k));
+  };
+
+  const handleViewKycDocument = async (submissionId: string, side: "front" | "back") => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    try {
+      const { url, contentType } = await api.getKycDocumentUrl(token, submissionId, side);
+      setViewingDoc({ url, side, contentType });
+    } catch (err: any) {
+      alert("Failed to load document: " + err.message);
+    }
+  };
+
   const handleApprovePayment = async (id: string) => {
     const token = localStorage.getItem("esim_token");
     if (!token) return;
@@ -260,7 +290,8 @@ export default function AdminConsolePage() {
           ...(isSuperAdmin ? [{ id: "users", label: "Staff & Users" }] : []),
           ...(isSuperAdmin ? [{ id: "branding", label: "Dynamic Branding & Rates" }] : []),
           ...(isSuperAdmin ? [{ id: "translations", label: "Languages & Translations" }] : []),
-          { id: "logs", label: `360° Logs (${auditLogs.length + supplierLogs.length})` }
+          { id: "logs", label: `360° Logs (${auditLogs.length + supplierLogs.length})` },
+          { id: "kyc", label: `KYC Review (${kycQueue.filter(k => k.status === "PENDING").length})` }
         ].map((tab) => (
           <button
             key={tab.id}
@@ -824,6 +855,76 @@ export default function AdminConsolePage() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Tab: KYC Review */}
+      {activeTab === "kyc" && (
+        <div className="glass-panel rounded-2xl p-6 border border-white/10">
+          <h3 className="text-base font-bold text-white mb-1">National ID Verification Queue</h3>
+          <p className="text-xs text-slate-400 mb-4">Review submitted NID numbers and photo documents. Approving sets the user's account as KYC Verified.</p>
+          <div className="overflow-x-auto frozen-col-table">
+            <table className="w-full text-start text-xs">
+              <thead className="text-slate-400 border-b border-white/10">
+                <tr>
+                  <th className="py-2">User</th>
+                  <th className="py-2">NID Number</th>
+                  <th className="py-2">Documents</th>
+                  <th className="py-2">Status</th>
+                  <th className="py-2">Submitted</th>
+                  <th className="py-2">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {kycQueue.map((k) => (
+                  <tr key={k.id}>
+                    <td className="py-2.5 text-slate-200">{k.email}</td>
+                    <td className="py-2.5 font-mono text-slate-300">{k.nid_number}</td>
+                    <td className="py-2.5 space-x-2">
+                      <button onClick={() => handleViewKycDocument(k.id, "front")} className="text-admin-300 hover:text-admin-200 underline underline-offset-2">Front</button>
+                      {k.has_back_document && (
+                        <button onClick={() => handleViewKycDocument(k.id, "back")} className="text-admin-300 hover:text-admin-200 underline underline-offset-2">Back</button>
+                      )}
+                    </td>
+                    <td className="py-2.5">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        k.status === "APPROVED" ? "bg-emerald-500/10 text-emerald-400" :
+                        k.status === "REJECTED" ? "bg-rose-500/10 text-rose-400" : "bg-amber-500/10 text-amber-400"
+                      }`}>{k.status}</span>
+                    </td>
+                    <td className="py-2.5 text-slate-400">{new Date(k.submitted_at).toLocaleDateString()}</td>
+                    <td className="py-2.5 space-x-2">
+                      {k.status === "PENDING" && (
+                        <>
+                          <button onClick={() => handleApproveKyc(k.id)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded text-[11px] font-bold">Approve</button>
+                          <button onClick={() => handleRejectKyc(k.id)} className="bg-rose-600 hover:bg-rose-500 text-white px-2.5 py-1 rounded text-[11px] font-bold">Reject</button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* KYC Document Viewer Modal */}
+      {viewingDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4" onClick={() => { URL.revokeObjectURL(viewingDoc.url); setViewingDoc(null); }}>
+          <div className="glass-panel rounded-2xl max-w-2xl w-full p-6 border border-white/20 shadow-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-white capitalize">NID {viewingDoc.side} Document</h3>
+              <button onClick={() => { URL.revokeObjectURL(viewingDoc.url); setViewingDoc(null); }} aria-label="Close" className="p-1 rounded-lg text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {viewingDoc.contentType === "application/pdf" ? (
+              <iframe src={viewingDoc.url} title={`NID ${viewingDoc.side}`} className="w-full h-[70vh] rounded-xl bg-white" />
+            ) : (
+              <img src={viewingDoc.url} alt={`NID ${viewingDoc.side}`} className="w-full rounded-xl" />
+            )}
+          </div>
         </div>
       )}
 

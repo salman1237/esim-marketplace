@@ -44,10 +44,12 @@ services:
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://esim.salmandev.io}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://esim.salmandev.io}
       UPLOADS_DIR: /app/uploads
+      KYC_UPLOADS_DIR: /app/kyc_uploads
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - uploads_data:/app/uploads
+      - kyc_uploads_data:/app/kyc_uploads
       - logs_data:/var/log/esim
     networks:
       - esim-network
@@ -84,6 +86,8 @@ volumes:
     name: esim_postgres_data
   uploads_data:
     name: esim_uploads_data
+  kyc_uploads_data:
+    name: esim_kyc_uploads_data
   logs_data:
     name: esim_logs_data
 

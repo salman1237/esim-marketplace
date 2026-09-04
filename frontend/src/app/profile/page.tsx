@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { User, ShieldCheck, ShieldAlert, LogOut, Wallet as WalletIcon, Mail, Phone } from "lucide-react";
+import { User, ShieldCheck, ShieldAlert, LogOut, Wallet as WalletIcon, Mail, Phone, Upload } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 
@@ -9,6 +9,11 @@ export default function ProfilePage() {
   const { t } = useAppSettings();
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [kyc, setKyc] = useState<any>(null);
+  const [nidNumber, setNidNumber] = useState("");
+  const [frontFile, setFrontFile] = useState<File | null>(null);
+  const [backFile, setBackFile] = useState<File | null>(null);
+  const [submittingKyc, setSubmittingKyc] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("esim_token");
@@ -23,7 +28,27 @@ export default function ProfilePage() {
         window.location.href = "/auth/login";
       })
       .finally(() => setLoading(false));
+    api.getMyKyc(token).then(setKyc).catch(() => {});
   }, []);
+
+  const handleSubmitKyc = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = localStorage.getItem("esim_token");
+    if (!token || !frontFile) return;
+    setSubmittingKyc(true);
+    try {
+      await api.submitKyc(token, nidNumber, frontFile, backFile);
+      const updated = await api.getMyKyc(token);
+      setKyc(updated);
+      setNidNumber("");
+      setFrontFile(null);
+      setBackFile(null);
+    } catch (err: any) {
+      alert("Failed to submit KYC: " + err.message);
+    } finally {
+      setSubmittingKyc(false);
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem("esim_token");
@@ -83,6 +108,47 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {!userData.is_kyc_verified && (
+        <div className="glass-panel rounded-2xl p-6 border border-white/10 mb-6">
+          <h3 className="text-sm font-bold text-white mb-1 flex items-center space-x-2">
+            <ShieldAlert className="w-4 h-4 text-amber-400" />
+            <span>Identity Verification</span>
+          </h3>
+
+          {kyc?.status === "PENDING" ? (
+            <p className="text-xs text-amber-300 mt-2">Your documents are submitted and under review. This usually takes 1-2 business days.</p>
+          ) : (
+            <>
+              <p className="text-xs text-slate-400 mb-4 mt-1">
+                {kyc?.status === "REJECTED"
+                  ? `Your previous submission was rejected${kyc.rejection_reason ? `: ${kyc.rejection_reason}` : "."} Please resubmit.`
+                  : "Upload your National ID to unlock full account features."}
+              </p>
+              <form onSubmit={handleSubmitKyc} className="space-y-3">
+                <div>
+                  <label className="text-xs text-slate-300 font-semibold block mb-1">NID / National ID Number</label>
+                  <input type="text" required value={nidNumber} onChange={(e) => setNidNumber(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-slate-300 font-semibold block mb-1">Front Photo</label>
+                    <input type="file" required accept="image/png,image/jpeg,image/webp,application/pdf" onChange={(e) => setFrontFile(e.target.files?.[0] ?? null)} className="w-full text-[10px] text-slate-400 file:me-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-semibold file:bg-slate-800 file:text-slate-300" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-300 font-semibold block mb-1">Back Photo (optional)</label>
+                    <input type="file" accept="image/png,image/jpeg,image/webp,application/pdf" onChange={(e) => setBackFile(e.target.files?.[0] ?? null)} className="w-full text-[10px] text-slate-400 file:me-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-semibold file:bg-slate-800 file:text-slate-300" />
+                  </div>
+                </div>
+                <button type="submit" disabled={submittingKyc} className="flex items-center space-x-2 bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{submittingKyc ? "Submitting..." : "Submit for Review"}</span>
+                </button>
+              </form>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="glass-panel rounded-2xl p-6 border border-white/10 mb-6">
         <h3 className="text-sm font-bold text-white mb-4 flex items-center space-x-2">

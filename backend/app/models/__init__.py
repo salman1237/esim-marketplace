@@ -6,6 +6,7 @@ from app.models.order import Order, OrderStatus, PaymentMethod, ESIMProfile, ESI
 from app.models.payment import ManualPaymentRequest, ManualPaymentStatus, PaymentLog
 from app.models.settings import PlatformSetting, CurrencyRate, Language, Translation
 from app.models.audit import AuditLog, SupplierTransactionLog
+from app.models.kyc import KYCSubmission, KYCStatus
 
 __all__ = [
     "User", "UserRole", "UserStatus",
@@ -15,5 +16,6 @@ __all__ = [
     "Order", "OrderStatus", "PaymentMethod", "ESIMProfile", "ESIMStatus",
     "ManualPaymentRequest", "ManualPaymentStatus", "PaymentLog",
     "PlatformSetting", "CurrencyRate", "Language", "Translation",
-    "AuditLog", "SupplierTransactionLog"
+    "AuditLog", "SupplierTransactionLog",
+    "KYCSubmission", "KYCStatus"
 ]

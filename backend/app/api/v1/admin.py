@@ -3,6 +3,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.core.config import settings
@@ -17,6 +18,8 @@ from app.models.catalog import Country, Product
 from app.models.payment import ManualPaymentRequest, ManualPaymentStatus
 from app.models.settings import PlatformSetting, CurrencyRate, Language, Translation
 from app.models.audit import AuditLog, SupplierTransactionLog
+from app.models.kyc import KYCSubmission, KYCStatus
+from datetime import datetime, timezone
 from app.core.seed_translations import EN_TRANSLATIONS, flatten
 from app.schemas.settings import (
     UpdateBrandingRequest, CurrencyOverrideRequest, LanguageToggleRequest,
@@ -756,6 +759,116 @@ async def update_user_status(
     await AuditService.log_action(
         db, actor_id=admin_user.id, actor_role=admin_user.role.value,
         action="UPDATE_USER_STATUS", before_state=before, after_state={"user_id": u.id, "status": u.status.value},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success"}
+
+
+# --- KYC Review (Super Admin + Admin; NOT Merchant/User, who submit their
+# own via /kyc/submit and never see this queue) ---
+KYC_UPLOAD_DIR = Path(settings.KYC_UPLOADS_DIR)
+
+
+@router.get("/kyc/queue", dependencies=[Depends(require_admin)])
+async def get_kyc_queue(db: AsyncSession = Depends(get_db)):
+    res = await db.execute(
+        select(KYCSubmission, User).join(User, KYCSubmission.user_id == User.id)
+        .order_by(KYCSubmission.submitted_at.desc())
+    )
+    return [
+        {
+            "id": s.id,
+            "user_id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "nid_number": s.nid_number,
+            "status": s.status.value,
+            "rejection_reason": s.rejection_reason,
+            "has_back_document": s.document_back_filename is not None,
+            "submitted_at": s.submitted_at,
+        }
+        for s, u in res.all()
+    ]
+
+
+@router.get("/kyc/{submission_id}/document/{side}", dependencies=[Depends(require_admin)])
+async def get_kyc_document(submission_id: str, side: str, db: AsyncSession = Depends(get_db)):
+    if side not in ("front", "back"):
+        raise HTTPException(status_code=400, detail="side must be 'front' or 'back'")
+
+    res = await db.execute(select(KYCSubmission).where(KYCSubmission.id == submission_id))
+    submission = res.scalar_one_or_none()
+    if not submission:
+        raise HTTPException(status_code=404, detail="KYC submission not found")
+
+    filename = submission.document_front_filename if side == "front" else submission.document_back_filename
+    if not filename:
+        raise HTTPException(status_code=404, detail=f"No {side} document on this submission")
+
+    path = KYC_UPLOAD_DIR / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Document file missing from storage")
+    return FileResponse(path)
+
+
+@router.post("/kyc/{submission_id}/approve", dependencies=[Depends(require_admin)])
+async def approve_kyc(
+    submission_id: str,
+    request: Request,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(select(KYCSubmission).where(KYCSubmission.id == submission_id))
+    submission = res.scalar_one_or_none()
+    if not submission:
+        raise HTTPException(status_code=404, detail="KYC submission not found")
+    if submission.status != KYCStatus.PENDING:
+        raise HTTPException(status_code=400, detail=f"Submission already {submission.status.value.lower()}")
+
+    submission.status = KYCStatus.APPROVED
+    submission.reviewed_by_id = admin_user.id
+    submission.reviewed_at = datetime.now(timezone.utc)
+
+    user_res = await db.execute(select(User).where(User.id == submission.user_id))
+    user = user_res.scalar_one_or_none()
+    if user:
+        user.is_kyc_verified = True
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="APPROVE_KYC", after_state={"submission_id": submission.id, "user_id": submission.user_id},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success"}
+
+
+@router.post("/kyc/{submission_id}/reject", dependencies=[Depends(require_admin)])
+async def reject_kyc(
+    submission_id: str,
+    request: Request,
+    reason: Optional[str] = None,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(select(KYCSubmission).where(KYCSubmission.id == submission_id))
+    submission = res.scalar_one_or_none()
+    if not submission:
+        raise HTTPException(status_code=404, detail="KYC submission not found")
+    if submission.status != KYCStatus.PENDING:
+        raise HTTPException(status_code=400, detail=f"Submission already {submission.status.value.lower()}")
+
+    submission.status = KYCStatus.REJECTED
+    submission.rejection_reason = reason
+    submission.reviewed_by_id = admin_user.id
+    submission.reviewed_at = datetime.now(timezone.utc)
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="REJECT_KYC", after_state={"submission_id": submission.id, "reason": reason},
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent")
     )

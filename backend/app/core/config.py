@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     # /app/uploads path backed by the uploads_data Docker volume.
     UPLOADS_DIR: str = os.getenv("UPLOADS_DIR", "uploads")
 
+    # KYC documents (national ID photos) - deliberately a SEPARATE
+    # directory from UPLOADS_DIR, which is served publicly via the
+    # StaticFiles mount in main.py. These are only ever served through an
+    # authenticated endpoint (GET /admin/kyc/{id}/document/{side}).
+    KYC_UPLOADS_DIR: str = os.getenv("KYC_UPLOADS_DIR", "kyc_uploads")
+
     # How often the background job re-syncs the VivaPe catalog (countries +
     # products for the popular-destination list). 0 disables the scheduled
     # job entirely (sync still available on-demand via POST
