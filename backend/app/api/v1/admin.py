@@ -8,6 +8,7 @@ from sqlalchemy import select, func
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import require_admin, require_super_admin
+from app.core.security import get_password_hash
 from app.models.user import User, UserRole, UserStatus
 from app.models.merchant import MerchantProfile, MerchantStatus
 from app.models.wallet import Wallet, WalletType, LedgerRefType
@@ -27,7 +28,7 @@ from app.services.catalog_sync_svc import sync_vivape_catalog
 from app.services.currency_svc import CurrencyService
 
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import Optional
 
 class ProductUpdateRequest(BaseModel):
@@ -42,6 +43,13 @@ class UserStatusUpdateRequest(BaseModel):
 
 class MerchantCommissionUpdateRequest(BaseModel):
     rate_pct: Decimal = Field(..., ge=0, le=100)
+
+class StaffAccountCreateRequest(BaseModel):
+    email: EmailStr
+    username: str
+    password: str
+    role: UserRole
+    full_name: Optional[str] = None
 
 router = APIRouter(prefix="/admin", tags=["Admin & Super Admin"])
 
@@ -647,6 +655,46 @@ async def update_product(
     return {"status": "success", "product_id": p.id}
 
 # --- Super Admin: Staff Management ---
+@router.post("/users", dependencies=[Depends(require_super_admin)])
+async def create_staff_account(
+    req: StaffAccountCreateRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    # This endpoint is for staff accounts specifically - MERCHANT and USER
+    # already have their own proper flows (self-registration, then the
+    # merchant application review queue). Creating those roles directly
+    # here would bypass that review process.
+    if req.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+        raise HTTPException(status_code=400, detail="This endpoint only creates ADMIN or SUPER_ADMIN staff accounts")
+
+    existing = await db.execute(select(User).where((User.email == req.email) | (User.username == req.username)))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Email or username already exists")
+
+    user = User(
+        email=req.email,
+        username=req.username,
+        hashed_password=get_password_hash(req.password),
+        role=req.role,
+        status=UserStatus.ACTIVE,
+        full_name=req.full_name
+    )
+    db.add(user)
+    await db.flush()
+    await LedgerService.ensure_wallets_for_user(db, user.id, user.role)
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="CREATE_STAFF_ACCOUNT",
+        after_state={"user_id": user.id, "email": user.email, "role": user.role.value},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success", "user_id": user.id, "email": user.email, "role": user.role.value}
+
 @router.get("/users", dependencies=[Depends(require_super_admin)])
 async def get_all_users(limit: int = 100, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(User).order_by(User.created_at.desc()).limit(limit))

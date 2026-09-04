@@ -252,3 +252,42 @@ async def test_branding_social_links_roundtrip(client, promote_role):
 
     public = await client.get("/api/v1/settings/public")
     assert public.json()["social_links"] == {"facebook": "https://facebook.com/esim", "instagram": "https://instagram.com/esim"}
+
+
+async def test_create_staff_account_requires_super_admin_and_logs_in(client, promote_role):
+    creator_admin = await register_and_login(client, "staffcreatoradmin")
+    await promote_role(creator_admin["user_id"], "ADMIN")
+
+    denied = await client.post(
+        "/api/v1/admin/users",
+        json={"email": "newstaff@example.com", "username": "newstaff", "password": "SuperSecret123!", "role": "ADMIN"},
+        headers=creator_admin["headers"],
+    )
+    assert denied.status_code == 403
+
+    await promote_role(creator_admin["user_id"], "SUPER_ADMIN")
+    created = await client.post(
+        "/api/v1/admin/users",
+        json={"email": "newstaff@example.com", "username": "newstaff", "password": "SuperSecret123!", "role": "ADMIN"},
+        headers=creator_admin["headers"],
+    )
+    assert created.status_code == 200, created.text
+    assert created.json()["role"] == "ADMIN"
+
+    login = await client.post("/api/v1/auth/login", json={"email": "newstaff@example.com", "password": "SuperSecret123!"})
+    assert login.status_code == 200
+    assert login.json()["role"] == "ADMIN"
+
+    dup = await client.post(
+        "/api/v1/admin/users",
+        json={"email": "newstaff@example.com", "username": "different", "password": "x", "role": "ADMIN"},
+        headers=creator_admin["headers"],
+    )
+    assert dup.status_code == 400
+
+    not_staff_role = await client.post(
+        "/api/v1/admin/users",
+        json={"email": "shouldfail@example.com", "username": "shouldfail", "password": "x", "role": "USER"},
+        headers=creator_admin["headers"],
+    )
+    assert not_staff_role.status_code == 400

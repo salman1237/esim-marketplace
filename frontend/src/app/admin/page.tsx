@@ -95,6 +95,26 @@ export default function AdminConsolePage() {
   };
 
 
+  const [newStaff, setNewStaff] = useState({ email: "", username: "", password: "", full_name: "", role: "ADMIN" });
+  const [creatingStaff, setCreatingStaff] = useState(false);
+
+  const handleCreateStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    setCreatingStaff(true);
+    try {
+      await api.createStaffAccount(token, newStaff);
+      alert(`Staff account created: ${newStaff.email} (${newStaff.role})`);
+      setNewStaff({ email: "", username: "", password: "", full_name: "", role: "ADMIN" });
+      api.getAdminUsers(token).then(setUsers).catch(console.error);
+    } catch (err: any) {
+      alert("Failed to create staff account: " + err.message);
+    } finally {
+      setCreatingStaff(false);
+    }
+  };
+
   const handleUpdateRole = async (userId: string, newRole: string) => {
     const token = localStorage.getItem("esim_token");
     if (!token) return;
@@ -618,6 +638,36 @@ export default function AdminConsolePage() {
 
       {/* Tab: Staff & Users */}
       {activeTab === "users" && (
+        <div className="space-y-6">
+        <div className="glass-panel rounded-2xl p-6 border border-white/10">
+          <h3 className="text-base font-bold text-white mb-1">Create Staff Account</h3>
+          <p className="text-xs text-slate-400 mb-4">Directly creates an Admin or Super Admin account - existing users are promoted via the role dropdown below instead.</p>
+          <form onSubmit={handleCreateStaff} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+            <div>
+              <label className="text-xs text-slate-300 font-semibold block mb-1">Email</label>
+              <input type="email" required value={newStaff.email} onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-300 font-semibold block mb-1">Username</label>
+              <input type="text" required value={newStaff.username} onChange={(e) => setNewStaff({ ...newStaff, username: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-300 font-semibold block mb-1">Password</label>
+              <input type="password" required minLength={8} value={newStaff.password} onChange={(e) => setNewStaff({ ...newStaff, password: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-300 font-semibold block mb-1">Role</label>
+              <select value={newStaff.role} onChange={(e) => setNewStaff({ ...newStaff, role: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white">
+                <option value="ADMIN">Admin</option>
+                <option value="SUPER_ADMIN">Super Admin</option>
+              </select>
+            </div>
+            <button type="submit" disabled={creatingStaff} className="bg-admin-600 hover:bg-admin-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl">
+              {creatingStaff ? "Creating..." : "Create Account"}
+            </button>
+          </form>
+        </div>
+
         <div className="glass-panel rounded-2xl p-6 border border-white/10">
           <h3 className="text-base font-bold text-white mb-4">Staff & User Management</h3>
           <div className="overflow-x-auto frozen-col-table">
@@ -655,6 +705,7 @@ export default function AdminConsolePage() {
               </tbody>
             </table>
           </div>
+        </div>
         </div>
       )}
 
