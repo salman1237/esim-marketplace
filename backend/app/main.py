@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
@@ -13,6 +14,7 @@ from app.models.user import User, UserRole, UserStatus
 from app.models.settings import PlatformSetting, CurrencyRate, Language, Translation
 from app.services.ledger_svc import LedgerService
 from app.services.currency_svc import CurrencyService
+from app.services.catalog_sync_svc import sync_vivape_catalog
 from app.core.seed_translations import SHIPPED_LOCALE_CODES, PLACEHOLDER_LANGUAGES, load_shipped_translations, flatten, EN_TRANSLATIONS
 from app.core.logging import configure_logging, get_logger
 from app.api.v1 import api_v1_router
@@ -108,7 +110,31 @@ async def lifespan(app: FastAPI):
 
         await db.commit()
 
+    scheduler = AsyncIOScheduler()
+    if settings.CATALOG_SYNC_INTERVAL_HOURS > 0:
+        async def _scheduled_catalog_sync():
+            async with AsyncSessionLocal() as db:
+                try:
+                    result = await sync_vivape_catalog(db)
+                    logger.info("scheduled_catalog_sync_completed", **result)
+                except Exception as e:
+                    # A failed sync (VivaPe down, network blip) must not
+                    # crash the scheduler - just log and let the next
+                    # scheduled run try again.
+                    logger.warning("scheduled_catalog_sync_failed", error=str(e))
+
+        scheduler.add_job(
+            _scheduled_catalog_sync, "interval",
+            hours=settings.CATALOG_SYNC_INTERVAL_HOURS,
+            id="vivape_catalog_sync", max_instances=1,
+        )
+        scheduler.start()
+        logger.info("catalog_sync_scheduler_started", interval_hours=settings.CATALOG_SYNC_INTERVAL_HOURS)
+
     yield
+
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
 
 app = FastAPI(
     title="eSIM Marketplace API",

@@ -119,7 +119,7 @@ export default function AdminConsolePage() {
     setSyncing(true);
     try {
       const res = await api.syncCatalog(token);
-      alert(`Sync completed! ${res.synced_countries} countries, ${res.synced_products} products.`);
+      alert(`Sync completed! ${res.synced_countries} new countries, ${res.synced_products} new products, ${res.updated_products ?? 0} updated.`);
     } catch (err: any) {
       alert("Catalog sync error: " + err.message);
     } finally {

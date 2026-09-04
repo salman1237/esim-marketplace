@@ -23,8 +23,7 @@ from app.schemas.settings import (
 )
 from app.services.ledger_svc import LedgerService
 from app.services.audit_svc import AuditService
-from app.services.vivape_adapter import VivaPeAdapter
-from app.services.catalog_parsing import parse_vivape_product
+from app.services.catalog_sync_svc import sync_vivape_catalog
 from app.services.currency_svc import CurrencyService
 
 
@@ -64,63 +63,7 @@ async def get_admin_stats(db: AsyncSession = Depends(get_db)):
 # --- Catalog Sync & Pricing ---
 @router.post("/catalog/sync", dependencies=[Depends(require_admin)])
 async def sync_catalog_from_vivape(db: AsyncSession = Depends(get_db)):
-    raw_countries = await VivaPeAdapter.get_countries(db)
-    synced_c = 0
-    synced_p = 0
-
-    popular_iso = ["US", "TH", "JP", "SA", "AE", "GB", "TR", "SG", "MY", "BD"]
-    existing_res = await db.execute(select(Country.iso2))
-    seen_iso = set(existing_res.scalars().all())
-
-    for item in raw_countries:
-        c_id = item.get("id")
-        raw_iso = item.get("iso_alpha2") or item.get("iso2") or item.get("country_code", "")
-        iso2 = raw_iso.strip().upper()
-        name = item.get("country_name") or item.get("name", "")
-        if not iso2 or iso2 in seen_iso:
-            continue
-
-        seen_iso.add(iso2)
-        c_obj = Country(
-            id=c_id,
-            iso2=iso2,
-            name_en=name,
-            flag_url=f"https://flagcdn.com/w80/{iso2.lower()}.png",
-            is_popular=iso2 in popular_iso,
-            is_active=True
-        )
-        db.add(c_obj)
-        synced_c += 1
-
-    await db.commit()
-
-    # Sync products for popular destination countries
-    top_c = await db.execute(select(Country).where(Country.is_popular == True))
-    for c in top_c.scalars().all():
-        raw_products = await VivaPeAdapter.get_products(db, c.id)
-        for p in raw_products:
-            parsed = parse_vivape_product(p)
-            if parsed is None:
-                continue
-
-            p_obj = Product(
-                supplier_product_id=parsed["supplier_product_id"],
-                country_id=c.id,
-                title_en=parsed["title"] or f"{c.name_en} eSIM",
-                data_amount_gb=parsed["data_amount_gb"],
-                validity_days=parsed["validity_days"],
-                cost_price=parsed["cost_price"],
-                retail_price=parsed["retail_price"],
-                currency="USD",
-                is_unlimited=parsed["is_unlimited"],
-                supplier_reference=parsed["supplier_reference"],
-                supplier_receiver_amount=parsed["supplier_receiver_amount"]
-            )
-            db.add(p_obj)
-            synced_p += 1
-
-    await db.commit()
-    return {"status": "success", "synced_countries": synced_c, "synced_products": synced_p}
+    return await sync_vivape_catalog(db)
 
 # --- Merchant Approval Queue ---
 @router.get("/merchants/queue", dependencies=[Depends(require_admin)])

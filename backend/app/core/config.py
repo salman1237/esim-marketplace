@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     # /app/uploads path backed by the uploads_data Docker volume.
     UPLOADS_DIR: str = os.getenv("UPLOADS_DIR", "uploads")
 
+    # How often the background job re-syncs the VivaPe catalog (countries +
+    # products for the popular-destination list). 0 disables the scheduled
+    # job entirely (sync still available on-demand via POST
+    # /admin/catalog/sync) - useful for local dev where nobody wants a
+    # background job silently hitting the live VivaPe API.
+    CATALOG_SYNC_INTERVAL_HOURS: float = float(os.getenv("CATALOG_SYNC_INTERVAL_HOURS", "4"))
+
     # Currency Engine
     EXCHANGE_RATE_API_URL: str = "https://open.er-api.com/v6/latest"
     EXCHANGE_RATE_FALLBACK_URL: str = "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies"
