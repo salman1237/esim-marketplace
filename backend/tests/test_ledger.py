@@ -77,3 +77,41 @@ async def test_balance_equals_sum_of_ledger_entries(db_session):
 
     await db_session.refresh(wallet)
     assert wallet.balance == total == Decimal("35.0000")
+
+
+async def test_concurrent_debits_never_violate_balance_invariant(db_session):
+    """The plan's own Verification Plan explicitly requires this: 'Verify
+    concurrent top-ups and purchases never violate balance invariant.'
+    Using db_session for every concurrent call wouldn't actually exercise
+    with_for_update()'s row lock - that only matters across separate
+    transactions/connections, which a single shared session isn't. Each
+    concurrent operation gets its own AsyncSessionLocal() instead, the
+    same way independent real requests would."""
+    import asyncio
+    from app.core.database import AsyncSessionLocal
+
+    wallet = await _make_wallet(db_session, Decimal("1000.0000"))
+
+    async def _debit_one():
+        async with AsyncSessionLocal() as session:
+            await LedgerService.debit(session, wallet.id, Decimal("10.0000"), LedgerRefType.ORDER_PURCHASE)
+            await session.commit()
+
+    # 20 concurrent debits of $10 each against a $1000 wallet - if the row
+    # lock didn't serialize these (a lost-update race), the final balance
+    # would land above $800 (some debits reading a stale pre-debit
+    # balance and overwriting each other's decrement).
+    await asyncio.gather(*[_debit_one() for _ in range(20)])
+
+    async with AsyncSessionLocal() as verify_session:
+        from app.models.wallet import WalletLedgerEntry
+        w_res = await verify_session.execute(select(Wallet).where(Wallet.id == wallet.id))
+        final_wallet = w_res.scalar_one()
+
+        e_res = await verify_session.execute(select(WalletLedgerEntry).where(WalletLedgerEntry.wallet_id == wallet.id))
+        entries = e_res.scalars().all()
+        assert len(entries) == 20
+        computed_total = Decimal("1000.0000") - sum(Decimal(str(e.amount)) for e in entries)
+
+        assert Decimal(str(final_wallet.balance)) == Decimal("800.0000")
+        assert Decimal(str(final_wallet.balance)) == computed_total
