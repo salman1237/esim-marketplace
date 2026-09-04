@@ -262,6 +262,14 @@ async def _complete_gateway_order(db: AsyncSession, customer_order_id: str, _fai
     )
     await db.commit()
 
+    if not profile:
+        # ShurjoPay already charged the customer for this order -
+        # provision_esim already refunded that amount to their wallet
+        # (there's no gateway refund API wired up, so wallet credit is the
+        # compensation) and marked the order FAILED. Redirect to the
+        # failure state instead of claiming success.
+        return _fail("provisioning_failed_refunded", "/my-esims", "payment")
+
     beneficiary_res = await db.execute(select(User.email).where(User.id == order.beneficiary_id))
     beneficiary_email = beneficiary_res.scalar_one_or_none()
     if beneficiary_email:

@@ -1,6 +1,8 @@
 import pytest
 from decimal import Decimal
+from sqlalchemy import select
 from conftest import register_and_login, fund_wallet, create_test_product
+from app.models.order import Order, OrderStatus
 
 pytestmark = pytest.mark.asyncio
 
@@ -47,7 +49,7 @@ async def test_checkout_success_delivers_esim(client, db_session):
     mine = await client.get("/api/v1/orders/my-esims", headers=user["headers"])
     assert mine.status_code == 200
     assert len(mine.json()) == 1
-    assert mine.json()[0]["is_mock_fallback"] is True  # no supplier_product_id -> flagged fallback, not silently "real"
+    assert mine.json()[0]["is_mock_fallback"] is False
 
 
 async def test_buy_for_user_forbidden_for_plain_user(client, db_session):
@@ -98,3 +100,54 @@ async def test_buy_for_user_auto_create(client, db_session, promote_role):
     assert reseller_orders.status_code == 200
     assert len(reseller_orders.json()) == 1
     assert Decimal(str(reseller_orders.json()[0]["commission_earned"])) > 0
+
+
+async def test_checkout_refunds_wallet_when_vivape_fails(client, db_session, mock_vivape):
+    """When VivaPe provisioning fails, the customer must never be left
+    charged for a non-working eSIM: the order is marked FAILED, the wallet
+    debit is reversed, and no eSIM is handed out."""
+    mock_vivape.create_transaction.return_value = {"error": "Insufficient Balance.", "purchase_trx": []}
+
+    user = await register_and_login(client, "unluckybuyer")
+    await fund_wallet(db_session, user["user_id"], Decimal("50.0000"))
+    product = await create_test_product(db_session, price=Decimal("9.9900"))
+
+    res = await client.post(
+        "/api/v1/orders/checkout",
+        json={"product_id": product.id, "payment_method": "WALLET"},
+        headers=user["headers"],
+    )
+    assert res.status_code == 502
+    assert "refunded" in res.json()["detail"].lower()
+
+    # Wallet balance is back to what it was before the debit.
+    me = await client.get("/api/v1/auth/me", headers=user["headers"])
+    default_wallet = next(w for w in me.json()["wallets"] if w["type"] == "DEFAULT")
+    assert Decimal(str(default_wallet["balance"])) == Decimal("50.0000")
+
+    # No eSIM was created, and the order itself is marked FAILED.
+    mine = await client.get("/api/v1/orders/my-esims", headers=user["headers"])
+    assert mine.json() == []
+
+    order_res = await db_session.execute(select(Order).where(Order.buyer_id == user["user_id"]))
+    order = order_res.scalar_one()
+    assert order.status == OrderStatus.FAILED
+
+
+async def test_checkout_refunds_wallet_when_product_has_no_supplier_mapping(client, db_session):
+    """Same refund guarantee for a product with no supplier_product_id at
+    all (provision_esim's other failure branch, not VivaPe erroring)."""
+    user = await register_and_login(client, "nosupplierbuyer")
+    await fund_wallet(db_session, user["user_id"], Decimal("50.0000"))
+    product = await create_test_product(db_session, price=Decimal("9.9900"), supplier_product_id=None, supplier_receiver_amount=None)
+
+    res = await client.post(
+        "/api/v1/orders/checkout",
+        json={"product_id": product.id, "payment_method": "WALLET"},
+        headers=user["headers"],
+    )
+    assert res.status_code == 502
+
+    me = await client.get("/api/v1/auth/me", headers=user["headers"])
+    default_wallet = next(w for w in me.json()["wallets"] if w["type"] == "DEFAULT")
+    assert Decimal(str(default_wallet["balance"])) == Decimal("50.0000")

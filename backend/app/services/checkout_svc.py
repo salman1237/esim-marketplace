@@ -55,18 +55,14 @@ async def resolve_beneficiary(db: AsyncSession, current_user: User, is_buy_for_u
     return current_user.id
 
 
-async def provision_esim(db: AsyncSession, order: Order, product: Product, beneficiary_id: str, actor_id: str, actor_role: str) -> ESIMProfile:
-    """Creates the ESIMProfile for `order` (real VivaPe data if possible,
-    an obviously-fake mock flagged via is_mock_fallback otherwise so a
-    supplier failure never silently looks like a working eSIM), marks the
-    order COMPLETED, and adds/returns the profile. Caller commits."""
-    iccid = f"89882{uuid.uuid4().hex[:14].upper()}"
-    matching_id = uuid.uuid4().hex[:12].upper()
-    smdp = "rsp.truphone.com"
-    lpa = f"LPA:1${smdp}${matching_id}"
-    qr_data = lpa
-    is_mock_fallback = True
-
+async def provision_esim(db: AsyncSession, order: Order, product: Product, beneficiary_id: str, actor_id: str, actor_role: str) -> ESIMProfile | None:
+    """Creates the ESIMProfile for `order` from a real VivaPe purchase and
+    marks the order COMPLETED. If VivaPe is unavailable/fails, or the
+    product has no supplier mapping at all, no eSIM is created — the order
+    is marked FAILED and the buyer is refunded the full order amount to
+    their DEFAULT wallet instead, since a customer must never be charged
+    (via wallet debit or gateway payment) for an eSIM that doesn't work.
+    Returns None on failure. Caller commits either way."""
     if product.supplier_product_id and product.supplier_receiver_amount is not None:
         try:
             # receiver_amount is NOT the price — confirmed against VivaPe's
@@ -81,41 +77,64 @@ async def provision_esim(db: AsyncSession, order: Order, product: Product, benef
             if trx_id:
                 esim_data = await VivaPeAdapter.get_esim_by_trx(db, trx_id)
                 if esim_data.get("iccid"):
-                    iccid = esim_data["iccid"]
-                    lpa = esim_data.get("lpa") or lpa
-                    qr_data = esim_data.get("qr_code") or lpa
-                    is_mock_fallback = False
-            else:
-                logger.warning(
-                    "vivape_provisioning_failed_using_mock_fallback",
-                    order_id=order.id,
-                    vivape_error=trx.get("error") if isinstance(trx, dict) else str(trx)
-                )
+                    matching_id = uuid.uuid4().hex[:12].upper()
+                    smdp = "rsp.truphone.com"
+                    fallback_lpa = f"LPA:1${smdp}${matching_id}"
+                    profile = ESIMProfile(
+                        order_id=order.id,
+                        beneficiary_id=beneficiary_id,
+                        iccid=esim_data["iccid"],
+                        lpa_string=esim_data.get("lpa") or fallback_lpa,
+                        qr_code_data=esim_data.get("qr_code") or esim_data.get("lpa") or fallback_lpa,
+                        smdp_address=smdp,
+                        matching_id=matching_id,
+                        status=ESIMStatus.RELEASED,
+                        is_mock_fallback=False,
+                        expires_at=datetime.now(timezone.utc) + timedelta(days=product.validity_days)
+                    )
+                    db.add(profile)
+                    order.status = OrderStatus.COMPLETED
+                    return profile
+            logger.warning(
+                "vivape_provisioning_failed_refunding_order",
+                order_id=order.id,
+                vivape_error=trx.get("error") if isinstance(trx, dict) else str(trx)
+            )
         except Exception as e:
-            logger.warning("vivape_provisioning_failed_using_mock_fallback", order_id=order.id, error=str(e))
+            logger.warning("vivape_provisioning_failed_refunding_order", order_id=order.id, error=str(e))
+    else:
+        logger.warning("vivape_provisioning_skipped_no_supplier_mapping_refunding_order", order_id=order.id, product_id=product.id)
 
-    if is_mock_fallback:
-        await AuditService.log_action(
-            db, actor_id=actor_id, actor_role=actor_role,
-            action="MOCK_ESIM_FALLBACK",
-            after_state={"order_id": order.id, "product_id": product.id, "reason": "VivaPe provisioning unavailable or failed"}
+    await _refund_failed_order(db, order, actor_id, actor_role)
+    return None
+
+
+async def _refund_failed_order(db: AsyncSession, order: Order, actor_id: str, actor_role: str) -> None:
+    """Marks `order` FAILED and credits its buyer's DEFAULT wallet for the
+    full order amount — the same compensation regardless of whether the
+    order was originally paid from the wallet (reverses the debit) or via
+    ShurjoPay gateway (no prior debit to reverse, so this is the customer's
+    only compensation since no payment-gateway refund integration exists)."""
+    order.status = OrderStatus.FAILED
+
+    w_res = await db.execute(
+        select(Wallet).where(Wallet.user_id == order.buyer_id, Wallet.wallet_type == WalletType.DEFAULT)
+    )
+    wallet = w_res.scalar_one_or_none()
+    if wallet:
+        await LedgerService.credit(
+            db, wallet.id, Decimal(str(order.total_amount)),
+            LedgerRefType.REFUND,
+            ref_id=order.id,
+            description=f"Refund: eSIM provisioning failed for order {order.order_no}",
+            idempotency_key=f"order-refund-{order.id}"
         )
 
-    profile = ESIMProfile(
-        order_id=order.id,
-        beneficiary_id=beneficiary_id,
-        iccid=iccid,
-        lpa_string=lpa,
-        qr_code_data=qr_data,
-        smdp_address=smdp,
-        matching_id=matching_id,
-        status=ESIMStatus.RELEASED,
-        is_mock_fallback=is_mock_fallback,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=product.validity_days)
+    await AuditService.log_action(
+        db, actor_id=actor_id, actor_role=actor_role,
+        action="ORDER_PROVISIONING_FAILED_REFUNDED",
+        after_state={"order_id": order.id, "product_id": order.product_id, "refund_amount": str(order.total_amount)}
     )
-    db.add(profile)
-    order.status = OrderStatus.COMPLETED
-    return profile
 
 
 async def get_effective_commission_rate(db: AsyncSession, merchant_user_id: str, flat_rate_pct: Decimal) -> Decimal:

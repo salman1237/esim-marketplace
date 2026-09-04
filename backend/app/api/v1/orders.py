@@ -107,6 +107,13 @@ async def checkout_esim(
     profile = await provision_esim(db, order, product, beneficiary_id, current_user.id, current_user.role.value)
     await db.commit()
 
+    if not profile:
+        # provision_esim already marked the order FAILED and refunded the
+        # wallet debit - surface this as an error response (not a 200 with
+        # status=FAILED) so the frontend's existing catch/alert handles it
+        # instead of rendering a "success" screen with no eSIM data.
+        raise HTTPException(status_code=502, detail="eSIM provisioning failed. Your payment has been refunded to your wallet.")
+
     beneficiary_res = await db.execute(select(User.email).where(User.id == beneficiary_id))
     beneficiary_email = beneficiary_res.scalar_one_or_none()
     if beneficiary_email:

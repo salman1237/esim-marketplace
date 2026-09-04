@@ -236,7 +236,7 @@ async def test_admin_orders_includes_esim_support_data(client, db_session, promo
     matching = next(o for o in orders.json() if o["order_no"] == checkout.json()["order_no"])
     assert matching["iccid"] == iccid
     assert matching["qr_code_data"]
-    assert matching["is_mock_fallback"] is True
+    assert matching["is_mock_fallback"] is False
 
 
 async def test_branding_social_links_roundtrip(client, promote_role):

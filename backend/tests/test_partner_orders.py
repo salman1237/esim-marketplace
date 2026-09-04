@@ -99,12 +99,40 @@ async def test_create_order_provisions_in_background_and_polling_reflects_it(cli
     assert poll_body["status"] == "COMPLETED"
     assert poll_body["iccid"] is not None
     assert poll_body["customer_reference"] == "cust-42"
-    assert poll_body["is_mock_fallback"] is True  # no supplier_product_id -> forced mock fallback
+    assert poll_body["is_mock_fallback"] is False
 
     async with AsyncSessionLocal() as verify_db:
         w_res = await verify_db.execute(select(Wallet).where(Wallet.user_id == user_id, Wallet.wallet_type == WalletType.DEFAULT))
         wallet = w_res.scalar_one()
         assert Decimal(str(wallet.balance)) == Decimal("90.0000")
+
+
+async def test_create_order_refunds_wallet_when_vivape_fails(client, db_session, promote_role, mock_vivape):
+    """Partner orders go through the same shared provision_esim as the web
+    UI - a VivaPe failure here must refund the merchant's DEFAULT wallet
+    and mark the order FAILED, discoverable via polling."""
+    mock_vivape.create_transaction.return_value = {"error": "Insufficient Balance.", "purchase_trx": []}
+
+    headers, user_id, _ = await _make_partner(client, db_session, promote_role, "7")
+    await fund_wallet(db_session, user_id, Decimal("100.0000"))
+    product = await create_test_product(db_session, price=Decimal("10.0000"))
+
+    res = await client.post("/api/v1/partner/orders", json={"product_id": product.id}, headers=headers)
+    assert res.status_code == 200, res.text
+    order_id = res.json()["order_id"]
+
+    await asyncio.sleep(0.3)
+
+    poll = await client.get(f"/api/v1/partner/orders/{order_id}", headers=headers)
+    assert poll.status_code == 200
+    poll_body = poll.json()
+    assert poll_body["status"] == "FAILED"
+    assert poll_body["iccid"] is None
+
+    async with AsyncSessionLocal() as verify_db:
+        w_res = await verify_db.execute(select(Wallet).where(Wallet.user_id == user_id, Wallet.wallet_type == WalletType.DEFAULT))
+        wallet = w_res.scalar_one()
+        assert Decimal(str(wallet.balance)) == Decimal("100.0000")  # debited then refunded, net unchanged
 
 
 async def test_create_order_credits_commission_wallet(client, db_session, promote_role):

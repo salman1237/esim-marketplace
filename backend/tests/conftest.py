@@ -45,6 +45,43 @@ async def db_session():
         yield session
 
 
+@pytest.fixture(autouse=True)
+def mock_vivape():
+    """VivaPeAdapter's real methods hit a live third-party API - tests must
+    never do that. Applied to every test (checkout_svc.provision_esim is
+    the sole caller, so this is harmless for tests that never touch
+    checkout) and defaults to simulating a successful VivaPe purchase. A
+    test exercising the provisioning-failure/refund path can reconfigure
+    the yielded mocks' return_value/side_effect, e.g.:
+        mock_vivape.create_transaction.side_effect = Exception("VivaPe down")
+    """
+    from unittest.mock import AsyncMock, patch
+    import app.services.checkout_svc as checkout_svc_module
+
+    create_transaction_mock = AsyncMock(return_value={"purchase_trx": {"id": 999001}})
+
+    def _fake_esim_data(*args, **kwargs):
+        # A fresh ICCID per call - ESIMProfile.iccid is unique, and this
+        # shared test DB has no per-test rollback, so a fixed canned value
+        # collides across tests/runs within the same session.
+        unique_suffix = uuid.uuid4().hex[:14].upper()
+        matching_id = uuid.uuid4().hex[:12].upper()
+        return {
+            "iccid": f"89882{unique_suffix}",
+            "lpa": f"LPA:1$rsp.truphone.com${matching_id}",
+            "qr_code": f"LPA:1$rsp.truphone.com${matching_id}",
+        }
+
+    get_esim_by_trx_mock = AsyncMock(side_effect=_fake_esim_data)
+
+    with patch.object(checkout_svc_module.VivaPeAdapter, "create_transaction", create_transaction_mock), \
+         patch.object(checkout_svc_module.VivaPeAdapter, "get_esim_by_trx", get_esim_by_trx_mock):
+        yield type("VivaPeMocks", (), {
+            "create_transaction": create_transaction_mock,
+            "get_esim_by_trx": get_esim_by_trx_mock,
+        })()
+
+
 @pytest_asyncio.fixture
 async def promote_role(db_session):
     """Returns an async fn(user_id, role_str) that sets a user's role directly
@@ -96,7 +133,18 @@ async def fund_wallet(db_session, user_id: str, amount: Decimal = Decimal("100.0
     await db_session.commit()
 
 
-async def create_test_product(db_session, price: Decimal = Decimal("9.9900")) -> Product:
+async def create_test_product(
+    db_session,
+    price: Decimal = Decimal("9.9900"),
+    supplier_product_id: int | None = 999001,
+    supplier_receiver_amount: Decimal | None = Decimal("1000.0000"),
+) -> Product:
+    """`supplier_product_id`/`supplier_receiver_amount` default to a fake
+    but non-null mapping so provision_esim takes the VivaPe branch, which
+    the autouse `mock_vivape` fixture makes succeed by default without any
+    real network call. Pass supplier_product_id=None to build a product
+    with no supplier mapping at all - exercises provision_esim's other
+    refund reason (VivaPe branch skipped entirely, not just failing)."""
     suffix = uuid.uuid4().hex[:6]
     country = Country(
         id=int(uuid.uuid4().int % 1_000_000_000),
@@ -116,7 +164,8 @@ async def create_test_product(db_session, price: Decimal = Decimal("9.9900")) ->
         retail_price=price,
         currency="USD",
         is_active=True,
-        supplier_product_id=None,  # forces the mock-fallback provisioning path (no live VivaPe call)
+        supplier_product_id=supplier_product_id,
+        supplier_receiver_amount=supplier_receiver_amount,
     )
     db_session.add(product)
     await db_session.commit()

@@ -1,7 +1,9 @@
 import pytest
 from decimal import Decimal
 from unittest.mock import patch
+from sqlalchemy import select
 from conftest import register_and_login, create_test_product
+from app.models.wallet import Wallet, WalletType
 
 pytestmark = pytest.mark.asyncio
 
@@ -131,6 +133,40 @@ async def test_order_initiate_buy_for_user_forbidden_for_plain_user(client, db_s
         headers=user["headers"],
     )
     assert res.status_code == 403
+
+
+async def test_gateway_callback_refunds_wallet_when_vivape_fails(client, db_session, mock_vivape):
+    """ShurjoPay already charged the customer by the time the callback
+    fires - if VivaPe then fails, there's no wallet debit to reverse (this
+    order was never wallet-paid), so the compensation is a wallet credit
+    for the full amount instead, and the redirect must not claim success."""
+    mock_vivape.create_transaction.return_value = {"error": "Insufficient Balance.", "purchase_trx": []}
+
+    user = await register_and_login(client, "gatewayfails")
+    product = await create_test_product(db_session, price=Decimal("9.9900"))
+
+    with patch("app.api.v1.payments.ShurjoPayService.initiate_payment", return_value=FAKE_INITIATE_RESPONSE):
+        initiate = await client.post(
+            "/api/v1/payments/shurjopay/order-initiate",
+            json={"product_id": product.id, "payment_method": "SHURJOPAY"},
+            headers=user["headers"],
+        )
+    order_id = initiate.json()["order_id"]
+
+    response = _paid_response(f"ORDERPAY-{order_id}", amount="9.9900")
+    with patch("app.api.v1.payments.ShurjoPayService.verify_payment", return_value=response):
+        callback = await client.get("/api/v1/payments/shurjopay/callback", params={"order_id": "sp6a99c460a9300"})
+    assert callback.status_code == 302
+    assert "/my-esims" in callback.headers["location"]
+    assert "payment=failed" in callback.headers["location"]
+    assert "provisioning_failed_refunded" in callback.headers["location"]
+
+    mine = await client.get("/api/v1/orders/my-esims", headers=user["headers"])
+    assert mine.json() == []
+
+    me = await client.get("/api/v1/auth/me", headers=user["headers"])
+    default_wallet = next(w for w in me.json()["wallets"] if w["type"] == "DEFAULT")
+    assert Decimal(str(default_wallet["balance"])) == Decimal("9.9900")
 
 
 async def test_topup_callback_still_uses_topup_query_param(client, db_session):

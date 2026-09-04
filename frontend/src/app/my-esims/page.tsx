@@ -181,6 +181,8 @@ export default function MyESIMsPage() {
         }`}>
           {paymentBanner.kind === "success"
             ? "Payment received — your eSIM is ready below."
+            : paymentBanner.reason === "provisioning_failed_refunded"
+            ? "Your payment went through, but eSIM provisioning failed. The full amount has been refunded to your wallet balance."
             : `Payment was not completed${paymentBanner.reason ? ` (${paymentBanner.reason.replace(/_/g, " ")})` : ""}. No charge was made.`}
         </div>
       )}
