@@ -14,6 +14,7 @@ from app.core.partner_auth import get_current_partner, PartnerContext
 from app.core.rate_limit import limiter, get_partner_api_key
 from app.models.catalog import Country, Product
 from app.models.merchant import MerchantProfile
+from app.models.user import User
 from app.models.wallet import Wallet, WalletType, LedgerRefType
 from app.models.order import Order, OrderStatus, PaymentMethod
 from app.schemas.catalog import CountryResponse, ProductResponse
@@ -119,8 +120,18 @@ async def _process_partner_order_background(order_id: str):
             product = p_res.scalar_one()
             m_res = await bg_db.execute(select(MerchantProfile).where(MerchantProfile.user_id == order.buyer_id))
             merchant = m_res.scalar_one()
+            u_res = await bg_db.execute(select(User).where(User.id == order.buyer_id))
+            buyer = u_res.scalar_one()
 
             profile = await provision_esim(bg_db, order, product, order.beneficiary_id, order.buyer_id, "MERCHANT")
+
+            if profile:
+                # Commission only on orders that actually succeed -
+                # provision_esim already refunds+fails an order that
+                # doesn't, and the merchant must not also keep commission
+                # on a sale that didn't happen.
+                await distribute_commission(bg_db, order, Decimal(str(order.total_amount)), buyer)
+
             await bg_db.commit()
 
             await deliver_webhook(bg_db, merchant, order, profile)
@@ -178,8 +189,8 @@ async def create_partner_order(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    await distribute_commission(db, order, total_cost, ctx.user)
-
+    # Commission is distributed in the background task, only once
+    # provisioning has actually succeeded - see _process_partner_order_background.
     await db.commit()
     order_id = order.id
 

@@ -134,6 +134,12 @@ async def test_create_order_refunds_wallet_when_vivape_fails(client, db_session,
         wallet = w_res.scalar_one()
         assert Decimal(str(wallet.balance)) == Decimal("100.0000")  # debited then refunded, net unchanged
 
+        # Commission must not be earned on a sale that didn't happen -
+        # distribute_commission now runs only after a successful provision.
+        cw_res = await verify_db.execute(select(Wallet).where(Wallet.user_id == user_id, Wallet.wallet_type == WalletType.COMMISSION))
+        comm_wallet = cw_res.scalar_one()
+        assert Decimal(str(comm_wallet.balance)) == Decimal("0.0000")
+
 
 async def test_create_order_credits_commission_wallet(client, db_session, promote_role):
     headers, user_id, _ = await _make_partner(client, db_session, promote_role, "3")

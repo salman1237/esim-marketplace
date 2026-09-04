@@ -99,20 +99,25 @@ async def checkout_esim(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Commission Distribution for Merchants buying on behalf of a customer
-    await distribute_commission(db, order, total_cost, current_user)
-
     # 4. Provision eSIM Profile from VivaPe (shared with the ShurjoPay
     # gateway path, which calls this same function from its callback).
+    # Must happen before commission distribution: an order that fails and
+    # gets refunded here must not also leave the merchant with commission
+    # earned on a sale that didn't actually happen.
     profile = await provision_esim(db, order, product, beneficiary_id, current_user.id, current_user.role.value)
-    await db.commit()
 
     if not profile:
+        await db.commit()
         # provision_esim already marked the order FAILED and refunded the
         # wallet debit - surface this as an error response (not a 200 with
         # status=FAILED) so the frontend's existing catch/alert handles it
         # instead of rendering a "success" screen with no eSIM data.
         raise HTTPException(status_code=502, detail="eSIM provisioning failed. Your payment has been refunded to your wallet.")
+
+    # Commission Distribution for Merchants buying on behalf of a customer -
+    # only reached once provisioning has actually succeeded.
+    await distribute_commission(db, order, total_cost, current_user)
+    await db.commit()
 
     beneficiary_res = await db.execute(select(User.email).where(User.id == beneficiary_id))
     beneficiary_email = beneficiary_res.scalar_one_or_none()

@@ -151,3 +151,37 @@ async def test_checkout_refunds_wallet_when_product_has_no_supplier_mapping(clie
     me = await client.get("/api/v1/auth/me", headers=user["headers"])
     default_wallet = next(w for w in me.json()["wallets"] if w["type"] == "DEFAULT")
     assert Decimal(str(default_wallet["balance"])) == Decimal("50.0000")
+
+
+async def test_buy_for_user_no_commission_when_vivape_fails(client, db_session, promote_role, mock_vivape):
+    """A merchant buying for a customer must not keep commission on an
+    order that fails and gets refunded - distribute_commission now runs
+    only after provision_esim succeeds."""
+    mock_vivape.create_transaction.return_value = {"error": "Insufficient Balance.", "purchase_trx": []}
+
+    merchant = await register_and_login(client, "unluckymerchant")
+    await promote_role(merchant["user_id"], "MERCHANT")
+    await fund_wallet(db_session, merchant["user_id"], Decimal("50.0000"))
+    product = await create_test_product(db_session, price=Decimal("10.0000"))
+
+    res = await client.post(
+        "/api/v1/orders/checkout",
+        json={
+            "product_id": product.id,
+            "payment_method": "WALLET",
+            "is_buy_for_user": True,
+            "auto_create_user": True,
+        },
+        headers=merchant["headers"],
+    )
+    assert res.status_code == 502
+
+    me = await client.get("/api/v1/auth/me", headers=merchant["headers"])
+    commission_wallet = next(w for w in me.json()["wallets"] if w["type"] == "COMMISSION")
+    assert Decimal(str(commission_wallet["balance"])) == Decimal("0.0000")
+
+    reseller_orders = await client.get("/api/v1/orders/reseller-orders", headers=merchant["headers"])
+    assert reseller_orders.status_code == 200
+    assert len(reseller_orders.json()) == 1
+    assert reseller_orders.json()[0]["status"] == "FAILED"
+    assert Decimal(str(reseller_orders.json()[0]["commission_earned"])) == Decimal("0")
