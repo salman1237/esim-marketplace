@@ -58,7 +58,7 @@ export default function Header() {
           <Link href="/my-esims" className="hover:text-white transition-colors">{t("common", "my_esims", "My eSIMs")}</Link>
           <Link href="/wallet" className="hover:text-white transition-colors">{t("common", "wallet", "Wallet")}</Link>
           {userData?.role === "SUPER_ADMIN" || userData?.role === "ADMIN" ? (
-            <Link href="/admin" className="text-brand-400 hover:text-brand-300 flex items-center space-x-1">
+            <Link href="/admin" className="text-admin-400 hover:text-admin-300 flex items-center space-x-1">
               <Shield className="w-4 h-4" />
               <span>{t("common", "admin", "Admin Console")}</span>
             </Link>
@@ -152,7 +152,7 @@ export default function Header() {
           <Link href="/my-esims" onClick={() => setIsMenuOpen(false)} className="block py-2 text-slate-300">{t("common", "my_esims", "My eSIMs")}</Link>
           <Link href="/wallet" onClick={() => setIsMenuOpen(false)} className="block py-2 text-slate-300">{t("common", "wallet", "Wallet")}</Link>
           {userData?.role === "SUPER_ADMIN" || userData?.role === "ADMIN" ? (
-            <Link href="/admin" onClick={() => setIsMenuOpen(false)} className="block py-2 text-brand-400">{t("common", "admin", "Admin Console")}</Link>
+            <Link href="/admin" onClick={() => setIsMenuOpen(false)} className="block py-2 text-admin-400">{t("common", "admin", "Admin Console")}</Link>
           ) : null}
           <div className="pt-2 border-t border-slate-800">
             {token ? (

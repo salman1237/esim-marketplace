@@ -128,7 +128,7 @@ export default function TranslationsManager({ languages: initialLanguages }: { l
       {/* Active Languages List */}
       <div className="glass-panel rounded-2xl p-6 border border-white/10 lg:col-span-2">
         <h3 className="text-base font-bold text-white mb-1 flex items-center space-x-2">
-          <Languages className="w-4 h-4 text-brand-400" />
+          <Languages className="w-4 h-4 text-admin-400" />
           <span>Language Catalog</span>
         </h3>
         <p className="text-xs text-slate-400 mb-4">Activate/deactivate languages and trigger a bulk auto-translate pass (English placeholders, flagged for human review — no external MT provider is wired up in this deployment).</p>
@@ -162,7 +162,7 @@ export default function TranslationsManager({ languages: initialLanguages }: { l
                       <button
                         onClick={() => handleAutoTranslate(l.code)}
                         disabled={autoTranslating === l.code}
-                        className="bg-brand-600 hover:bg-brand-500 px-2.5 py-1 rounded text-[11px] font-bold text-white inline-flex items-center space-x-1"
+                        className="bg-admin-600 hover:bg-admin-500 px-2.5 py-1 rounded text-[11px] font-bold text-white inline-flex items-center space-x-1"
                       >
                         <Sparkles className="w-3 h-3" />
                         <span>{autoTranslating === l.code ? "Filling..." : "Auto-Translate"}</span>
@@ -197,7 +197,7 @@ export default function TranslationsManager({ languages: initialLanguages }: { l
             <input type="checkbox" id="newIsRTL" checked={newIsRTL} onChange={(e) => setNewIsRTL(e.target.checked)} className="rounded bg-slate-900 border-slate-700" />
             <label htmlFor="newIsRTL" className="text-xs text-slate-300">Right-to-left script</label>
           </div>
-          <button type="submit" disabled={creating} className="bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl inline-flex items-center space-x-2">
+          <button type="submit" disabled={creating} className="bg-admin-600 hover:bg-admin-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl inline-flex items-center space-x-2">
             <Plus className="w-3.5 h-3.5" />
             <span>{creating ? "Adding..." : "Add Language"}</span>
           </button>

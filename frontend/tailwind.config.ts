@@ -33,6 +33,17 @@ const config: Config = {
           50: "#fffbeb",
           500: "#f59e0b",
           600: "#d97706",
+        },
+        // Distinct from `brand` (storefront) on purpose: the admin console
+        // is an elevated-privilege zone and should be visually
+        // unmistakable from the customer-facing site at a glance.
+        admin: {
+          50: "#fff1f2",
+          300: "#fda4af",
+          400: "#fb7185",
+          500: "#f43f5e",
+          600: "#e11d48",
+          900: "#4c0519",
         }
       },
     },

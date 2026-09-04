@@ -178,12 +178,13 @@ export default function AdminConsolePage() {
   };
 
   return (
+    <div className="border-t-2 border-admin-600">
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
-      
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center space-x-2 text-brand-400 text-xs font-bold uppercase tracking-wider mb-1">
+          <div className="flex items-center space-x-2 text-admin-400 text-xs font-bold uppercase tracking-wider mb-1">
             <Shield className="w-4 h-4" />
             <span>Operations &amp; Governance Center</span>
           </div>
@@ -193,7 +194,7 @@ export default function AdminConsolePage() {
         <button
           onClick={handleSyncCatalog}
           disabled={syncing}
-          className="bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-lg shadow-brand-900/30 flex items-center space-x-2 self-start"
+          className="bg-admin-600 hover:bg-admin-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-lg shadow-admin-900/30 flex items-center space-x-2 self-start"
         >
           <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />
           <span>{syncing ? "Syncing VivaPe..." : "Sync VivaPe Catalog"}</span>
@@ -240,7 +241,7 @@ export default function AdminConsolePage() {
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
             className={`py-2 px-4 text-xs font-bold border-b-2 transition-colors ${
-              activeTab === tab.id ? "border-brand-500 text-white" : "border-transparent text-slate-400 hover:text-slate-200"
+              activeTab === tab.id ? "border-admin-500 text-white" : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
             {tab.label}
@@ -337,7 +338,7 @@ export default function AdminConsolePage() {
                       {p.status === "PENDING" && (
                         <button
                           onClick={() => handleApprovePayment(p.id)}
-                          className="bg-brand-600 hover:bg-brand-500 text-white px-2.5 py-1 rounded text-[11px] font-bold"
+                          className="bg-admin-600 hover:bg-admin-500 text-white px-2.5 py-1 rounded text-[11px] font-bold"
                         >
                           Verify &amp; Credit
                         </button>
@@ -399,7 +400,7 @@ export default function AdminConsolePage() {
                       onChange={(e) => handleUploadBrandingAsset(kind, e.target.files?.[0] ?? null)}
                       className="w-full text-[10px] text-slate-400 file:me-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-semibold file:bg-slate-800 file:text-slate-300"
                     />
-                    {uploadingKind === kind && <p className="text-[10px] text-brand-400 mt-1">Uploading...</p>}
+                    {uploadingKind === kind && <p className="text-[10px] text-admin-400 mt-1">Uploading...</p>}
                   </div>
                 ))}
               </div>
@@ -413,12 +414,12 @@ export default function AdminConsolePage() {
                   type="checkbox"
                   checked={branding.maintenance_mode}
                   onChange={(e) => setBranding({ ...branding, maintenance_mode: e.target.checked })}
-                  className="w-5 h-5 rounded bg-slate-900 border-slate-700 accent-brand-500"
+                  className="w-5 h-5 rounded bg-slate-900 border-slate-700 accent-admin-500"
                 />
               </div>
               <button
                 type="submit"
-                className="bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl"
+                className="bg-admin-600 hover:bg-admin-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl"
               >
                 Save Branding Changes
               </button>
@@ -501,7 +502,7 @@ export default function AdminConsolePage() {
               <tbody className="divide-y divide-white/5">
                 {allOrders.map((o) => (
                   <tr key={o.id}>
-                    <td className="py-2.5 font-mono text-brand-400">{o.order_no}</td>
+                    <td className="py-2.5 font-mono text-admin-400">{o.order_no}</td>
                     <td className="py-2.5 text-slate-400">{new Date(o.created_at).toLocaleString()}</td>
                     <td className="py-2.5 text-slate-200">{o.email}</td>
                     <td className="py-2.5 text-slate-200">{o.product_title}</td>
@@ -540,7 +541,7 @@ export default function AdminConsolePage() {
                 {catalog.map((p) => (
                   <tr key={p.id}>
                     <td className="py-2.5 font-bold text-white">{p.country}</td>
-                    <td className="py-2.5 text-brand-300">{p.title}</td>
+                    <td className="py-2.5 text-admin-300">{p.title}</td>
                     <td className="py-2.5 text-slate-400">{p.data_gb} GB / {p.validity_days} Days</td>
                     <td className="py-2.5 text-slate-400">{formatPrice(p.cost_price)}</td>
                     <td className="py-2.5">
@@ -593,7 +594,7 @@ export default function AdminConsolePage() {
                   <tr key={u.id}>
                     <td className="py-2.5 font-mono text-slate-400">{u.id.substring(0,8)}...</td>
                     <td className="py-2.5 text-slate-200">{u.email}</td>
-                    <td className="py-2.5 font-bold text-brand-400">{u.role}</td>
+                    <td className="py-2.5 font-bold text-admin-400">{u.role}</td>
                     <td className="py-2.5 text-slate-400">{new Date(u.created_at).toLocaleDateString()}</td>
                     <td className="py-2.5 space-x-2">
                       <select 
@@ -641,7 +642,7 @@ export default function AdminConsolePage() {
                   {supplierLogs.map((log) => (
                     <tr key={log.id} onClick={() => setInspectingLog(log)} className="cursor-pointer hover:bg-white/5">
                       <td className="py-2.5 text-slate-400">{new Date(log.created_at).toLocaleTimeString()}</td>
-                      <td className="py-2.5 font-bold text-brand-400">{log.method}</td>
+                      <td className="py-2.5 font-bold text-admin-400">{log.method}</td>
                       <td className="py-2.5 text-slate-200">/{log.endpoint}</td>
                       <td className="py-2.5">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -723,6 +724,7 @@ export default function AdminConsolePage() {
         </div>
       )}
 
+    </div>
     </div>
   );
 }
