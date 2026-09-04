@@ -27,7 +27,10 @@ async def get_public_settings(db: AsyncSession = Depends(get_db)):
         support_whatsapp=cfg.get("support_whatsapp", "+880 1700-000000"),
         default_currency=cfg.get("default_currency", "USD"),
         maintenance_mode=bool(cfg.get("maintenance_mode", False)),
-        social_links=cfg.get("social_links") or {}
+        social_links=cfg.get("social_links") or {},
+        seo_title=cfg.get("seo_title"),
+        seo_description=cfg.get("seo_description"),
+        og_image=cfg.get("og_image"),
     )
 
 @router.get("/languages", response_model=List[LanguageResponse])

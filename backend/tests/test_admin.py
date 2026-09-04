@@ -291,3 +291,24 @@ async def test_create_staff_account_requires_super_admin_and_logs_in(client, pro
         headers=creator_admin["headers"],
     )
     assert not_staff_role.status_code == 400
+
+
+async def test_seo_metadata_roundtrip(client, promote_role):
+    """Regression test: SEO title/description/OG image previously had no
+    field at all, and layout.tsx's metadata was hardcoded at build time -
+    the plan requires branding (including SEO) to update "without
+    rebuilding or redeploying"."""
+    sa = await register_and_login(client, "seoeditor")
+    await promote_role(sa["user_id"], "SUPER_ADMIN")
+
+    res = await client.put(
+        "/api/v1/admin/branding",
+        json={"seo_title": "Custom SEO Title", "seo_description": "Custom description for search results"},
+        headers=sa["headers"],
+    )
+    assert res.status_code == 200, res.text
+
+    public = await client.get("/api/v1/settings/public")
+    body = public.json()
+    assert body["seo_title"] == "Custom SEO Title"
+    assert body["seo_description"] == "Custom description for search results"

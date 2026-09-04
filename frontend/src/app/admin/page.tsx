@@ -24,9 +24,9 @@ export default function AdminConsolePage() {
   const [kycQueue, setKycQueue] = useState<any[]>([]);
   const [viewingDoc, setViewingDoc] = useState<{ url: string; side: string; contentType: string } | null>(null);
 
-  const [branding, setBranding] = useState({ platform_name: "eSIM Global", support_email: "support@esim.local", support_phone: "+880 1700-000000", maintenance_mode: false, default_currency: "USD" });
+  const [branding, setBranding] = useState({ platform_name: "eSIM Global", support_email: "support@esim.local", support_phone: "+880 1700-000000", maintenance_mode: false, default_currency: "USD", seo_title: "", seo_description: "" });
   const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
-  const [brandingAssets, setBrandingAssets] = useState<{ logo_light?: string; logo_dark?: string; favicon?: string }>({});
+  const [brandingAssets, setBrandingAssets] = useState<{ logo_light?: string; logo_dark?: string; favicon?: string; og_image?: string }>({});
   const [uploadingKind, setUploadingKind] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [syncing, setSyncing] = useState(false);
@@ -76,13 +76,15 @@ export default function AdminConsolePage() {
         support_phone: s.support_phone ?? b.support_phone,
         maintenance_mode: !!s.maintenance_mode,
         default_currency: s.default_currency ?? b.default_currency,
+        seo_title: s.seo_title ?? "",
+        seo_description: s.seo_description ?? "",
       }));
-      setBrandingAssets({ logo_light: s.logo_light, logo_dark: s.logo_dark, favicon: s.favicon });
+      setBrandingAssets({ logo_light: s.logo_light, logo_dark: s.logo_dark, favicon: s.favicon, og_image: s.og_image });
       setSocialLinks(s.social_links || {});
     }).catch(() => {});
   }, []);
 
-  const handleUploadBrandingAsset = async (kind: "logo_light" | "logo_dark" | "favicon", file: File | null) => {
+  const handleUploadBrandingAsset = async (kind: "logo_light" | "logo_dark" | "favicon" | "og_image", file: File | null) => {
     if (!file) return;
     const token = localStorage.getItem("esim_token");
     if (!token) return;
@@ -446,11 +448,32 @@ export default function AdminConsolePage() {
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
                 />
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs text-slate-300 font-semibold block mb-1">SEO Title</label>
+                <input
+                  type="text"
+                  placeholder={branding.platform_name || "eSIM Global"}
+                  value={branding.seo_title}
+                  onChange={(e) => setBranding({ ...branding, seo_title: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-300 font-semibold block mb-1">SEO Meta Description</label>
+                <textarea
+                  rows={2}
+                  placeholder="Shown in search results and social previews"
+                  value={branding.seo_description}
+                  onChange={(e) => setBranding({ ...branding, seo_description: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white resize-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {([
                   { kind: "logo_light" as const, label: "Logo (Light)" },
                   { kind: "logo_dark" as const, label: "Logo (Dark)" },
                   { kind: "favicon" as const, label: "Favicon" },
+                  { kind: "og_image" as const, label: "OG Share Image" },
                 ]).map(({ kind, label }) => (
                   <div key={kind}>
                     <label className="text-xs text-slate-300 font-semibold block mb-1">{label}</label>

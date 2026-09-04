@@ -315,7 +315,7 @@ async def update_branding(
 UPLOAD_DIR = Path(settings.UPLOADS_DIR) / "branding"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-BRANDING_UPLOAD_KINDS = {"logo_light", "logo_dark", "favicon"}
+BRANDING_UPLOAD_KINDS = {"logo_light", "logo_dark", "favicon", "og_image"}
 UPLOAD_CONTENT_TYPES = {
     "image/png": ".png",
     "image/jpeg": ".jpg",

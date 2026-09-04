@@ -15,6 +15,9 @@ class PublicSettingsResponse(BaseModel):
     default_currency: str = "USD"
     maintenance_mode: bool = False
     social_links: Dict[str, str] = {}
+    seo_title: Optional[str] = None
+    seo_description: Optional[str] = None
+    og_image: Optional[str] = None
 
 class UpdateBrandingRequest(BaseModel):
     platform_name: Optional[str] = None
@@ -32,6 +35,9 @@ class UpdateBrandingRequest(BaseModel):
     # A JSON PlatformSetting value, so no migration needed - same generic
     # upsert path as every other branding field.
     social_links: Optional[Dict[str, str]] = None
+    seo_title: Optional[str] = None
+    seo_description: Optional[str] = None
+    og_image: Optional[str] = None
 
 class CurrencyRateResponse(BaseModel):
     currency_code: str
