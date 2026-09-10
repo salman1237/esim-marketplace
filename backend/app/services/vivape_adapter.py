@@ -10,8 +10,8 @@ class VivaPeAdapter:
     _token_expiry = 0
 
     @classmethod
-    async def get_token(cls, db: AsyncSession) -> str:
-        if cls._token and time.time() < cls._token_expiry:
+    async def get_token(cls, db: AsyncSession, force_refresh: bool = False) -> str:
+        if not force_refresh and cls._token and time.time() < cls._token_expiry:
             return cls._token
 
         url = f"{settings.VIVAPE_BASE_URL}/login"
@@ -34,7 +34,13 @@ class VivaPeAdapter:
                 token = resp_data.get("access_token") if isinstance(resp_data, dict) else None
                 if resp.status_code == 200 and token:
                     cls._token = token
-                    cls._token_expiry = time.time() + (3600 * 24 * 6)  # 6 days cache
+                    # Empirically much shorter-lived than any documented
+                    # value: a token obtained at process start began
+                    # failing (with a misleading 200 + generic error body,
+                    # not 401) about 70 minutes later. Cache conservatively
+                    # short; create_transaction() also force-refreshes and
+                    # retries once on failure as a backstop against this.
+                    cls._token_expiry = time.time() + 1800  # 30 min cache
                     return cls._token
                 raise Exception(f"VivaPe login failed: {resp.status_code} - {resp.text}")
         finally:
@@ -52,8 +58,8 @@ class VivaPeAdapter:
             await db.commit()
 
     @classmethod
-    async def call_api(cls, db: AsyncSession, method: str, endpoint: str, data: dict = None, params: dict = None) -> dict:
-        token = await cls.get_token(db)
+    async def call_api(cls, db: AsyncSession, method: str, endpoint: str, data: dict = None, params: dict = None, force_fresh_token: bool = False) -> dict:
+        token = await cls.get_token(db, force_refresh=force_fresh_token)
         url = f"{settings.VIVAPE_BASE_URL}/{endpoint.lstrip('/')}"
         headers = {
             "Authorization": f"Bearer {token}",
@@ -130,7 +136,24 @@ class VivaPeAdapter:
             "receiver_amount": amount_str,
             "activity": "esim"
         }
-        return await cls.call_api(db, "POST", "create-transaction", data=payload)
+        result = await cls.call_api(db, "POST", "create-transaction", data=payload)
+
+        # VivaPe's cached-token lifetime is far shorter in practice than the
+        # 6-day window we cache it for (confirmed live: a token obtained at
+        # redeploy started returning failures ~70 minutes later). Critically,
+        # a stale/invalid token doesn't get a 401 here - VivaPe returns HTTP
+        # 200 with a generic business-sounding error ("Insufficient
+        # Balance.", "Transaction Failed!!") indistinguishable by message
+        # alone from a real failure. Since no purchase_trx.id means VivaPe
+        # never actually created a transaction (nothing to double-charge),
+        # it's always safe to force a fresh login and retry once before
+        # treating it as a genuine failure.
+        purchase_trx = result.get("purchase_trx") if isinstance(result, dict) else None
+        trx_id = purchase_trx.get("id") if isinstance(purchase_trx, dict) else None
+        if not trx_id:
+            result = await cls.call_api(db, "POST", "create-transaction", data=payload, force_fresh_token=True)
+
+        return result
 
     @classmethod
     async def get_esim_by_trx(cls, db: AsyncSession, trx_id: int) -> dict:
