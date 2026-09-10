@@ -27,6 +27,14 @@ def _reset_token_cache():
     VivaPeAdapter._token_expiry = 0
 
 
+@pytest.fixture(autouse=True)
+def _no_retry_delay():
+    """create_transaction sleeps between retries in production (VivaPe
+    needs a short settle window) - tests don't need to actually wait."""
+    with patch("app.services.vivape_adapter.asyncio.sleep", new=AsyncMock()):
+        yield
+
+
 def _resp(json_body, status_code=200):
     r = MagicMock()
     r.status_code = status_code
@@ -87,6 +95,30 @@ async def test_create_transaction_does_not_retry_on_success(db_session):
 
     assert result["purchase_trx"]["id"] == 999
     assert mock_client.post.call_count == 2  # login, create-tx only - no retry
+
+
+async def test_create_transaction_gives_up_after_exhausting_retries(db_session):
+    """A genuine, persistent failure (real insufficient balance, not a
+    stale token) must still surface as a failure after retries are
+    exhausted - the retry logic must not mask real failures forever."""
+    post_responses = [_resp({"error": "Insufficient Balance."}) for _ in range(3)]
+    login_responses = [_resp({"access_token": f"token-{i}"}) for i in range(3)]
+
+    async def fake_post(url, headers=None, data=None, **kwargs):
+        if url.endswith("/login"):
+            return login_responses.pop(0)
+        return post_responses.pop(0)
+
+    mock_client = AsyncMock()
+    mock_client.post.side_effect = fake_post
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.__aexit__.return_value = False
+
+    with patch("httpx.AsyncClient", return_value=mock_client):
+        result = await VivaPeAdapter.create_transaction(db_session, 16291, Decimal("21.627"))
+
+    assert result["error"] == "Insufficient Balance."
+    assert mock_client.post.call_count == 6  # 3x (login + create-tx)
 
 
 async def test_get_token_reuses_cache_within_window(db_session):

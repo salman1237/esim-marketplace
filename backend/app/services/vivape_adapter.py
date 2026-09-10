@@ -1,3 +1,4 @@
+import asyncio
 import time
 import httpx
 from decimal import Decimal
@@ -136,6 +137,10 @@ class VivaPeAdapter:
             "receiver_amount": amount_str,
             "activity": "esim"
         }
+        def _trx_id(r):
+            purchase_trx = r.get("purchase_trx") if isinstance(r, dict) else None
+            return purchase_trx.get("id") if isinstance(purchase_trx, dict) else None
+
         result = await cls.call_api(db, "POST", "create-transaction", data=payload)
 
         # VivaPe's cached-token lifetime is far shorter in practice than the
@@ -146,11 +151,20 @@ class VivaPeAdapter:
         # Balance.", "Transaction Failed!!") indistinguishable by message
         # alone from a real failure. Since no purchase_trx.id means VivaPe
         # never actually created a transaction (nothing to double-charge),
-        # it's always safe to force a fresh login and retry once before
-        # treating it as a genuine failure.
-        purchase_trx = result.get("purchase_trx") if isinstance(result, dict) else None
-        trx_id = purchase_trx.get("id") if isinstance(purchase_trx, dict) else None
-        if not trx_id:
+        # it's always safe to retry with a fresh login before treating it
+        # as a genuine failure.
+        #
+        # A retry fired immediately (sub-second) after a failure was ALSO
+        # observed to fail live even with a real balance and a brand new
+        # token, while a manual retry a bit later succeeded for the exact
+        # same payload - VivaPe appears to need a short settle window
+        # (likely a transient hold/lock from the failed attempt) before a
+        # retry can succeed. So retry a few times with a short delay
+        # rather than immediately.
+        for delay in (2.0, 4.0):
+            if _trx_id(result):
+                break
+            await asyncio.sleep(delay)
             result = await cls.call_api(db, "POST", "create-transaction", data=payload, force_fresh_token=True)
 
         return result
