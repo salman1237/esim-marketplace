@@ -9,54 +9,79 @@ from app.core.config import settings
 class VivaPeAdapter:
     _token = None
     _token_expiry = 0
+    _token_generation = 0
+    _token_lock = asyncio.Lock()
 
     @classmethod
     async def get_token(cls, db: AsyncSession, force_refresh: bool = False) -> str:
         if not force_refresh and cls._token and time.time() < cls._token_expiry:
             return cls._token
 
-        url = f"{settings.VIVAPE_BASE_URL}/login"
-        form_data = {
-            "email": settings.VIVAPE_EMAIL,
-            "password": settings.VIVAPE_PASSWORD
-        }
-        start_time = time.time()
-        status_code = 0
-        resp_data = None
-        try:
-            async with httpx.AsyncClient(verify=True, timeout=15.0) as client:
-                resp = await client.post(url, data=form_data)
-                status_code = resp.status_code
-                try:
-                    resp_data = resp.json()
-                except Exception:
-                    resp_data = {"raw": resp.text}
+        # VivaPe appears to invalidate a prior token the moment a NEW login
+        # happens for the same account (single active session). This class
+        # has multiple concurrent callers in the same process - live
+        # checkouts, this method's own force_refresh retries, and the
+        # periodic/on-deploy catalog sync (see main.py) - and without a
+        # lock, two of them refreshing at once would each get a token, and
+        # whichever login response the account processes second silently
+        # kills the other's token before it's ever used. Confirmed live:
+        # a token obtained and used within the same call still failed with
+        # a misleading 200 + generic error body, while an isolated call
+        # with no concurrent VivaPe traffic from this process succeeded
+        # for the identical payload every time. Serializing refreshes (and
+        # having a waiter re-check the cache once it acquires the lock, so
+        # it reuses whatever the winner just got instead of logging in
+        # again) removes that race entirely.
+        generation_before_wait = cls._token_generation
+        async with cls._token_lock:
+            already_refreshed = cls._token_generation > generation_before_wait
+            if cls._token and time.time() < cls._token_expiry and (already_refreshed or not force_refresh):
+                return cls._token
 
-                token = resp_data.get("access_token") if isinstance(resp_data, dict) else None
-                if resp.status_code == 200 and token:
-                    cls._token = token
-                    # Empirically much shorter-lived than any documented
-                    # value: a token obtained at process start began
-                    # failing (with a misleading 200 + generic error body,
-                    # not 401) about 70 minutes later. Cache conservatively
-                    # short; create_transaction() also force-refreshes and
-                    # retries once on failure as a backstop against this.
-                    cls._token_expiry = time.time() + 1800  # 30 min cache
-                    return cls._token
-                raise Exception(f"VivaPe login failed: {resp.status_code} - {resp.text}")
-        finally:
-            latency = int((time.time() - start_time) * 1000)
-            log = SupplierTransactionLog(
-                supplier_name="VIVAPE",
-                endpoint="login",
-                method="POST",
-                request_payload={"email": settings.VIVAPE_EMAIL, "password": "***REDACTED***"},
-                response_payload={k: v for k, v in (resp_data or {}).items() if k != "access_token"} if isinstance(resp_data, dict) else resp_data,
-                status_code=status_code,
-                latency_ms=latency
-            )
-            db.add(log)
-            await db.commit()
+            url = f"{settings.VIVAPE_BASE_URL}/login"
+            form_data = {
+                "email": settings.VIVAPE_EMAIL,
+                "password": settings.VIVAPE_PASSWORD
+            }
+            start_time = time.time()
+            status_code = 0
+            resp_data = None
+            try:
+                async with httpx.AsyncClient(verify=True, timeout=15.0) as client:
+                    resp = await client.post(url, data=form_data)
+                    status_code = resp.status_code
+                    try:
+                        resp_data = resp.json()
+                    except Exception:
+                        resp_data = {"raw": resp.text}
+
+                    token = resp_data.get("access_token") if isinstance(resp_data, dict) else None
+                    if resp.status_code == 200 and token:
+                        cls._token = token
+                        # Empirically much shorter-lived than any documented
+                        # value: a token obtained at process start began
+                        # failing (with a misleading 200 + generic error
+                        # body, not 401) about 70 minutes later. Cache
+                        # conservatively short; create_transaction() also
+                        # force-refreshes and retries on failure as a
+                        # backstop against this.
+                        cls._token_expiry = time.time() + 1800  # 30 min cache
+                        cls._token_generation += 1
+                        return cls._token
+                    raise Exception(f"VivaPe login failed: {resp.status_code} - {resp.text}")
+            finally:
+                latency = int((time.time() - start_time) * 1000)
+                log = SupplierTransactionLog(
+                    supplier_name="VIVAPE",
+                    endpoint="login",
+                    method="POST",
+                    request_payload={"email": settings.VIVAPE_EMAIL, "password": "***REDACTED***"},
+                    response_payload={k: v for k, v in (resp_data or {}).items() if k != "access_token"} if isinstance(resp_data, dict) else resp_data,
+                    status_code=status_code,
+                    latency_ms=latency
+                )
+                db.add(log)
+                await db.commit()
 
     @classmethod
     async def call_api(cls, db: AsyncSession, method: str, endpoint: str, data: dict = None, params: dict = None, force_fresh_token: bool = False) -> dict:

@@ -1,3 +1,4 @@
+import asyncio
 import time
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -22,9 +23,13 @@ def _reset_token_cache():
     tests must not leak cached state into each other."""
     VivaPeAdapter._token = None
     VivaPeAdapter._token_expiry = 0
+    VivaPeAdapter._token_generation = 0
+    VivaPeAdapter._token_lock = asyncio.Lock()
     yield
     VivaPeAdapter._token = None
     VivaPeAdapter._token_expiry = 0
+    VivaPeAdapter._token_generation = 0
+    VivaPeAdapter._token_lock = asyncio.Lock()
 
 
 @pytest.fixture(autouse=True)
@@ -131,6 +136,36 @@ async def test_get_token_reuses_cache_within_window(db_session):
 
     assert token == "cached"
     mock_client.post.assert_not_called()
+
+
+async def test_concurrent_get_token_calls_only_login_once(db_session):
+    """Reproduces the live root cause: catalog sync and a live checkout
+    (or a checkout and its own retry) can call get_token() concurrently
+    when the cache is empty/expired. Without a lock, both fire a login,
+    and VivaPe invalidates whichever token isn't the most recent -
+    silently breaking the other caller even though its token looked
+    freshly obtained. All concurrent callers must share one login."""
+    login_call_count = 0
+
+    async def fake_post(url, headers=None, data=None, **kwargs):
+        nonlocal login_call_count
+        assert url.endswith("/login"), "only login calls expected in this test"
+        login_call_count += 1
+        await asyncio.sleep(0.05)  # simulate real network latency
+        return _resp({"access_token": f"token-{login_call_count}"})
+
+    mock_client = AsyncMock()
+    mock_client.post.side_effect = fake_post
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.__aexit__.return_value = False
+
+    with patch("httpx.AsyncClient", return_value=mock_client):
+        tokens = await asyncio.gather(*[
+            VivaPeAdapter.get_token(db_session) for _ in range(5)
+        ])
+
+    assert login_call_count == 1
+    assert len(set(tokens)) == 1
 
 
 async def test_get_token_force_refresh_bypasses_cache(db_session):
