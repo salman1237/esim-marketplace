@@ -3,6 +3,7 @@ ShurjoPay gateway, completed later from the payment callback) so
 provisioning behavior can't drift between them.
 """
 import uuid
+import json
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,6 +56,54 @@ async def resolve_beneficiary(db: AsyncSession, current_user: User, is_buy_for_u
     return current_user.id
 
 
+def _extract_esim_details(esim_data: dict) -> dict | None:
+    """VivaPe proxies multiple underlying eSIM suppliers through the same
+    get-esim-by-trx endpoint, and each returns a differently-shaped
+    response depending on the product's supplier type - there is no single
+    schema. Tries each known shape in turn; returns None if none match.
+    Confirmed against real (not mocked) VivaPe responses for both shapes."""
+    if not isinstance(esim_data, dict):
+        return None
+
+    # "worldmove"-type products: iccid + the actual LPA activation string
+    # are top-level fields, but under qrcodeContent/qrcode - NOT "lpa"/
+    # "qr_code", which don't exist in VivaPe's real response at all (an
+    # earlier version of this parser silently fell back to a self-generated
+    # fake LPA for every one of these purchases while still marking them
+    # is_mock_fallback=False).
+    if esim_data.get("iccid") and esim_data.get("qrcodeContent"):
+        return {
+            "iccid": esim_data["iccid"],
+            "lpa": esim_data["qrcodeContent"],
+            "smdp": None,
+            "matching_id": None,
+        }
+
+    # "esimgo"-type products: esim details are nested inside a JSON string
+    # (not a nested object) under esim_order.order, e.g.
+    # '[{"esims":[{"iccid":"...","matchingId":"...","smdpAddress":"..."}]}]'
+    esim_order = esim_data.get("esim_order")
+    if isinstance(esim_order, dict):
+        order_raw = esim_order.get("order")
+        if isinstance(order_raw, str):
+            try:
+                order_items = json.loads(order_raw)
+                esims = order_items[0].get("esims") if order_items else None
+                if esims:
+                    e = esims[0]
+                    if e.get("iccid") and e.get("smdpAddress") and e.get("matchingId"):
+                        return {
+                            "iccid": e["iccid"],
+                            "lpa": f"LPA:1${e['smdpAddress']}${e['matchingId']}",
+                            "smdp": e["smdpAddress"],
+                            "matching_id": e["matchingId"],
+                        }
+            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                pass
+
+    return None
+
+
 async def provision_esim(db: AsyncSession, order: Order, product: Product, beneficiary_id: str, actor_id: str, actor_role: str) -> ESIMProfile | None:
     """Creates the ESIMProfile for `order` from a real VivaPe purchase and
     marks the order COMPLETED. If VivaPe is unavailable/fails, or the
@@ -76,16 +125,16 @@ async def provision_esim(db: AsyncSession, order: Order, product: Product, benef
             trx_id = purchase_trx.get("id") if isinstance(purchase_trx, dict) else None
             if trx_id:
                 esim_data = await VivaPeAdapter.get_esim_by_trx(db, trx_id)
-                if esim_data.get("iccid"):
-                    matching_id = uuid.uuid4().hex[:12].upper()
-                    smdp = "rsp.truphone.com"
-                    fallback_lpa = f"LPA:1${smdp}${matching_id}"
+                details = _extract_esim_details(esim_data)
+                if details:
+                    matching_id = details["matching_id"] or uuid.uuid4().hex[:12].upper()
+                    smdp = details["smdp"] or "rsp.truphone.com"
                     profile = ESIMProfile(
                         order_id=order.id,
                         beneficiary_id=beneficiary_id,
-                        iccid=esim_data["iccid"],
-                        lpa_string=esim_data.get("lpa") or fallback_lpa,
-                        qr_code_data=esim_data.get("qr_code") or esim_data.get("lpa") or fallback_lpa,
+                        iccid=details["iccid"],
+                        lpa_string=details["lpa"],
+                        qr_code_data=details["lpa"],
                         smdp_address=smdp,
                         matching_id=matching_id,
                         status=ESIMStatus.RELEASED,
@@ -95,11 +144,16 @@ async def provision_esim(db: AsyncSession, order: Order, product: Product, benef
                     db.add(profile)
                     order.status = OrderStatus.COMPLETED
                     return profile
-            logger.warning(
-                "vivape_provisioning_failed_refunding_order",
-                order_id=order.id,
-                vivape_error=trx.get("error") if isinstance(trx, dict) else str(trx)
-            )
+                logger.warning(
+                    "vivape_esim_details_unparseable_refunding_order",
+                    order_id=order.id, trx_id=trx_id,
+                )
+            else:
+                logger.warning(
+                    "vivape_provisioning_failed_refunding_order",
+                    order_id=order.id,
+                    vivape_error=trx.get("error") if isinstance(trx, dict) else str(trx)
+                )
         except Exception as e:
             logger.warning("vivape_provisioning_failed_refunding_order", order_id=order.id, error=str(e))
     else:

@@ -64,12 +64,16 @@ def mock_vivape():
         # A fresh ICCID per call - ESIMProfile.iccid is unique, and this
         # shared test DB has no per-test rollback, so a fixed canned value
         # collides across tests/runs within the same session.
+        #
+        # Shaped like a real VivaPe "worldmove"-type get-esim-by-trx response
+        # (qrcodeContent carries the LPA, not "lpa"/"qr_code" - see
+        # checkout_svc._extract_esim_details) so this fixture actually
+        # exercises the real parsing path instead of a fictional one.
         unique_suffix = uuid.uuid4().hex[:14].upper()
         matching_id = uuid.uuid4().hex[:12].upper()
         return {
             "iccid": f"89882{unique_suffix}",
-            "lpa": f"LPA:1$rsp.truphone.com${matching_id}",
-            "qr_code": f"LPA:1$rsp.truphone.com${matching_id}",
+            "qrcodeContent": f"LPA:1$rsp.truphone.com${matching_id}",
         }
 
     get_esim_by_trx_mock = AsyncMock(side_effect=_fake_esim_data)
