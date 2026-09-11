@@ -7,6 +7,18 @@ from app.models.audit import SupplierTransactionLog
 from app.core.config import settings
 
 class VivaPeAdapter:
+    """All calls MUST negotiate HTTP/2 (see http2=True on every
+    httpx.AsyncClient below). Root-caused live on 2026-09-10/11: httpx
+    defaults to HTTP/1.1-only, while curl (and every browser) negotiates
+    HTTP/2 by default. Every one of ~27 real create-transaction attempts
+    from this app that night failed with a generic error over HTTP/1.1,
+    while curl succeeded for the identical account/product/payload almost
+    every time. Explicitly forcing http2=True (requires the `h2` package)
+    made identical requests succeed reliably in a controlled side-by-side
+    test - VivaPe's origin (behind Cloudflare) appears to route HTTP/1.1
+    and HTTP/2 traffic differently, with the HTTP/1.1 path broken for
+    this endpoint specifically. Removing http2=True silently reintroduces
+    that near-100% failure rate."""
     _token = None
     _token_expiry = 0
     _token_generation = 0
@@ -47,7 +59,7 @@ class VivaPeAdapter:
             status_code = 0
             resp_data = None
             try:
-                async with httpx.AsyncClient(verify=True, timeout=15.0) as client:
+                async with httpx.AsyncClient(verify=True, timeout=15.0, http2=True) as client:
                     resp = await client.post(url, data=form_data)
                     status_code = resp.status_code
                     try:
@@ -98,7 +110,7 @@ class VivaPeAdapter:
         error_msg = None
 
         try:
-            async with httpx.AsyncClient(verify=True, timeout=30.0) as client:
+            async with httpx.AsyncClient(verify=True, timeout=30.0, http2=True) as client:
                 if method.upper() == "GET":
                     resp = await client.get(url, headers=headers, params=params)
                 else:
