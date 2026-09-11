@@ -42,7 +42,7 @@ services:
       SHURJOPAY_RETURN_URL: ${SHURJOPAY_RETURN_URL:-https://triptel.co/api/v1/payments/shurjopay/callback}
       SHURJOPAY_CANCEL_URL: ${SHURJOPAY_CANCEL_URL:-https://triptel.co/wallet?topup=cancelled}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://triptel.co}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://triptel.co,https://esim.salmandev.io}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://triptel.co}
       UPLOADS_DIR: /app/uploads
       KYC_UPLOADS_DIR: /app/kyc_uploads
     ports:
