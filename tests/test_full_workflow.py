@@ -4,7 +4,7 @@ import uuid
 from decimal import Decimal
 
 # You can run this against http://localhost:8000 or the live production domain
-BASE_URL = "https://esim.salmandev.io/api/v1"
+BASE_URL = "https://triptel.co/api/v1"
 # BASE_URL = "http://localhost:8000/api/v1"
 
 async def run_tests():

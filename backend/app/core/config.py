@@ -38,12 +38,12 @@ class Settings(BaseSettings):
     # user (a Dokploy env var is normally the intended override, but a
     # deployment that forgets to set one should still get a working
     # default, not one that only ever worked on a developer's own machine).
-    SHURJOPAY_RETURN_URL: str = os.getenv("SHURJOPAY_RETURN_URL", "https://esim.salmandev.io/api/v1/payments/shurjopay/callback")
-    SHURJOPAY_CANCEL_URL: str = os.getenv("SHURJOPAY_CANCEL_URL", "https://esim.salmandev.io/wallet?topup=cancelled")
+    SHURJOPAY_RETURN_URL: str = os.getenv("SHURJOPAY_RETURN_URL", "https://triptel.co/api/v1/payments/shurjopay/callback")
+    SHURJOPAY_CANCEL_URL: str = os.getenv("SHURJOPAY_CANCEL_URL", "https://triptel.co/wallet?topup=cancelled")
 
     # Where GET /payments/shurjopay/callback redirects the browser after
     # processing — the frontend's own origin, not this API's.
-    FRONTEND_BASE_URL: str = os.getenv("FRONTEND_BASE_URL", "https://esim.salmandev.io")
+    FRONTEND_BASE_URL: str = os.getenv("FRONTEND_BASE_URL", "https://triptel.co")
 
     # Transactional email (password reset, order confirmation, welcome).
     # Deliberately optional, unlike the VivaPe/ShurjoPay/SECRET_KEY guards:

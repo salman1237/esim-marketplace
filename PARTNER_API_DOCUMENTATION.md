@@ -1,6 +1,6 @@
 # Partner Reseller API — Documentation
 
-Base URL: `https://esim.salmandev.io/api/v1/partner`
+Base URL: `https://triptel.co/api/v1/partner`
 
 This API lets an approved reseller partner browse the eSIM catalog, place orders on behalf of their own customers, and receive delivery confirmation — either by polling or via a signed webhook — from their own backend, without a browser session.
 
@@ -50,11 +50,11 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 ### Example: full flow with `curl`
 
 ```bash
-TOKEN=$(curl -s -X POST https://esim.salmandev.io/api/v1/partner/auth/token \
+TOKEN=$(curl -s -X POST https://triptel.co/api/v1/partner/auth/token \
   -H "Content-Type: application/json" \
   -d '{"api_key": "esim_live_..."}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
-curl -s https://esim.salmandev.io/api/v1/partner/me \
+curl -s https://triptel.co/api/v1/partner/me \
   -H "Authorization: Bearer $TOKEN"
 ```
 

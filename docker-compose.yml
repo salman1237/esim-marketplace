@@ -39,10 +39,10 @@ services:
       SHURJOPAY_USERNAME: ${SHURJOPAY_USERNAME:?SHURJOPAY_USERNAME env var is required}
       SHURJOPAY_PASSWORD: ${SHURJOPAY_PASSWORD:?SHURJOPAY_PASSWORD env var is required}
       SHURJOPAY_PREFIX: ${SHURJOPAY_PREFIX:-NOK}
-      SHURJOPAY_RETURN_URL: ${SHURJOPAY_RETURN_URL:-https://esim.salmandev.io/api/v1/payments/shurjopay/callback}
-      SHURJOPAY_CANCEL_URL: ${SHURJOPAY_CANCEL_URL:-https://esim.salmandev.io/wallet?topup=cancelled}
-      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://esim.salmandev.io}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://esim.salmandev.io}
+      SHURJOPAY_RETURN_URL: ${SHURJOPAY_RETURN_URL:-https://triptel.co/api/v1/payments/shurjopay/callback}
+      SHURJOPAY_CANCEL_URL: ${SHURJOPAY_CANCEL_URL:-https://triptel.co/wallet?topup=cancelled}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://triptel.co}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://triptel.co,https://esim.salmandev.io}
       UPLOADS_DIR: /app/uploads
       KYC_UPLOADS_DIR: /app/kyc_uploads
     ports:
@@ -64,7 +64,7 @@ services:
       # runtime environment below — a running container's env has no effect
       # on JS that was already bundled into a prior build.
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://esim.salmandev.io}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://triptel.co}
         NEXT_PUBLIC_DEFAULT_CURRENCY: ${NEXT_PUBLIC_DEFAULT_CURRENCY:-USD}
         NEXT_PUBLIC_DEFAULT_LOCALE: ${NEXT_PUBLIC_DEFAULT_LOCALE:-en}
     container_name: esim-frontend
@@ -72,7 +72,7 @@ services:
     depends_on:
       - esim-backend
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://esim.salmandev.io}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://triptel.co}
       NEXT_PUBLIC_DEFAULT_CURRENCY: ${NEXT_PUBLIC_DEFAULT_CURRENCY:-USD}
       NEXT_PUBLIC_DEFAULT_LOCALE: ${NEXT_PUBLIC_DEFAULT_LOCALE:-en}
     ports:

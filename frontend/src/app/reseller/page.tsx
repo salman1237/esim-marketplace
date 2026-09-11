@@ -288,7 +288,7 @@ export default function ResellerPortalPage() {
                 </div>
 
                 <div className="flex gap-2">
-                  <a href={`https://wa.me/?text=Here%20is%20your%20international%20eSIM%20profile%20for%20Order%20${orderResult.order_no}:%20https://esim.salmandev.io/my-esims`} target="_blank" rel="noreferrer" className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center space-x-1">
+                  <a href={`https://wa.me/?text=Here%20is%20your%20international%20eSIM%20profile%20for%20Order%20${orderResult.order_no}:%20https://triptel.co/my-esims`} target="_blank" rel="noreferrer" className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center space-x-1">
                     <Share2 className="w-3.5 h-3.5" />
                     <span>Share via WhatsApp</span>
                   </a>

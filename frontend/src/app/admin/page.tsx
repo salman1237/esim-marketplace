@@ -1391,7 +1391,7 @@ export default function AdminConsolePage() {
       {/* Tab: Overview */}
       {activeTab === "overview" && (
         <div className="glass-panel rounded-2xl p-6 border border-gray-200 text-xs text-slate-500 space-y-2">
-          <p className="font-semibold text-slate-900">System Status: Operational &bull; Live Domain https://esim.salmandev.io</p>
+          <p className="font-semibold text-slate-900">System Status: Operational &bull; Live Domain https://triptel.co</p>
           <p>Connected to Upstream VivaPe API &amp; ShurjoPay Sandbox Gateway.</p>
           <p>Exchange rates synchronized keylessly from open.er-api.com with manual admin override support.</p>
         </div>

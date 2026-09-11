@@ -87,7 +87,7 @@ export default function ApiDocsPage() {
         </p>
         <div className="mt-4 flex items-center gap-2 text-xs">
           <span className="text-slate-500">Base URL</span>
-          <code className="font-mono bg-gray-100 text-slate-900 px-2 py-1 rounded">https://esim.salmandev.io/api/v1/partner</code>
+          <code className="font-mono bg-gray-100 text-slate-900 px-2 py-1 rounded">https://triptel.co/api/v1/partner</code>
         </div>
       </div>
 
@@ -148,11 +148,11 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...`}</CodeBlock>
           </ul>
 
           <h3 className="text-sm font-bold text-slate-900 pt-4">Full flow example</h3>
-          <CodeBlock label="bash">{`TOKEN=$(curl -s -X POST https://esim.salmandev.io/api/v1/partner/auth/token \\
+          <CodeBlock label="bash">{`TOKEN=$(curl -s -X POST https://triptel.co/api/v1/partner/auth/token \\
   -H "Content-Type: application/json" \\
   -d '{"api_key": "esim_live_..."}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
-curl -s https://esim.salmandev.io/api/v1/partner/me \\
+curl -s https://triptel.co/api/v1/partner/me \\
   -H "Authorization: Bearer $TOKEN"`}</CodeBlock>
         </Section>
 
