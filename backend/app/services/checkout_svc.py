@@ -65,24 +65,35 @@ def _extract_esim_details(esim_data: dict) -> dict | None:
     if not isinstance(esim_data, dict):
         return None
 
+    esim_order = esim_data.get("esim_order")
+
     # "worldmove"-type products: iccid + the actual LPA activation string
-    # are top-level fields, but under qrcodeContent/qrcode - NOT "lpa"/
-    # "qr_code", which don't exist in VivaPe's real response at all (an
-    # earlier version of this parser silently fell back to a self-generated
-    # fake LPA for every one of these purchases while still marking them
-    # is_mock_fallback=False).
-    if esim_data.get("iccid") and esim_data.get("qrcodeContent"):
-        return {
-            "iccid": esim_data["iccid"],
-            "lpa": esim_data["qrcodeContent"],
-            "smdp": None,
-            "matching_id": None,
-        }
+    # under qrcodeContent/qrcode - NOT "lpa"/"qr_code", which don't exist
+    # in VivaPe's real response at all (an earlier version of this parser
+    # silently fell back to a self-generated fake LPA for every one of
+    # these purchases while still marking them is_mock_fallback=False).
+    # These fields appear nested under esim_order on real responses, and
+    # sometimes also mirrored at the top level - check both, since a
+    # top-level-only parser refunded real, successfully-issued eSIMs.
+    for candidate in (esim_order, esim_data):
+        if isinstance(candidate, dict) and candidate.get("iccid") and candidate.get("qrcodeContent"):
+            lpa = candidate["qrcodeContent"]
+            # Real values live inside the LPA itself (LPA:1$<smdp>$<id>);
+            # parse them out rather than storing fabricated placeholders.
+            smdp, matching_id = None, None
+            parts = lpa.split("$")
+            if len(parts) == 3 and parts[0].upper().startswith("LPA:"):
+                smdp, matching_id = parts[1] or None, parts[2] or None
+            return {
+                "iccid": candidate["iccid"],
+                "lpa": lpa,
+                "smdp": smdp,
+                "matching_id": matching_id,
+            }
 
     # "esimgo"-type products: esim details are nested inside a JSON string
     # (not a nested object) under esim_order.order, e.g.
     # '[{"esims":[{"iccid":"...","matchingId":"...","smdpAddress":"..."}]}]'
-    esim_order = esim_data.get("esim_order")
     if isinstance(esim_order, dict):
         order_raw = esim_order.get("order")
         if isinstance(order_raw, str):

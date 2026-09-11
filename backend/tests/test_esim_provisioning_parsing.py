@@ -24,8 +24,38 @@ def test_extracts_from_worldmove_shape():
     assert details is not None
     assert details["iccid"] == "89862102923600001383"
     assert details["lpa"] == "LPA:1$rsp.esim.pub$43B1F4B13F7DCCC2062AECA8B6DF4A67"
-    assert details["smdp"] is None
-    assert details["matching_id"] is None
+    # smdp/matching_id come from parsing the LPA itself, not placeholders.
+    assert details["smdp"] == "rsp.esim.pub"
+    assert details["matching_id"] == "43B1F4B13F7DCCC2062AECA8B6DF4A67"
+
+
+def test_extracts_from_worldmove_shape_nested_under_esim_order():
+    """Real captured production response (trx 60273, Singapore/Malaysia
+    3GB/7D) that a top-level-only parser refunded despite VivaPe having
+    successfully issued and charged for the eSIM: here iccid and
+    qrcodeContent live INSIDE esim_order, not at the top level."""
+    esim_data = {
+        "esim_order": {
+            "id": 269,
+            "code": 0,
+            "orderId": "b0001cd2609110061",
+            "iccid": "89862101151800001226",
+            "productName": "Singapore, Malaysia, 7 Days, 3GB, 128kbps",
+            "qrcode": "https://esim.joytelecom.com/static/q/20260911/example.png",
+            "resultcode": "000",
+            "resultmsg": "Success",
+            "qrcodeContent": "LPA:1$rsp.esim.pub$7C6661C51C6B67EF26D0D622BF625B10",
+            "salePlanDays": "7",
+            "purchase_id": 60273,
+            "note": "World Move eSIM Transaction Redeem",
+        }
+    }
+    details = _extract_esim_details(esim_data)
+    assert details is not None
+    assert details["iccid"] == "89862101151800001226"
+    assert details["lpa"] == "LPA:1$rsp.esim.pub$7C6661C51C6B67EF26D0D622BF625B10"
+    assert details["smdp"] == "rsp.esim.pub"
+    assert details["matching_id"] == "7C6661C51C6B67EF26D0D622BF625B10"
 
 
 def test_extracts_from_esimgo_shape():
