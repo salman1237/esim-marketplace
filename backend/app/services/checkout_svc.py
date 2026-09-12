@@ -135,6 +135,13 @@ async def provision_esim(db: AsyncSession, order: Order, product: Product, benef
             purchase_trx = trx.get("purchase_trx") if isinstance(trx, dict) else None
             trx_id = purchase_trx.get("id") if isinstance(purchase_trx, dict) else None
             if trx_id:
+                # Pin VivaPe's transaction id to the order as soon as we have
+                # it - before fetching the eSIM details, which may fail. It's
+                # the only handle that ties an order back to a specific
+                # supplier transaction; without it, tracing a customer's eSIM
+                # (or a failed charge) means scanning supplier logs by
+                # timestamp.
+                order.external_trx_id = str(trx_id)
                 esim_data = await VivaPeAdapter.get_esim_by_trx(db, trx_id)
                 details = _extract_esim_details(esim_data)
                 if details:
@@ -148,6 +155,9 @@ async def provision_esim(db: AsyncSession, order: Order, product: Product, benef
                         qr_code_data=details["lpa"],
                         smdp_address=smdp,
                         matching_id=matching_id,
+                        # Shown as "Purchase ID" on the delivery email and the
+                        # printable eSIM, and what support quotes to VivaPe.
+                        supplier_reference=str(trx_id),
                         status=ESIMStatus.RELEASED,
                         is_mock_fallback=False,
                         expires_at=datetime.now(timezone.utc) + timedelta(days=product.validity_days)
