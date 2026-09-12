@@ -2,28 +2,53 @@
 {% block content %}
 <h1 style="color:#ffffff;font-size:20px;margin:0 0 12px 0;">Your eSIM is ready 🎉</h1>
 <p style="margin:0 0 16px 0;">Order <strong style="color:#ffffff;">{{ order_no }}</strong> for <strong style="color:#ffffff;">{{ product_title }}</strong> has been provisioned. Install it now to get connected.</p>
-<table role="presentation" width="100%" style="background:#0f172a;border-radius:12px;margin:0 0 16px 0;">
-  <tr>
-    <td style="padding:16px;">
-      <p style="margin:0 0 4px 0;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:700;">ICCID</p>
-      <p style="margin:0 0 12px 0;color:#e2e8f0;font-family:monospace;font-size:13px;">{{ iccid }}</p>
-      <p style="margin:0 0 4px 0;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:700;">Activation Code (LPA)</p>
-      <p style="margin:0;color:#e2e8f0;font-family:monospace;font-size:12px;word-break:break-all;">{{ lpa_string }}</p>
-    </td>
-  </tr>
-</table>
+
 {% if has_qr %}
 <table role="presentation" width="100%" style="margin:0 0 16px 0;">
   <tr>
     <td align="center" style="background:#ffffff;border-radius:12px;padding:18px;">
       <img src="cid:esim_qr" alt="eSIM activation QR code" width="220" height="220" style="display:block;width:220px;height:220px;" />
-      <p style="margin:12px 0 0 0;color:#475569;font-size:12px;">Scan this with the phone that will use the eSIM</p>
+      <p style="margin:12px 0 0 0;color:#475569;font-size:12px;line-height:1.5;">
+        If you're viewing this email on the device where you want to install the eSIM,
+        open it on another device to scan the code — or use the activation code below.
+      </p>
     </td>
   </tr>
 </table>
-<p style="margin:0 0 16px 0;color:#94a3b8;font-size:12px;">
-  On the device itself, scanning won't work — enter the activation code above manually under Settings &rsaquo; Cellular &rsaquo; Add eSIM.
-</p>
 {% endif %}
-<a href="{{ frontend_base_url }}/my-esims" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;font-weight:700;font-size:13px;padding:10px 20px;border-radius:10px;">View QR Code & Install Guide</a>
+
+<table role="presentation" width="100%" style="background:#0f172a;border-radius:12px;margin:0 0 16px 0;">
+  <tr>
+    <td style="padding:16px;">
+      <p style="margin:0 0 4px 0;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:700;">Activation Code (LPA)</p>
+      <p style="margin:0;color:#e2e8f0;font-family:monospace;font-size:12px;word-break:break-all;">{{ lpa_string }}</p>
+    </td>
+  </tr>
+</table>
+
+<p style="margin:0 0 8px 0;color:#ffffff;font-size:15px;font-weight:700;">Order Details</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;border-radius:12px;margin:0 0 16px 0;">
+  {% for label, value in details %}
+  <tr>
+    <td style="padding:10px 16px;color:#64748b;font-size:12px;white-space:nowrap;{% if not loop.last %}border-bottom:1px solid rgba(255,255,255,0.06);{% endif %}">{{ label }}</td>
+    <td style="padding:10px 16px;color:#e2e8f0;font-size:12px;text-align:right;{% if label == 'ICCID' %}font-family:monospace;{% endif %}{% if not loop.last %}border-bottom:1px solid rgba(255,255,255,0.06);{% endif %}">{{ value }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<table role="presentation" width="100%" style="background:rgba(79,70,229,0.12);border-left:3px solid #4f46e5;border-radius:8px;margin:0 0 20px 0;">
+  <tr>
+    <td style="padding:14px 16px;">
+      <p style="margin:0 0 8px 0;color:#c7d2fe;font-size:13px;font-weight:700;">Quick Installation Tips</p>
+      <ul style="margin:0;padding-left:18px;color:#cbd5e1;font-size:12px;line-height:1.8;">
+        <li>Check that your device supports eSIM.</li>
+        <li>Connect to a stable Wi-Fi network before installing.</li>
+        <li>Scan the QR code, then follow your device's prompts.</li>
+        <li>Activate the eSIM when you arrive at your destination.</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+<a href="{{ frontend_base_url }}/my-esims" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;font-weight:700;font-size:13px;padding:10px 20px;border-radius:10px;">View QR Code &amp; Install Guide</a>
 {% endblock %}

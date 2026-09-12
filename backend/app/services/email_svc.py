@@ -140,19 +140,43 @@ class EmailService:
         await cls._send(to_email, f"Reset your {platform_name} password", html)
 
     @classmethod
-    async def send_order_confirmation(cls, db: AsyncSession, to_email: str, order_no: str, product_title: str, iccid: str, lpa_string: str):
+    async def send_order_confirmation(
+        cls,
+        db: AsyncSession,
+        to_email: str,
+        order_no: str,
+        product_title: str,
+        iccid: str,
+        lpa_string: str,
+        validity_days: int | None = None,
+        data_label: str | None = None,
+        purchase_reference: str | None = None,
+        purchased_at: datetime | None = None,
+    ):
         platform_name = await cls._get_platform_name(db)
         qr_png = cls._qr_png(lpa_string) if lpa_string else None
 
+        # Only rows we actually have a value for - a table with blank cells
+        # reads as a bug to the customer.
+        details = [("Order ID", order_no), ("Product", product_title), ("ICCID", iccid)]
+        if data_label:
+            details.append(("Data", data_label))
+        if validity_days:
+            details.append(("Plan Validity", f"{validity_days} Days"))
+        if purchase_reference:
+            details.append(("Purchase ID", purchase_reference))
+        if purchased_at:
+            details.append(("Purchase Date", purchased_at.strftime("%Y-%m-%d %H:%M UTC")))
+
         html = _env.get_template("order_confirmation.html").render(
             platform_name=platform_name, order_no=order_no, product_title=product_title,
-            iccid=iccid, lpa_string=lpa_string, has_qr=qr_png is not None,
+            iccid=iccid, lpa_string=lpa_string, has_qr=qr_png is not None, details=details,
             frontend_base_url=settings.FRONTEND_BASE_URL, year=datetime.now(timezone.utc).year,
         )
+        detail_lines = "\n".join(f"{label}: {value}" for label, value in details)
         text = (
             f"Your eSIM for order {order_no} is ready.\n\n"
-            f"Plan: {product_title}\n"
-            f"ICCID: {iccid}\n"
+            f"{detail_lines}\n"
             f"Activation code (LPA): {lpa_string}\n\n"
             f"Install it by scanning the QR code in this email, or enter the activation "
             f"code manually in your phone's cellular settings.\n"

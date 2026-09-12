@@ -513,13 +513,13 @@ async def recharge_customer_wallet(
     return {"status": "success", "new_balance": float(entry.balance_after)}
 
 
-async def _send_order_confirmation_background(email: str, order_no: str, product_title: str, iccid: str, lpa_string: str):
+async def _send_order_confirmation_background(email: str, order_no: str, product_title: str, iccid: str, lpa_string: str, **details):
     # Own session, not the request's - that one closes as soon as the
     # response is returned, before this background task gets to run.
     # Mirrors the same helper in orders.py / payments.py.
     async with AsyncSessionLocal() as bg_db:
         try:
-            await EmailService.send_order_confirmation(bg_db, email, order_no, product_title, iccid, lpa_string)
+            await EmailService.send_order_confirmation(bg_db, email, order_no, product_title, iccid, lpa_string, **details)
         except Exception as e:
             logger.warning("order_confirmation_email_background_task_failed", email=email, error=str(e))
 
@@ -601,7 +601,11 @@ async def admin_purchase_esim_for_customer(
     # without the ICCID and activation code.
     if target.email:
         asyncio.create_task(_send_order_confirmation_background(
-            target.email, order.order_no, product.title_en, profile.iccid, profile.lpa_string
+            target.email, order.order_no, product.title_en, profile.iccid, profile.lpa_string,
+            validity_days=product.validity_days,
+            data_label="Unlimited" if product.is_unlimited else f"{product.data_amount_gb} GB",
+            purchase_reference=profile.supplier_reference,
+            purchased_at=order.created_at,
         ))
 
     return {"order_id": order.id, "order_no": order_no, "status": order.status.value, "iccid": profile.iccid}

@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 from app.core.config import settings
@@ -22,6 +23,14 @@ def _sent_message(sender):
     return sender.await_args.args[0]
 
 
+def _part(msg, content_type):
+    return next(
+        p.get_payload(decode=True).decode()
+        for p in msg.walk()
+        if p.get_content_type() == content_type
+    )
+
+
 async def test_order_email_embeds_qr_and_activation_details(db_session, smtp_configured):
     sender = AsyncMock()
     with patch("app.services.email_svc.aiosmtplib.send", sender):
@@ -31,26 +40,62 @@ async def test_order_email_embeds_qr_and_activation_details(db_session, smtp_con
 
     msg = _sent_message(sender)
 
-    # QR rides along as an inline image so it renders without the client
-    # fetching a remote URL (usually blocked, and worse for spam scoring).
+    # multipart/related must WRAP the alternative, otherwise Gmail renders
+    # the cid: image as a broken placeholder.
+    assert msg.get_content_type() == "multipart/related"
+    assert msg.get_payload()[0].get_content_type() == "multipart/alternative"
+
     images = [p for p in msg.walk() if p.get_content_type() == "image/png"]
     assert len(images) == 1
     assert images[0].get("Content-ID") == "<esim_qr>"
     assert images[0].get_payload(decode=True)[:8] == b"\x89PNG\r\n\x1a\n"
 
-    # Plain-text alternative carries the same details, for clients that
-    # don't render HTML at all.
-    text = next(
-        p.get_payload(decode=True).decode()
-        for p in msg.walk()
-        if p.get_content_type() == "text/plain"
-    )
+    text = _part(msg, "text/plain")
     assert LPA in text
     assert "8986210115" in text
 
-    # Headers that spam filters expect to exist.
     assert msg["Date"]
     assert msg["Message-ID"]
+
+
+async def test_order_email_renders_order_details_table(db_session, smtp_configured):
+    """Customers get the same at-a-glance detail table the supplier's own
+    delivery email shows, instead of just an ICCID and a code."""
+    sender = AsyncMock()
+    with patch("app.services.email_svc.aiosmtplib.send", sender):
+        await EmailService.send_order_confirmation(
+            db_session, "customer@example.test", "ADM-9", "Bangladesh, 3 Days, 3GB", "8986210179", LPA,
+            validity_days=3,
+            data_label="3.00 GB",
+            purchase_reference="60084",
+            purchased_at=datetime(2026, 7, 8, 22, 18, tzinfo=timezone.utc),
+        )
+
+    msg = _sent_message(sender)
+    html = _part(msg, "text/html")
+    text = _part(msg, "text/plain")
+
+    for expected in ["Order Details", "ADM-9", "8986210179", "3 Days", "3.00 GB", "60084", "2026-07-08 22:18 UTC"]:
+        assert expected in html, expected
+        assert expected in text or expected == "Order Details", expected
+
+    assert "Quick Installation Tips" in html
+
+
+async def test_order_email_omits_rows_it_has_no_value_for(db_session, smtp_configured):
+    """A table with blank cells reads as a bug - optional fields are left
+    out entirely when the caller doesn't supply them."""
+    sender = AsyncMock()
+    with patch("app.services.email_svc.aiosmtplib.send", sender):
+        await EmailService.send_order_confirmation(
+            db_session, "customer@example.test", "ORD-2", "Singapore 3GB", "8986210115", LPA
+        )
+
+    html = _part(_sent_message(sender), "text/html")
+    assert "Plan Validity" not in html
+    assert "Purchase ID" not in html
+    assert "Purchase Date" not in html
+    assert "Order ID" in html
 
 
 async def test_order_email_still_sends_when_qr_generation_fails(db_session, smtp_configured):
@@ -60,16 +105,12 @@ async def test_order_email_still_sends_when_qr_generation_fails(db_session, smtp
     with patch("app.services.email_svc.qrcode.make", side_effect=RuntimeError("boom")), \
          patch("app.services.email_svc.aiosmtplib.send", sender):
         await EmailService.send_order_confirmation(
-            db_session, "customer@example.test", "ORD-2", "Singapore 3GB", "8986210115", LPA
+            db_session, "customer@example.test", "ORD-3", "Singapore 3GB", "8986210115", LPA
         )
 
     sender.assert_awaited_once()
     msg = _sent_message(sender)
     assert [p for p in msg.walk() if p.get_content_type() == "image/png"] == []
-    html = next(
-        p.get_payload(decode=True).decode()
-        for p in msg.walk()
-        if p.get_content_type() == "text/html"
-    )
+    html = _part(msg, "text/html")
     assert "cid:esim_qr" not in html
     assert LPA in html

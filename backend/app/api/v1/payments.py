@@ -25,10 +25,10 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/payments", tags=["Payment Gateways"])
 
 
-async def _send_order_confirmation_background(email: str, order_no: str, product_title: str, iccid: str, lpa_string: str):
+async def _send_order_confirmation_background(email: str, order_no: str, product_title: str, iccid: str, lpa_string: str, **details):
     async with AsyncSessionLocal() as bg_db:
         try:
-            await EmailService.send_order_confirmation(bg_db, email, order_no, product_title, iccid, lpa_string)
+            await EmailService.send_order_confirmation(bg_db, email, order_no, product_title, iccid, lpa_string, **details)
         except Exception as e:
             logger.warning("order_confirmation_email_background_task_failed", email=email, error=str(e))
 
@@ -274,7 +274,11 @@ async def _complete_gateway_order(db: AsyncSession, customer_order_id: str, _fai
     beneficiary_email = beneficiary_res.scalar_one_or_none()
     if beneficiary_email:
         asyncio.create_task(_send_order_confirmation_background(
-            beneficiary_email, order.order_no, product.title_en, profile.iccid, profile.lpa_string
+            beneficiary_email, order.order_no, product.title_en, profile.iccid, profile.lpa_string,
+            validity_days=product.validity_days,
+            data_label="Unlimited" if product.is_unlimited else f"{product.data_amount_gb} GB",
+            purchase_reference=profile.supplier_reference,
+            purchased_at=order.created_at,
         ))
 
     return RedirectResponse(f"{settings.FRONTEND_BASE_URL}/my-esims?payment=success", status_code=302)
