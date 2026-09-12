@@ -5,10 +5,14 @@ server logs a warning and returns rather than raising, so registration,
 password-reset requests, and checkout never fail because email isn't
 set up or is temporarily down.
 """
+import io
 from datetime import datetime, timezone
 from pathlib import Path
 import aiosmtplib
+import qrcode
+from qrcode.image.pil import PilImage
 from email.message import EmailMessage
+from email.utils import formatdate, make_msgid
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -30,7 +34,31 @@ class EmailService:
         return row.value if row and row.value else "eSIM Global"
 
     @staticmethod
-    async def _send(to_email: str, subject: str, html_body: str) -> bool:
+    def _qr_png(payload: str) -> bytes | None:
+        """QR image for an eSIM activation string. Returns None rather than
+        raising: a missing QR must never stop the delivery email, which
+        also carries the activation code as copyable text."""
+        try:
+            # Pin the PIL factory explicitly: without Pillow, qrcode falls
+            # back to a pure-python PNG writer whose save() takes no format
+            # kwarg. Pillow is a hard dependency here, so this is always
+            # available and removes the guesswork.
+            img = qrcode.make(payload, image_factory=PilImage)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            return buf.getvalue()
+        except Exception as e:
+            logger.warning("qr_generation_failed", error=str(e))
+            return None
+
+    @staticmethod
+    async def _send(
+        to_email: str,
+        subject: str,
+        html_body: str,
+        text_body: str | None = None,
+        inline_images: dict[str, bytes] | None = None,
+    ) -> bool:
         if not settings.smtp_configured:
             logger.warning("email_skipped_smtp_not_configured", to=to_email, subject=subject)
             return False
@@ -39,8 +67,20 @@ class EmailService:
         message["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
         message["To"] = to_email
         message["Subject"] = subject
-        message.set_content("This email requires an HTML-capable client.")
+        # Absent Date/Message-ID headers are a spam signal on their own, and
+        # nothing downstream is guaranteed to add them for us.
+        message["Date"] = formatdate(localtime=True)
+        message["Message-ID"] = make_msgid(domain=settings.SMTP_FROM_EMAIL.split("@")[-1] or None)
+        message.set_content(text_body or "This email requires an HTML-capable client.")
         message.add_alternative(html_body, subtype="html")
+
+        # Inline (cid:) images ride along inside the HTML part as
+        # multipart/related. Remote <img src="https://..."> would be blocked
+        # by default in most mail clients and scores worse for spam.
+        if inline_images:
+            html_part = message.get_payload()[-1]
+            for cid, data in inline_images.items():
+                html_part.add_related(data, maintype="image", subtype="png", cid=f"<{cid}>")
 
         # Port 465 is implicit TLS (SMTPS): the connection is encrypted from
         # the first byte and there is no STARTTLS command to issue. Port 587
@@ -87,9 +127,26 @@ class EmailService:
     @classmethod
     async def send_order_confirmation(cls, db: AsyncSession, to_email: str, order_no: str, product_title: str, iccid: str, lpa_string: str):
         platform_name = await cls._get_platform_name(db)
+        qr_png = cls._qr_png(lpa_string) if lpa_string else None
+
         html = _env.get_template("order_confirmation.html").render(
             platform_name=platform_name, order_no=order_no, product_title=product_title,
-            iccid=iccid, lpa_string=lpa_string,
+            iccid=iccid, lpa_string=lpa_string, has_qr=qr_png is not None,
             frontend_base_url=settings.FRONTEND_BASE_URL, year=datetime.now(timezone.utc).year,
         )
-        await cls._send(to_email, f"Your eSIM is ready — {order_no}", html)
+        text = (
+            f"Your eSIM for order {order_no} is ready.\n\n"
+            f"Plan: {product_title}\n"
+            f"ICCID: {iccid}\n"
+            f"Activation code (LPA): {lpa_string}\n\n"
+            f"Install it by scanning the QR code in this email, or enter the activation "
+            f"code manually in your phone's cellular settings.\n"
+            f"{settings.FRONTEND_BASE_URL}/my-esims\n"
+        )
+        await cls._send(
+            to_email,
+            f"Your eSIM is ready — {order_no}",
+            html,
+            text_body=text,
+            inline_images={"esim_qr": qr_png} if qr_png else None,
+        )

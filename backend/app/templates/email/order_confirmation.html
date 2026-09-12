@@ -12,5 +12,18 @@
     </td>
   </tr>
 </table>
+{% if has_qr %}
+<table role="presentation" width="100%" style="margin:0 0 16px 0;">
+  <tr>
+    <td align="center" style="background:#ffffff;border-radius:12px;padding:18px;">
+      <img src="cid:esim_qr" alt="eSIM activation QR code" width="220" height="220" style="display:block;width:220px;height:220px;" />
+      <p style="margin:12px 0 0 0;color:#475569;font-size:12px;">Scan this with the phone that will use the eSIM</p>
+    </td>
+  </tr>
+</table>
+<p style="margin:0 0 16px 0;color:#94a3b8;font-size:12px;">
+  On the device itself, scanning won't work — enter the activation code above manually under Settings &rsaquo; Cellular &rsaquo; Add eSIM.
+</p>
+{% endif %}
 <a href="{{ frontend_base_url }}/my-esims" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;font-weight:700;font-size:13px;padding:10px 20px;border-radius:10px;">View QR Code & Install Guide</a>
 {% endblock %}
