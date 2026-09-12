@@ -1,14 +1,35 @@
 {% extends "base.html" %}
 {% block content %}
-<h1 style="color:#ffffff;font-size:20px;margin:0 0 12px 0;">Your eSIM is ready 🎉</h1>
-<p style="margin:0 0 16px 0;">Order <strong style="color:#ffffff;">{{ order_no }}</strong> for <strong style="color:#ffffff;">{{ product_title }}</strong> has been provisioned. Install it now to get connected.</p>
+<h1 style="color:#0f172a;font-size:20px;margin:0 0 12px 0;">Your eSIM is ready 🎉</h1>
+<p style="margin:0 0 16px 0;">Order <strong style="color:#0f172a;">{{ order_no }}</strong> for <strong style="color:#0f172a;">{{ product_title }}</strong> has been provisioned. Install it now to get connected.</p>
+
+{% if ios_install_url or android_install_url %}
+<p style="margin:0 0 8px 0;color:#0f172a;font-size:13px;font-weight:700;">Install in one tap</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 6px 0;">
+  <tr>
+    {% if ios_install_url %}
+    <td style="padding-right:8px;">
+      <a href="{{ ios_install_url }}" style="display:inline-block;background:#0f172a;color:#ffffff;text-decoration:none;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;">Install on iPhone</a>
+    </td>
+    {% endif %}
+    {% if android_install_url %}
+    <td>
+      <a href="{{ android_install_url }}" style="display:inline-block;background:#3ddc84;color:#0f172a;text-decoration:none;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;">Install on Android</a>
+    </td>
+    {% endif %}
+  </tr>
+</table>
+<p style="margin:0 0 18px 0;color:#94a3b8;font-size:11px;">
+  Tap the button on the phone that will use the eSIM (iOS 17.4+ / recent Android). On older devices, scan the QR code below instead.
+</p>
+{% endif %}
 
 {% if has_qr %}
 <table role="presentation" width="100%" style="margin:0 0 16px 0;">
   <tr>
-    <td align="center" style="background:#ffffff;border-radius:12px;padding:18px;">
+    <td align="center" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:18px;">
       <img src="cid:esim_qr" alt="eSIM activation QR code" width="220" height="220" style="display:block;width:220px;height:220px;" />
-      <p style="margin:12px 0 0 0;color:#475569;font-size:12px;line-height:1.5;">
+      <p style="margin:12px 0 0 0;color:#64748b;font-size:12px;line-height:1.5;">
         If you're viewing this email on the device where you want to install the eSIM,
         open it on another device to scan the code — or use the activation code below.
       </p>
@@ -17,38 +38,38 @@
 </table>
 {% endif %}
 
-<table role="presentation" width="100%" style="background:#0f172a;border-radius:12px;margin:0 0 16px 0;">
+<table role="presentation" width="100%" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;margin:0 0 16px 0;">
   <tr>
     <td style="padding:16px;">
       <p style="margin:0 0 4px 0;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:700;">Activation Code (LPA)</p>
-      <p style="margin:0;color:#e2e8f0;font-family:monospace;font-size:12px;word-break:break-all;">{{ lpa_string }}</p>
+      <p style="margin:0;color:#0f172a;font-family:monospace;font-size:12px;word-break:break-all;">{{ lpa_string }}</p>
     </td>
   </tr>
 </table>
 
-<p style="margin:0 0 8px 0;color:#ffffff;font-size:15px;font-weight:700;">Order Details</p>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;border-radius:12px;margin:0 0 16px 0;">
+<p style="margin:0 0 8px 0;color:#0f172a;font-size:15px;font-weight:700;">Order Details</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:12px;margin:0 0 16px 0;">
   {% for label, value in details %}
   <tr>
-    <td style="padding:10px 16px;color:#64748b;font-size:12px;white-space:nowrap;{% if not loop.last %}border-bottom:1px solid rgba(255,255,255,0.06);{% endif %}">{{ label }}</td>
-    <td style="padding:10px 16px;color:#e2e8f0;font-size:12px;text-align:right;{% if label == 'ICCID' %}font-family:monospace;{% endif %}{% if not loop.last %}border-bottom:1px solid rgba(255,255,255,0.06);{% endif %}">{{ value }}</td>
+    <td style="padding:10px 16px;color:#64748b;font-size:12px;white-space:nowrap;{% if not loop.last %}border-bottom:1px solid #e2e8f0;{% endif %}">{{ label }}</td>
+    <td style="padding:10px 16px;color:#0f172a;font-size:12px;text-align:right;{% if label == 'ICCID' %}font-family:monospace;{% endif %}{% if not loop.last %}border-bottom:1px solid #e2e8f0;{% endif %}">{{ value }}</td>
   </tr>
   {% endfor %}
 </table>
 
-<table role="presentation" width="100%" style="background:rgba(79,70,229,0.12);border-left:3px solid #4f46e5;border-radius:8px;margin:0 0 20px 0;">
+<table role="presentation" width="100%" style="background:#eef2ff;border-left:3px solid #4f46e5;border-radius:8px;margin:0 0 20px 0;">
   <tr>
     <td style="padding:14px 16px;">
-      <p style="margin:0 0 8px 0;color:#c7d2fe;font-size:13px;font-weight:700;">Quick Installation Tips</p>
-      <ul style="margin:0;padding-left:18px;color:#cbd5e1;font-size:12px;line-height:1.8;">
+      <p style="margin:0 0 8px 0;color:#3730a3;font-size:13px;font-weight:700;">Quick Installation Tips</p>
+      <ul style="margin:0;padding-left:18px;color:#475569;font-size:12px;line-height:1.8;">
         <li>Check that your device supports eSIM.</li>
         <li>Connect to a stable Wi-Fi network before installing.</li>
-        <li>Scan the QR code, then follow your device's prompts.</li>
+        <li>Use the install button above, or scan the QR code.</li>
         <li>Activate the eSIM when you arrive at your destination.</li>
       </ul>
     </td>
   </tr>
 </table>
 
-<a href="{{ frontend_base_url }}/my-esims" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;font-weight:700;font-size:13px;padding:10px 20px;border-radius:10px;">View QR Code &amp; Install Guide</a>
+<a href="{{ frontend_base_url }}/my-esims" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;font-weight:700;font-size:13px;padding:10px 20px;border-radius:10px;">View &amp; Print Your eSIM</a>
 {% endblock %}

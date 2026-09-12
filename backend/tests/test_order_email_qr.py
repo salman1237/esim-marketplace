@@ -45,10 +45,13 @@ async def test_order_email_embeds_qr_and_activation_details(db_session, smtp_con
     assert msg.get_content_type() == "multipart/related"
     assert msg.get_payload()[0].get_content_type() == "multipart/alternative"
 
-    images = [p for p in msg.walk() if p.get_content_type() == "image/png"]
-    assert len(images) == 1
-    assert images[0].get("Content-ID") == "<esim_qr>"
-    assert images[0].get_payload(decode=True)[:8] == b"\x89PNG\r\n\x1a\n"
+    # Keyed by Content-ID, not by counting images: a deployment with a
+    # brand logo uploaded carries that inline too, and the count would
+    # depend on unrelated state.
+    qr_parts = [p for p in msg.walk() if p.get("Content-ID") == "<esim_qr>"]
+    assert len(qr_parts) == 1
+    assert qr_parts[0].get_content_type() == "image/png"
+    assert qr_parts[0].get_payload(decode=True)[:8] == b"\x89PNG\r\n\x1a\n"
 
     text = _part(msg, "text/plain")
     assert LPA in text
@@ -110,7 +113,7 @@ async def test_order_email_still_sends_when_qr_generation_fails(db_session, smtp
 
     sender.assert_awaited_once()
     msg = _sent_message(sender)
-    assert [p for p in msg.walk() if p.get_content_type() == "image/png"] == []
+    assert [p for p in msg.walk() if p.get("Content-ID") == "<esim_qr>"] == []
     html = _part(msg, "text/html")
     assert "cid:esim_qr" not in html
     assert LPA in html

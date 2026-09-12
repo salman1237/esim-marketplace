@@ -21,6 +21,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.settings import PlatformSetting
+from app.services.esim_links import esim_install_links
 
 logger = get_logger(__name__)
 
@@ -34,6 +35,24 @@ class EmailService:
         res = await db.execute(select(PlatformSetting).where(PlatformSetting.key == "platform_name"))
         row = res.scalar_one_or_none()
         return row.value if row and row.value else "eSIM Global"
+
+    @staticmethod
+    async def _logo_png(db: AsyncSession) -> bytes | None:
+        """The uploaded brand logo, read off disk to be attached inline.
+        The setting stores the public URL (/api/v1/uploads/branding/x.png)
+        whose file lives under UPLOADS_DIR - a remote <img> would just be
+        blocked by the mail client. Returns None (header falls back to the
+        platform name as text) if no logo is set or the file is missing."""
+        res = await db.execute(select(PlatformSetting).where(PlatformSetting.key == "logo_light"))
+        row = res.scalar_one_or_none()
+        if not row or not row.value:
+            return None
+        try:
+            path = Path(settings.UPLOADS_DIR) / "branding" / Path(row.value).name
+            return path.read_bytes() if path.is_file() else None
+        except Exception as e:
+            logger.warning("email_logo_read_failed", error=str(e))
+            return None
 
     @staticmethod
     def _qr_png(payload: str) -> bytes | None:
@@ -124,20 +143,26 @@ class EmailService:
     @classmethod
     async def send_welcome(cls, db: AsyncSession, to_email: str, username: str):
         platform_name = await cls._get_platform_name(db)
+        logo_png = await cls._logo_png(db)
         html = _env.get_template("welcome.html").render(
+            has_logo=logo_png is not None,
             platform_name=platform_name, username=username,
             frontend_base_url=settings.FRONTEND_BASE_URL, year=datetime.now(timezone.utc).year,
         )
-        await cls._send(to_email, f"Welcome to {platform_name}", html)
+        await cls._send(to_email, f"Welcome to {platform_name}", html,
+                        inline_images={"brand_logo": logo_png} if logo_png else None)
 
     @classmethod
     async def send_password_reset(cls, db: AsyncSession, to_email: str, reset_token: str):
         platform_name = await cls._get_platform_name(db)
+        logo_png = await cls._logo_png(db)
         reset_url = f"{settings.FRONTEND_BASE_URL}/auth/reset-password?token={reset_token}"
         html = _env.get_template("password_reset.html").render(
-            platform_name=platform_name, reset_url=reset_url, year=datetime.now(timezone.utc).year,
+            platform_name=platform_name, reset_url=reset_url, has_logo=logo_png is not None,
+            year=datetime.now(timezone.utc).year,
         )
-        await cls._send(to_email, f"Reset your {platform_name} password", html)
+        await cls._send(to_email, f"Reset your {platform_name} password", html,
+                        inline_images={"brand_logo": logo_png} if logo_png else None)
 
     @classmethod
     async def send_order_confirmation(
@@ -155,6 +180,8 @@ class EmailService:
     ):
         platform_name = await cls._get_platform_name(db)
         qr_png = cls._qr_png(lpa_string) if lpa_string else None
+        logo_png = await cls._logo_png(db)
+        install = esim_install_links(lpa_string)
 
         # Only rows we actually have a value for - a table with blank cells
         # reads as a bug to the customer.
@@ -171,6 +198,8 @@ class EmailService:
         html = _env.get_template("order_confirmation.html").render(
             platform_name=platform_name, order_no=order_no, product_title=product_title,
             iccid=iccid, lpa_string=lpa_string, has_qr=qr_png is not None, details=details,
+            has_logo=logo_png is not None,
+            ios_install_url=install["ios"], android_install_url=install["android"],
             frontend_base_url=settings.FRONTEND_BASE_URL, year=datetime.now(timezone.utc).year,
         )
         detail_lines = "\n".join(f"{label}: {value}" for label, value in details)
@@ -182,10 +211,15 @@ class EmailService:
             f"code manually in your phone's cellular settings.\n"
             f"{settings.FRONTEND_BASE_URL}/my-esims\n"
         )
+        images = {}
+        if qr_png:
+            images["esim_qr"] = qr_png
+        if logo_png:
+            images["brand_logo"] = logo_png
         await cls._send(
             to_email,
             f"Your eSIM is ready — {order_no}",
             html,
             text_body=text,
-            inline_images={"esim_qr": qr_png} if qr_png else None,
+            inline_images=images or None,
         )

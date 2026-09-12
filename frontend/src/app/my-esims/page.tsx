@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { QrCode, Copy, Check, Smartphone, Sparkles, Clock } from "lucide-react";
+import { QrCode, Copy, Check, Smartphone, Sparkles, Clock, Printer } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
 import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 import { EsimListSkeleton } from "@/components/Skeleton";
+import { esimInstallLinks } from "@/lib/esimInstall";
 
 function EsimCard({ item }: { item: any }) {
   const { t } = useAppSettings();
@@ -87,6 +88,44 @@ function EsimCard({ item }: { item: any }) {
                     <span className="font-mono text-slate-900">{item.order_no}</span>
                   </div>
                 </div>
+
+                {(() => {
+                  const install = esimInstallLinks(item.lpa_string);
+                  if (!install.ios && !install.android) return null;
+                  return (
+                    <div>
+                      <div className="flex gap-2">
+                        {install.ios && (
+                          <a
+                            href={install.ios}
+                            className="flex-1 flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-2 px-3 rounded-lg transition-colors"
+                          >
+                            <Smartphone className="w-3.5 h-3.5" /> Install on iPhone
+                          </a>
+                        )}
+                        {install.android && (
+                          <a
+                            href={install.android}
+                            className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-900 text-xs font-bold py-2 px-3 rounded-lg transition-colors"
+                          >
+                            <Smartphone className="w-3.5 h-3.5" /> Install on Android
+                          </a>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1.5">
+                        Tap on the phone that will use the eSIM (iOS 17.4+ / recent Android). Otherwise scan the QR code.
+                      </p>
+                    </div>
+                  );
+                })()}
+
+                <a
+                  href={`/my-esims/${item.id}/print`}
+                  className="w-full flex items-center justify-center space-x-2 bg-white hover:bg-gray-50 text-slate-700 text-xs font-semibold py-2 px-3 rounded-lg border border-gray-300 transition-colors"
+                >
+                  <Printer className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Print / Save as PDF</span>
+                </a>
 
                 {item.lpa_string && (
                   <button

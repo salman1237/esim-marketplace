@@ -331,7 +331,11 @@ export default function AdminConsolePage() {
     setPurchaseProductId("");
     setPurchaseResult(null);
     if (purchaseCountries.length === 0) {
-      api.getCountries(undefined, true).then(setPurchaseCountries).catch(console.error);
+      // Every destination we hold stock for, not just the ~10 flagged
+      // "popular" - an admin buying for a customer must be able to reach
+      // the whole catalog. (Countries with no active products are already
+      // filtered out server-side.)
+      api.getCountries().then(setPurchaseCountries).catch(console.error);
     }
   };
 

@@ -4,26 +4,31 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
-<body style="margin:0;padding:0;background:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;padding:32px 16px;">
+<!-- Light theme on purpose: customers print this email (or save it as PDF)
+     to carry their eSIM details, and a dark background wastes ink and
+     renders poorly on paper. -->
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 16px;">
     <tr>
       <td align="center">
-        <table role="presentation" width="100%" style="max-width:480px;background:#1e293b;border-radius:16px;overflow:hidden;">
+        <table role="presentation" width="100%" style="max-width:520px;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
           <tr>
-            <td style="padding:28px 32px 0 32px;">
-              <div style="display:flex;align-items:center;gap:8px;">
-                <span style="font-size:20px;font-weight:800;color:#ffffff;">{{ platform_name }}</span>
-              </div>
+            <td style="padding:24px 32px 0 32px;">
+              {% if has_logo %}
+              <img src="cid:brand_logo" alt="{{ platform_name }}" height="36" style="display:block;height:36px;width:auto;max-width:200px;" />
+              {% else %}
+              <span style="font-size:20px;font-weight:800;color:#0f172a;">{{ platform_name }}</span>
+              {% endif %}
             </td>
           </tr>
           <tr>
-            <td style="padding:20px 32px 32px 32px;color:#cbd5e1;font-size:14px;line-height:1.6;">
+            <td style="padding:20px 32px 32px 32px;color:#475569;font-size:14px;line-height:1.6;">
               {% block content %}{% endblock %}
             </td>
           </tr>
           <tr>
-            <td style="padding:16px 32px 28px 32px;border-top:1px solid rgba(255,255,255,0.08);">
-              <p style="margin:0;color:#64748b;font-size:11px;">
+            <td style="padding:16px 32px 28px 32px;border-top:1px solid #e2e8f0;">
+              <p style="margin:0;color:#94a3b8;font-size:11px;">
                 &copy; {{ year }} {{ platform_name }}. This is an automated message, please don't reply directly to this email.
               </p>
             </td>
