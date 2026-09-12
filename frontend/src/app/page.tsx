@@ -2,9 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import { Search, Zap, ShieldCheck, Globe, ArrowRight, CheckCircle2, Sparkles, Check, X } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 import { ProductListSkeleton } from "@/components/Skeleton";
+import { esimInstallLinks } from "@/lib/esimInstall";
 
 export default function HomePage() {
   const { formatPrice } = useAppSettings();
@@ -15,8 +17,18 @@ export default function HomePage() {
   const [selectedCountry, setSelectedCountry] = useState<any | null>(null);
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [purchasing, setPurchasing] = useState(false);
-  const [purchaseSuccess, setPurchaseSuccess] = useState<any | null>(null);
+  // The purchase runs as a small state machine rather than a single
+  // "purchasing" flag: provisioning takes ~12s at the supplier, and the
+  // old UI froze every pack's button with no explanation of the wait.
+  const [flow, setFlow] = useState<null | {
+    stage: "confirm" | "working" | "success" | "error";
+    product: any;
+    method: "wallet" | "gateway";
+    order?: any;
+    message?: string;
+  }>(null);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [workingStep, setWorkingStep] = useState(0);
 
   // Default popular destinations
   const defaultPopular = [
@@ -81,48 +93,82 @@ export default function HomePage() {
     }
   };
 
-  const handleBuy = async (product: any) => {
+  // Honest, non-blocking narration of a wait we can't shorten: the
+  // supplier call takes ~12s, so the steps advance on a timer rather than
+  // pretending to track real progress.
+  const WORKING_STEPS = [
+    "Payment confirmed",
+    "Reserving your eSIM with the carrier",
+    "Preparing your QR code",
+  ];
+
+  useEffect(() => {
+    if (flow?.stage !== "working") {
+      setWorkingStep(0);
+      return;
+    }
+    const timers = [
+      setTimeout(() => setWorkingStep(1), 1200),
+      setTimeout(() => setWorkingStep(2), 7000),
+    ];
+    return () => timers.forEach(clearTimeout);
+  }, [flow?.stage]);
+
+  const openPurchase = async (product: any, method: "wallet" | "gateway") => {
     const token = localStorage.getItem("esim_token");
     if (!token) {
       window.location.href = "/auth/login";
       return;
     }
+    setFlow({ stage: "confirm", product, method });
+    // Shown on the confirm step so the customer sees what's left
+    // afterwards - failing on balance only after a 12s wait is a poor way
+    // to find out.
+    try {
+      const wallets = await api.getMyWallets(token);
+      const def = (wallets || []).find((w: any) => w.wallet_type === "DEFAULT");
+      setWalletBalance(def ? parseFloat(def.balance) : null);
+    } catch {
+      setWalletBalance(null);
+    }
+  };
 
-    setPurchasing(true);
+  const confirmPurchase = async () => {
+    const token = localStorage.getItem("esim_token");
+    if (!token || !flow) return;
+    const { product, method } = flow;
+
+    if (method === "gateway") {
+      setFlow({ stage: "working", product, method });
+      try {
+        const res = await api.initiateOrderPayment(token, product.id);
+        const checkoutUrl = res.checkout_url || res.checkoutUrl;
+        if (checkoutUrl) {
+          window.location.href = checkoutUrl;
+          return;
+        }
+        setFlow({ stage: "error", product, method, message: "The payment gateway didn't return a checkout link. Please try again, or pay from your wallet." });
+      } catch (err: any) {
+        setFlow({ stage: "error", product, method, message: err.message || "Couldn't start checkout." });
+      }
+      return;
+    }
+
+    setFlow({ stage: "working", product, method });
     try {
       const order = await api.checkout(token, {
         product_id: product.id,
         payment_method: "WALLET",
-        is_buy_for_user: false
+        is_buy_for_user: false,
       });
-      setPurchaseSuccess(order);
+      setFlow({ stage: "success", product, method, order });
     } catch (err: any) {
-      alert(err.message || "Failed to purchase. Please check your wallet balance.");
-    } finally {
-      setPurchasing(false);
-    }
-  };
-
-  const handleBuyViaGateway = async (product: any) => {
-    const token = localStorage.getItem("esim_token");
-    if (!token) {
-      window.location.href = "/auth/login";
-      return;
-    }
-
-    setPurchasing(true);
-    try {
-      const res = await api.initiateOrderPayment(token, product.id);
-      const checkoutUrl = res.checkout_url || res.checkoutUrl;
-      if (checkoutUrl) {
-        window.location.href = checkoutUrl;
-      } else {
-        alert("ShurjoPay did not return a checkout link. Please try again or pay from your wallet.");
-      }
-    } catch (err: any) {
-      alert(err.message || "Failed to start checkout");
-    } finally {
-      setPurchasing(false);
+      setFlow({
+        stage: "error",
+        product,
+        method,
+        message: err.message || "Purchase failed. If your wallet was charged, it has been refunded.",
+      });
     }
   };
 
@@ -276,17 +322,20 @@ export default function HomePage() {
                     <div className="text-end">
                       <div className="text-lg font-black text-emerald-600">{formatPrice(parseFloat(p.retail_price))}</div>
                       <div className="mt-1 flex flex-col items-end gap-1">
+                        {/* Busy state belongs to the pack that was clicked -
+                            a single shared flag turned every button on the
+                            list into "Processing...". */}
                         <button
-                          onClick={() => handleBuy(p)}
-                          disabled={purchasing}
-                          className="bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm transition-all"
+                          onClick={() => openPurchase(p, "wallet")}
+                          disabled={flow?.stage === "working"}
+                          className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm transition-all"
                         >
-                          {purchasing ? "Processing..." : "Buy with Wallet"}
+                          {flow?.stage === "working" && flow.product?.id === p.id ? "Processing..." : "Buy with Wallet"}
                         </button>
                         <button
-                          onClick={() => handleBuyViaGateway(p)}
-                          disabled={purchasing}
-                          className="text-[11px] text-slate-500 hover:text-slate-700 underline underline-offset-2"
+                          onClick={() => openPurchase(p, "gateway")}
+                          disabled={flow?.stage === "working"}
+                          className="text-[11px] text-slate-500 hover:text-slate-700 disabled:opacity-50 underline underline-offset-2"
                         >
                           Pay by Card / Mobile Banking
                         </button>
@@ -300,32 +349,141 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Purchase Success Modal */}
-      {purchaseSuccess && (
+      {/* Purchase flow: confirm -> working -> success / error */}
+      {flow && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="glass-panel rounded-2xl max-w-md w-full p-6 text-center border border-emerald-200 shadow-xl">
-            <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle2 className="w-8 h-8" />
-            </div>
-            <h3 className="text-xl font-bold text-slate-900">eSIM Provisioned Successfully!</h3>
-            <p className="text-xs text-slate-500 mt-1 mb-6">
-              Order #{purchaseSuccess.order_no} has been completed. Your eSIM is ready to install.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setPurchaseSuccess(null)}
-                className="flex-1 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-slate-700 text-xs font-semibold"
-              >
-                Close
-              </button>
-              <a
-                href="/my-esims"
-                className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold flex items-center justify-center space-x-1"
-              >
-                <span>View QR Code</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </a>
-            </div>
+          <div className="glass-panel rounded-2xl max-w-md w-full p-6 border border-gray-200 shadow-xl">
+
+            {flow.stage === "confirm" && (
+              <>
+                <h3 className="text-lg font-bold text-slate-900 mb-1">Confirm your purchase</h3>
+                <p className="text-xs text-slate-500 mb-4">
+                  {selectedCountry?.name_en || selectedCountry?.name} &bull; {flow.product.is_unlimited ? "Unlimited data" : `${flow.product.data_amount_gb} GB`} &bull; {flow.product.validity_days} days
+                </p>
+                <div className="rounded-xl border border-gray-200 divide-y divide-gray-100 text-xs mb-4">
+                  <div className="flex items-center justify-between px-3 py-2.5">
+                    <span className="text-slate-500">Price</span>
+                    <span className="font-bold text-slate-900">{formatPrice(parseFloat(flow.product.retail_price))}</span>
+                  </div>
+                  <div className="flex items-center justify-between px-3 py-2.5">
+                    <span className="text-slate-500">Payment</span>
+                    <span className="text-slate-900">{flow.method === "wallet" ? "Wallet balance" : "Card / Mobile Banking"}</span>
+                  </div>
+                  {flow.method === "wallet" && walletBalance !== null && (
+                    <div className="flex items-center justify-between px-3 py-2.5">
+                      <span className="text-slate-500">Balance after</span>
+                      <span className={walletBalance - parseFloat(flow.product.retail_price) < 0 ? "font-bold text-rose-600" : "text-slate-900"}>
+                        {formatPrice(walletBalance - parseFloat(flow.product.retail_price))}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                {flow.method === "wallet" && walletBalance !== null && walletBalance < parseFloat(flow.product.retail_price) && (
+                  <p className="text-xs text-rose-600 mb-3">
+                    Your wallet balance is too low for this plan. Top up first, or pay by card.
+                  </p>
+                )}
+                <div className="flex gap-3">
+                  <button onClick={() => setFlow(null)} className="flex-1 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-slate-700 text-xs font-semibold">
+                    Cancel
+                  </button>
+                  <button onClick={confirmPurchase} className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold">
+                    {flow.method === "wallet" ? "Confirm & Pay" : "Continue to payment"}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {flow.stage === "working" && (
+              <div className="text-center py-2">
+                <div className="w-14 h-14 rounded-full border-4 border-brand-100 border-t-brand-600 animate-spin mx-auto mb-5" />
+                <h3 className="text-lg font-bold text-slate-900">Setting up your eSIM</h3>
+                <p className="text-xs text-slate-500 mt-1 mb-5">This usually takes 10&ndash;20 seconds. Please keep this window open.</p>
+                <div className="text-start space-y-2">
+                  {WORKING_STEPS.map((label, i) => (
+                    <div key={label} className="flex items-center gap-2 text-xs">
+                      {i < workingStep ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      ) : i === workingStep ? (
+                        <span className="w-4 h-4 rounded-full border-2 border-brand-600 border-t-transparent animate-spin shrink-0" />
+                      ) : (
+                        <span className="w-4 h-4 rounded-full border-2 border-gray-200 shrink-0" />
+                      )}
+                      <span className={i <= workingStep ? "text-slate-900 font-medium" : "text-slate-400"}>{label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {flow.stage === "success" && (
+              <div className="text-center">
+                <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-900">Your eSIM is ready</h3>
+                <p className="text-xs text-slate-500 mt-1 mb-4">Order #{flow.order?.order_no}</p>
+
+                {flow.order?.esim_profile?.qr_code_data && (
+                  <div className="bg-white border border-gray-200 rounded-xl p-4 inline-block mb-4">
+                    <QRCodeSVG value={flow.order.esim_profile.qr_code_data} size={150} level="M" />
+                  </div>
+                )}
+
+                {(() => {
+                  const install = esimInstallLinks(flow.order?.esim_profile?.lpa_string);
+                  if (!install.ios && !install.android) return null;
+                  return (
+                    <div className="flex gap-2 mb-3">
+                      {install.ios && (
+                        <a href={install.ios} className="flex-1 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold">
+                          Install on iPhone
+                        </a>
+                      )}
+                      {install.android && (
+                        <a href={install.android} className="flex-1 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-900 text-xs font-bold">
+                          Install on Android
+                        </a>
+                      )}
+                    </div>
+                  );
+                })()}
+                <p className="text-[11px] text-slate-500 mb-4">
+                  Tap on the phone that will use the eSIM, or scan the QR code from another device.
+                </p>
+
+                <div className="flex gap-3">
+                  <button onClick={() => setFlow(null)} className="flex-1 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-slate-700 text-xs font-semibold">
+                    Close
+                  </button>
+                  <a href="/my-esims" className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold flex items-center justify-center space-x-1">
+                    <span>View &amp; Print</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {flow.stage === "error" && (
+              <div className="text-center">
+                <div className="w-14 h-14 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <X className="w-8 h-8" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900">Purchase didn&apos;t go through</h3>
+                <p className="text-xs text-slate-500 mt-2 mb-5">{flow.message}</p>
+                <div className="flex gap-3">
+                  <button onClick={() => setFlow(null)} className="flex-1 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-slate-700 text-xs font-semibold">
+                    Close
+                  </button>
+                  <button
+                    onClick={() => setFlow({ stage: "confirm", product: flow.product, method: flow.method })}
+                    className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold"
+                  >
+                    Try again
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
