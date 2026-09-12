@@ -906,27 +906,63 @@ async def get_all_orders(limit: int = 100, db: AsyncSession = Depends(get_db)):
 
 # --- Admin Operations: Catalog Editor ---
 @router.get("/catalog", dependencies=[Depends(require_admin)])
-async def get_admin_catalog(limit: int = 200, db: AsyncSession = Depends(get_db)):
+async def get_admin_catalog(
+    q: str | None = None,
+    country_iso: str | None = None,
+    is_active: bool | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+):
+    """Searchable, paged product list. Syncing every country (not just ten)
+    grew this from ~135 rows to thousands, so returning a flat newest-200
+    slice was no longer a usable way for an admin to find one product."""
+    limit = max(1, min(limit, 200))
+    filters = []
+    if q:
+        term = f"%{q.strip()}%"
+        filters.append(Product.title_en.ilike(term) | Country.name_en.ilike(term))
+    if country_iso:
+        filters.append(Country.iso2 == country_iso.strip().upper())
+    if is_active is not None:
+        filters.append(Product.is_active == is_active)
+
+    base = select(Product, Country).join(Country, Product.country_id == Country.id)
+    if filters:
+        base = base.where(*filters)
+
+    count_q = select(func.count()).select_from(Product).join(Country, Product.country_id == Country.id)
+    if filters:
+        count_q = count_q.where(*filters)
+    total = (await db.execute(count_q)).scalar_one()
+
     res = await db.execute(
-        select(Product, Country)
-        .join(Country, Product.country_id == Country.id)
-        .order_by(Product.created_at.desc())
+        base.order_by(Country.name_en.asc(), Product.data_amount_gb.asc())
         .limit(limit)
+        .offset(max(0, offset))
     )
-    return [
-        {
-            "id": p.id,
-            "title": p.title_en,
-            "country": c.name_en,
-            "data_gb": float(p.data_amount_gb),
-            "validity_days": p.validity_days,
-            "cost_price": float(p.cost_price),
-            "retail_price": float(p.retail_price),
-            "currency": p.currency,
-            "is_active": p.is_active
-        }
-        for p, c in res.all()
-    ]
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": max(0, offset),
+        "items": [
+            {
+                "id": p.id,
+                "title": p.title_en,
+                "country": c.name_en,
+                "country_iso": c.iso2,
+                "data_gb": float(p.data_amount_gb),
+                "is_unlimited": bool(p.is_unlimited),
+                "validity_days": p.validity_days,
+                "cost_price": float(p.cost_price),
+                "retail_price": float(p.retail_price),
+                "currency": p.currency,
+                "supplier_reference": p.supplier_reference,
+                "is_active": p.is_active,
+            }
+            for p, c in res.all()
+        ],
+    }
 
 @router.put("/catalog/{product_id}", dependencies=[Depends(require_admin)])
 async def update_product(

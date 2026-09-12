@@ -152,6 +152,7 @@ async def list_my_esims(current_user: User = Depends(get_current_user), db: Asyn
             "order_no": order.order_no,
             "product_title": product.title_en,
             "data_amount_gb": float(product.data_amount_gb),
+            "is_unlimited": bool(product.is_unlimited),
             "validity_days": product.validity_days,
             "iccid": profile.iccid,
             "lpa_string": profile.lpa_string,

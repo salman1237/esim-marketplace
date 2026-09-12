@@ -110,7 +110,15 @@ export const api = {
   
   // New Admin endpoints
   getAdminOrders: (token: string) => fetchApi("/api/v1/admin/orders", { headers: { Authorization: `Bearer ${token}` } }),
-  getAdminCatalog: (token: string) => fetchApi("/api/v1/admin/catalog", { headers: { Authorization: `Bearer ${token}` } }),
+  getAdminCatalog: (token: string, opts?: { q?: string; country_iso?: string; is_active?: boolean; limit?: number; offset?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.q) params.append("q", opts.q);
+    if (opts?.country_iso) params.append("country_iso", opts.country_iso);
+    if (opts?.is_active !== undefined) params.append("is_active", String(opts.is_active));
+    params.append("limit", String(opts?.limit ?? 100));
+    params.append("offset", String(opts?.offset ?? 0));
+    return fetchApi(`/api/v1/admin/catalog?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
+  },
   updateAdminCatalogProduct: (token: string, id: string, data: any) => fetchApi(`/api/v1/admin/catalog/${id}`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
   getAdminUsers: (token: string) => fetchApi("/api/v1/admin/users", { headers: { Authorization: `Bearer ${token}` } }),
   createStaffAccount: (token: string, data: any) => fetchApi("/api/v1/admin/users", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),

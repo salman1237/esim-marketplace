@@ -32,18 +32,21 @@ export default function Footer() {
         {/* Col 1: Brand & Tagline */}
         <div className="space-y-4">
           <div className="flex items-center space-x-3">
+            {/* Logo already carries the brand name - see Header.tsx. */}
             {settings.logo_light ? (
               <img
                 src={settings.logo_light.startsWith("http") ? settings.logo_light : `${API_BASE}${settings.logo_light}`}
                 alt={settings.platform_name || "eSIM Global"}
-                className="w-8 h-8 rounded-lg object-contain"
+                className="h-8 max-w-[160px] w-auto object-contain"
               />
             ) : (
-              <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center">
-                <Wifi className="w-4 h-4 text-white" />
-              </div>
+              <>
+                <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center">
+                  <Wifi className="w-4 h-4 text-white" />
+                </div>
+                <span className="text-lg font-bold text-slate-900">{settings.platform_name || "eSIM Global"}</span>
+              </>
             )}
-            <span className="text-lg font-bold text-slate-900">{settings.platform_name || "eSIM Global"}</span>
           </div>
           <p className="text-xs text-slate-500 leading-relaxed">
             {settings.tagline_en || "Instant global connectivity across 200+ countries. Zero roaming fees, instant QR delivery, and flexible digital data."}

@@ -84,3 +84,14 @@ def test_non_esim_product_is_filtered_out():
     """Bangladesh's domestic mobile top-up catalog (reference='ranged_price')
     must never be classified as an eSIM product."""
     assert parse_vivape_product(BANGLADESH_MOBILE_TOPUP) is None
+
+
+def test_esim_titled_product_from_another_supplier_is_filtered_out():
+    """Only esimgo_bundle and worldmove_esim can actually be provisioned.
+    An earlier version also accepted any product whose title mentioned
+    "esim", which would list a third supplier's stock we can't fulfil."""
+    assert parse_vivape_product({
+        "id": 99999, "price": 7.5, "reference": "some_other_supplier",
+        "title": "eSIM, 5GB, 30 Days, Nowhere", "country_id": 1,
+        "receiver_amount_min": "5000", "receiver_amount_max": "5000",
+    }) is None

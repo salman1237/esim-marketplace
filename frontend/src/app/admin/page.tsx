@@ -19,6 +19,16 @@ export default function AdminConsolePage() {
   const [supplierLogs, setSupplierLogs] = useState<any[]>([]);
   const [allOrders, setAllOrders] = useState<any[]>([]);
   const [catalog, setCatalog] = useState<any[]>([]);
+  // Catalog editor: syncing every country (not just ten popular ones) grew
+  // this from ~135 rows to thousands, so it's searched and paged
+  // server-side rather than dumping a newest-200 slice into the table.
+  const catalogPageSize = 100;
+  const [catalogTotal, setCatalogTotal] = useState(0);
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const [catalogActiveFilter, setCatalogActiveFilter] = useState<"all" | "active" | "inactive">("all");
+  const [catalogPage, setCatalogPage] = useState(0);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogNotice, setCatalogNotice] = useState<string | null>(null);
   const [users, setUsers] = useState<any[]>([]);
   const [inspectingLog, setInspectingLog] = useState<any | null>(null);
   const [kycQueue, setKycQueue] = useState<any[]>([]);
@@ -76,7 +86,7 @@ export default function AdminConsolePage() {
     api.getPaymentQueue(token).then(setPayments).catch(console.error);
     api.getSupplierLogs(token).then(setSupplierLogs).catch(console.error);
     api.getAdminOrders(token).then(setAllOrders).catch(console.error);
-    api.getAdminCatalog(token).then(setCatalog).catch(console.error);
+    loadCatalog(token, { offset: 0 });
     api.getKycQueue(token).then(setKycQueue).catch(console.error);
     api.getCommissionTiers(token).then(setCommissionTiers).catch(console.error);
     // Super-Admin-only endpoints: fetched regardless, the backend 403s a
@@ -150,19 +160,67 @@ export default function AdminConsolePage() {
     alert("Role updated.");
   };
 
+  const loadCatalog = async (token: string, opts?: { q?: string; is_active?: boolean; offset?: number }) => {
+    setCatalogLoading(true);
+    try {
+      const offset = opts?.offset ?? 0;
+      const res = await api.getAdminCatalog(token, { ...opts, offset, limit: catalogPageSize });
+      setCatalog(res.items || []);
+      setCatalogTotal(res.total || 0);
+      setCatalogPage(Math.floor(offset / catalogPageSize));
+    } catch (err: any) {
+      setCatalogNotice("Failed to load catalog: " + err.message);
+    } finally {
+      setCatalogLoading(false);
+    }
+  };
+
+  const catalogFilterArgs = (offset: number) => ({
+    q: catalogQuery.trim() || undefined,
+    is_active: catalogActiveFilter === "all" ? undefined : catalogActiveFilter === "active",
+    offset,
+  });
+
+  const handleSearchCatalog = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    setCatalogNotice(null);
+    await loadCatalog(token, catalogFilterArgs(0));
+  };
+
+  const handleCatalogPageChange = async (nextPage: number) => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    await loadCatalog(token, catalogFilterArgs(nextPage * catalogPageSize));
+  };
+
   const handleUpdateProductPrice = async (productId: string, priceStr: string) => {
     const token = localStorage.getItem("esim_token");
     if (!token) return;
     const price = parseFloat(priceStr);
-    await api.updateAdminCatalogProduct(token, productId, { retail_price: price });
-    alert("Price updated.");
+    if (Number.isNaN(price) || price < 0) {
+      setCatalogNotice("Retail price must be a non-negative number.");
+      return;
+    }
+    try {
+      await api.updateAdminCatalogProduct(token, productId, { retail_price: price });
+      setCatalog(catalog.map(p => p.id === productId ? { ...p, retail_price: price } : p));
+      setCatalogNotice("Price updated.");
+    } catch (err: any) {
+      setCatalogNotice("Failed to update price: " + err.message);
+    }
   };
 
   const handleToggleProduct = async (productId: string, isActive: boolean) => {
     const token = localStorage.getItem("esim_token");
     if (!token) return;
-    await api.updateAdminCatalogProduct(token, productId, { is_active: !isActive });
-    setCatalog(catalog.map(p => p.id === productId ? { ...p, is_active: !isActive } : p));
+    try {
+      await api.updateAdminCatalogProduct(token, productId, { is_active: !isActive });
+      setCatalog(catalog.map(p => p.id === productId ? { ...p, is_active: !isActive } : p));
+    } catch (err: any) {
+      setCatalogNotice("Failed to update product: " + err.message);
+    }
   };
 
   const handleSyncCatalog = async () => {
@@ -921,7 +979,39 @@ export default function AdminConsolePage() {
       {/* Tab: Catalog Editor */}
       {activeTab === "catalog" && (
         <div className="glass-panel rounded-2xl p-6 border border-gray-200">
-          <h3 className="text-base font-bold text-slate-900 mb-4">Product Catalog & Pricing Editor</h3>
+          <h3 className="text-base font-bold text-slate-900 mb-1">Product Catalog & Pricing Editor</h3>
+          <p className="text-xs text-slate-500 mb-4">
+            {catalogLoading ? "Loading…" : `${catalogTotal} product${catalogTotal === 1 ? "" : "s"} match`}
+          </p>
+
+          <form onSubmit={handleSearchCatalog} className="flex flex-wrap gap-2 mb-4">
+            <input
+              type="text"
+              placeholder="Search by product or country…"
+              value={catalogQuery}
+              onChange={(e) => setCatalogQuery(e.target.value)}
+              className="flex-1 min-w-[200px] bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
+            />
+            <select
+              value={catalogActiveFilter}
+              onChange={(e) => setCatalogActiveFilter(e.target.value as "all" | "active" | "inactive")}
+              className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
+            >
+              <option value="all">All statuses</option>
+              <option value="active">Active only</option>
+              <option value="inactive">Inactive only</option>
+            </select>
+            <button type="submit" disabled={catalogLoading} className="bg-admin-600 hover:bg-admin-500 text-white text-xs font-bold px-4 py-2 rounded-lg">
+              {catalogLoading ? "Searching…" : "Search"}
+            </button>
+          </form>
+
+          {catalogNotice && (
+            <div className="mb-4 p-3 rounded-lg text-xs bg-gray-50 border border-gray-200 text-slate-700">
+              {catalogNotice}
+            </div>
+          )}
+
           <div className="overflow-x-auto max-h-[600px] overflow-y-auto frozen-col-table">
             <table className="w-full text-start text-xs relative">
               <thead className="text-slate-500 border-b border-gray-200 sticky top-0 bg-white">
@@ -940,7 +1030,7 @@ export default function AdminConsolePage() {
                   <tr key={p.id}>
                     <td className="py-2.5 font-bold text-slate-900">{p.country}</td>
                     <td className="py-2.5 text-slate-700">{p.title}</td>
-                    <td className="py-2.5 text-slate-500">{p.data_gb} GB / {p.validity_days} Days</td>
+                    <td className="py-2.5 text-slate-500">{p.is_unlimited ? "Unlimited" : `${p.data_gb} GB`} / {p.validity_days} Days</td>
                     <td className="py-2.5 text-slate-500">{formatPrice(p.cost_price)}</td>
                     <td className="py-2.5">
                       <input 
@@ -969,6 +1059,30 @@ export default function AdminConsolePage() {
               </tbody>
             </table>
           </div>
+
+          {catalogTotal > catalogPageSize && (
+            <div className="flex items-center justify-between mt-4 text-xs text-slate-600">
+              <span>
+                Showing {catalogPage * catalogPageSize + 1}–{Math.min((catalogPage + 1) * catalogPageSize, catalogTotal)} of {catalogTotal}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleCatalogPageChange(catalogPage - 1)}
+                  disabled={catalogPage === 0 || catalogLoading}
+                  className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-40 font-semibold"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => handleCatalogPageChange(catalogPage + 1)}
+                  disabled={(catalogPage + 1) * catalogPageSize >= catalogTotal || catalogLoading}
+                  className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-40 font-semibold"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1089,7 +1203,7 @@ export default function AdminConsolePage() {
                         <option value="">-- Select Product --</option>
                         {purchaseProducts.map((p) => (
                           <option key={p.id} value={p.id}>
-                            {p.title_en} — {p.data_amount_gb} GB ({p.validity_days} Days) — ${parseFloat(p.retail_price).toFixed(2)}
+                            {p.title_en} — {p.is_unlimited ? "Unlimited" : `${p.data_amount_gb} GB`} ({p.validity_days} Days) — ${parseFloat(p.retail_price).toFixed(2)}
                           </option>
                         ))}
                       </select>

@@ -270,7 +270,7 @@ export default function HomePage() {
                 {products.map((p) => (
                   <div key={p.id} className="glass-card rounded-xl p-4 flex items-center justify-between">
                     <div>
-                      <div className="text-base font-bold text-slate-900">{p.data_amount_gb} GB Data</div>
+                      <div className="text-base font-bold text-slate-900">{p.is_unlimited ? "Unlimited Data" : `${p.data_amount_gb} GB Data`}</div>
                       <div className="text-xs text-slate-500">{p.validity_days} Days Validity &bull; 4G/5G Speed</div>
                     </div>
                     <div className="text-end">

@@ -50,6 +50,9 @@ async def test_checkout_success_delivers_esim(client, db_session):
     assert mine.status_code == 200
     assert len(mine.json()) == 1
     assert mine.json()[0]["is_mock_fallback"] is False
+    # Drives "Unlimited" vs "0.00 GB" in the My eSIMs card - unlimited
+    # plans carry no GB figure at all, so the raw number is meaningless.
+    assert mine.json()[0]["is_unlimited"] is False
 
 
 async def test_buy_for_user_forbidden_for_plain_user(client, db_session):

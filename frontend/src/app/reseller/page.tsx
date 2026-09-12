@@ -241,7 +241,7 @@ export default function ResellerPortalPage() {
                   <select value={selectedProduct} onChange={(e) => setSelectedProduct(e.target.value)} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900" required>
                     {products.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.title_en} — {p.data_amount_gb} GB ({p.validity_days} Days) — {formatPrice(parseFloat(p.retail_price))}
+                        {p.title_en} — {p.is_unlimited ? "Unlimited" : `${p.data_amount_gb} GB`} ({p.validity_days} Days) — {formatPrice(parseFloat(p.retail_price))}
                       </option>
                     ))}
                   </select>

@@ -18,13 +18,18 @@ _DAYS_RE = re.compile(r"(\d+)\s*Days?", re.IGNORECASE)
 
 
 def parse_vivape_product(p: dict) -> Optional[dict]:
-    """Returns None if `p` isn't an eSIM product (per its `reference` field
-    or an "esim" substring in the title, matching the plan's own
-    classification), else a dict of fields ready to build a Product row.
+    """Returns None unless `p`'s `reference` is one of the two eSIM
+    supplier types we can provision, else a dict of fields ready to build
+    a Product row.
     """
+    # Strictly the two eSIM suppliers we resell. An earlier version also
+    # accepted anything with "esim" in its title, which let other
+    # suppliers' products (and VivaPe's own non-eSIM listings that merely
+    # mention the word) into the catalog - we can only actually provision
+    # esimgo_bundle and worldmove_esim.
     ref = str(p.get("reference") or "")
     title = str(p.get("title") or p.get("name") or "")
-    if ref.lower() not in ESIM_REFERENCES and "esim" not in title.lower():
+    if ref.lower() not in ESIM_REFERENCES:
         return None
 
     cost = Decimal(str(p.get("price") or p.get("amount") or 5.0))

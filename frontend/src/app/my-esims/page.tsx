@@ -36,7 +36,7 @@ function EsimCard({ item }: { item: any }) {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-lg font-bold text-slate-900">{item.product_title}</h3>
-          <p className="text-xs text-slate-500">{item.data_amount_gb} GB &bull; {item.validity_days} Days</p>
+          <p className="text-xs text-slate-500">{item.is_unlimited ? "Unlimited" : `${item.data_amount_gb} GB`} &bull; {item.validity_days} Days</p>
         </div>
         {item.is_mock_fallback ? (
           <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">

@@ -14,7 +14,15 @@ async def list_countries(
     popular_only: bool = False,
     db: AsyncSession = Depends(get_db)
 ):
-    query = select(Country).where(Country.is_active == True)
+    # Only destinations that actually have something to sell. VivaPe lists
+    # ~250 countries but most have no eSIM inventory, and surfacing those
+    # gave visitors a country tile that opened to an empty package list.
+    has_products = (
+        select(Product.id)
+        .where(Product.country_id == Country.id, Product.is_active == True)
+        .exists()
+    )
+    query = select(Country).where(Country.is_active == True, has_products)
     if popular_only:
         query = query.where(Country.is_popular == True)
     if search:
