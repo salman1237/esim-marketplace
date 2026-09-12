@@ -11,7 +11,9 @@ from pathlib import Path
 import aiosmtplib
 import qrcode
 from qrcode.image.pil import PilImage
-from email.message import EmailMessage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
 from email.utils import formatdate, make_msgid
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -63,7 +65,30 @@ class EmailService:
             logger.warning("email_skipped_smtp_not_configured", to=to_email, subject=subject)
             return False
 
-        message = EmailMessage()
+        alternative = MIMEMultipart("alternative")
+        alternative.attach(MIMEText(text_body or "This email requires an HTML-capable client.", "plain", "utf-8"))
+        alternative.attach(MIMEText(html_body, "html", "utf-8"))
+
+        # Inline (cid:) images rather than remote <img src="https://...">,
+        # which most clients block by default and which scores worse for
+        # spam. The nesting matters: multipart/related must WRAP the
+        # alternative, not sit inside it - Gmail (the mobile app
+        # especially) leaves cid: images as broken placeholders when
+        # related is nested within alternative, even though the part is
+        # present and correctly marked inline. EmailMessage can't express
+        # that nesting (make_related() refuses to convert an existing
+        # alternative), hence the explicit tree here.
+        if inline_images:
+            message = MIMEMultipart("related")
+            message.attach(alternative)
+            for cid, data in inline_images.items():
+                image = MIMEImage(data, _subtype="png")
+                image.add_header("Content-ID", f"<{cid}>")
+                image.add_header("Content-Disposition", "inline", filename=f"{cid}.png")
+                message.attach(image)
+        else:
+            message = alternative
+
         message["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
         message["To"] = to_email
         message["Subject"] = subject
@@ -71,16 +96,6 @@ class EmailService:
         # nothing downstream is guaranteed to add them for us.
         message["Date"] = formatdate(localtime=True)
         message["Message-ID"] = make_msgid(domain=settings.SMTP_FROM_EMAIL.split("@")[-1] or None)
-        message.set_content(text_body or "This email requires an HTML-capable client.")
-        message.add_alternative(html_body, subtype="html")
-
-        # Inline (cid:) images ride along inside the HTML part as
-        # multipart/related. Remote <img src="https://..."> would be blocked
-        # by default in most mail clients and scores worse for spam.
-        if inline_images:
-            html_part = message.get_payload()[-1]
-            for cid, data in inline_images.items():
-                html_part.add_related(data, maintype="image", subtype="png", cid=f"<{cid}>")
 
         # Port 465 is implicit TLS (SMTPS): the connection is encrypted from
         # the first byte and there is no STARTTLS command to issue. Port 587
