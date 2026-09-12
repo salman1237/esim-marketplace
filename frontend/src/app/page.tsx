@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 import { ProductListSkeleton } from "@/components/Skeleton";
 import { esimInstallLinks } from "@/lib/esimInstall";
+import { waitForOrder } from "@/lib/waitForOrder";
 
 export default function HomePage() {
   const { formatPrice } = useAppSettings();
@@ -156,12 +157,35 @@ export default function HomePage() {
 
     setFlow({ stage: "working", product, method });
     try {
-      const order = await api.checkout(token, {
+      // Returns as soon as the wallet is charged; the eSIM is set up in the
+      // background, so poll for the outcome.
+      const accepted = await api.checkout(token, {
         product_id: product.id,
         payment_method: "WALLET",
         is_buy_for_user: false,
       });
-      setFlow({ stage: "success", product, method, order });
+      let order;
+      try {
+        order = await waitForOrder(token, accepted.id);
+      } catch {
+        setFlow({
+          stage: "error",
+          product,
+          method,
+          message: "This is taking longer than usual. Your order is still being set up and will appear in My eSIMs shortly - you'll also get it by email.",
+        });
+        return;
+      }
+      if (order.status === "COMPLETED") {
+        setFlow({ stage: "success", product, method, order });
+      } else {
+        setFlow({
+          stage: "error",
+          product,
+          method,
+          message: "We couldn't set up this eSIM with the network. The full amount has been refunded to your wallet.",
+        });
+      }
     } catch (err: any) {
       setFlow({
         stage: "error",

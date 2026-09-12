@@ -1,13 +1,15 @@
 import pytest
 from decimal import Decimal
 from sqlalchemy import select
-from conftest import register_and_login, fund_wallet, create_test_product
+from conftest import register_and_login, fund_wallet, create_test_product, wait_for_order
 from app.models.order import Order, OrderStatus
 
 pytestmark = pytest.mark.asyncio
 
 
 async def test_checkout_insufficient_balance_rejected(client, db_session):
+    """Balance is checked before anything is committed or handed to the
+    background, so this still fails synchronously."""
     user = await register_and_login(client, "poor")
     product = await create_test_product(db_session)
     res = await client.post(
@@ -19,9 +21,9 @@ async def test_checkout_insufficient_balance_rejected(client, db_session):
 
 
 async def test_checkout_success_delivers_esim(client, db_session):
-    """Regression test: this is the core purchase flow that previously
-    crashed on every call (Order()/ESIMProfile() were constructed with
-    field names that didn't exist on the actual models)."""
+    """Core purchase flow. Checkout returns as soon as payment is taken -
+    before the ~10-30s supplier call - and the eSIM arrives in the
+    background, which the client observes by polling the order."""
     user = await register_and_login(client, "buyer")
     await fund_wallet(db_session, user["user_id"], Decimal("50.0000"))
     product = await create_test_product(db_session, price=Decimal("9.9900"))
@@ -31,12 +33,15 @@ async def test_checkout_success_delivers_esim(client, db_session):
         json={"product_id": product.id, "payment_method": "WALLET"},
         headers=user["headers"],
     )
-    assert res.status_code == 200, res.text
-    order = res.json()
+    assert res.status_code == 202, res.text
+    accepted = res.json()
+    assert accepted["status"] == "PROCESSING"
+    assert accepted["esim_profile"] is None
+    assert accepted["buyer_id"] == user["user_id"]
+    assert accepted["beneficiary_id"] == user["user_id"]
+
+    order = await wait_for_order(client, accepted["id"], user["headers"])
     assert order["status"] == "COMPLETED"
-    assert order["buyer_id"] == user["user_id"]
-    assert order["beneficiary_id"] == user["user_id"]
-    assert order["esim_profile"] is not None
     assert order["esim_profile"]["iccid"]
     assert order["esim_profile"]["lpa_string"]
 
@@ -94,10 +99,14 @@ async def test_buy_for_user_auto_create(client, db_session, promote_role):
         },
         headers=merchant["headers"],
     )
-    assert res.status_code == 200, res.text
-    order = res.json()
-    assert order["beneficiary_id"] != merchant["user_id"]
-    assert order["buyer_id"] == merchant["user_id"]
+    assert res.status_code == 202, res.text
+    accepted = res.json()
+    assert accepted["beneficiary_id"] != merchant["user_id"]
+    assert accepted["buyer_id"] == merchant["user_id"]
+
+    # The buyer (not just the recipient) can follow the order.
+    settled = await wait_for_order(client, accepted["id"], merchant["headers"])
+    assert settled["status"] == "COMPLETED"
 
     reseller_orders = await client.get("/api/v1/orders/reseller-orders", headers=merchant["headers"])
     assert reseller_orders.status_code == 200
@@ -120,21 +129,22 @@ async def test_checkout_refunds_wallet_when_vivape_fails(client, db_session, moc
         json={"product_id": product.id, "payment_method": "WALLET"},
         headers=user["headers"],
     )
-    assert res.status_code == 502
-    assert "refunded" in res.json()["detail"].lower()
+    assert res.status_code == 202, res.text
+
+    order = await wait_for_order(client, res.json()["id"], user["headers"])
+    assert order["status"] == "FAILED"
+    assert order["esim_profile"] is None
 
     # Wallet balance is back to what it was before the debit.
     me = await client.get("/api/v1/auth/me", headers=user["headers"])
     default_wallet = next(w for w in me.json()["wallets"] if w["type"] == "DEFAULT")
     assert Decimal(str(default_wallet["balance"])) == Decimal("50.0000")
 
-    # No eSIM was created, and the order itself is marked FAILED.
     mine = await client.get("/api/v1/orders/my-esims", headers=user["headers"])
     assert mine.json() == []
 
     order_res = await db_session.execute(select(Order).where(Order.buyer_id == user["user_id"]))
-    order = order_res.scalar_one()
-    assert order.status == OrderStatus.FAILED
+    assert order_res.scalar_one().status == OrderStatus.FAILED
 
 
 async def test_checkout_refunds_wallet_when_product_has_no_supplier_mapping(client, db_session):
@@ -149,7 +159,9 @@ async def test_checkout_refunds_wallet_when_product_has_no_supplier_mapping(clie
         json={"product_id": product.id, "payment_method": "WALLET"},
         headers=user["headers"],
     )
-    assert res.status_code == 502
+    assert res.status_code == 202, res.text
+    order = await wait_for_order(client, res.json()["id"], user["headers"])
+    assert order["status"] == "FAILED"
 
     me = await client.get("/api/v1/auth/me", headers=user["headers"])
     default_wallet = next(w for w in me.json()["wallets"] if w["type"] == "DEFAULT")
@@ -158,8 +170,8 @@ async def test_checkout_refunds_wallet_when_product_has_no_supplier_mapping(clie
 
 async def test_buy_for_user_no_commission_when_vivape_fails(client, db_session, promote_role, mock_vivape):
     """A merchant buying for a customer must not keep commission on an
-    order that fails and gets refunded - distribute_commission now runs
-    only after provision_esim succeeds."""
+    order that fails and gets refunded - commission is only distributed
+    after provisioning succeeds."""
     mock_vivape.create_transaction.return_value = {"error": "Insufficient Balance.", "purchase_trx": []}
 
     merchant = await register_and_login(client, "unluckymerchant")
@@ -177,7 +189,9 @@ async def test_buy_for_user_no_commission_when_vivape_fails(client, db_session, 
         },
         headers=merchant["headers"],
     )
-    assert res.status_code == 502
+    assert res.status_code == 202, res.text
+    order = await wait_for_order(client, res.json()["id"], merchant["headers"])
+    assert order["status"] == "FAILED"
 
     me = await client.get("/api/v1/auth/me", headers=merchant["headers"])
     commission_wallet = next(w for w in me.json()["wallets"] if w["type"] == "COMMISSION")

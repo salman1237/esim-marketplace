@@ -1,12 +1,11 @@
 import uuid
-import asyncio
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.config import settings
-from app.core.database import get_db, AsyncSessionLocal
+from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.wallet import Wallet, WalletType, LedgerRefType
@@ -16,21 +15,14 @@ from app.schemas.order import OrderCreateRequest
 from app.services.shurjopay_svc import ShurjoPayService
 from app.services.currency_svc import CurrencyService
 from app.services.ledger_svc import LedgerService
-from app.services.checkout_svc import resolve_beneficiary, provision_esim, RESELLER_ROLES
-from app.services.email_svc import EmailService
+from app.services.checkout_svc import resolve_beneficiary, RESELLER_ROLES
+from app.services.order_fulfilment import start_fulfilment
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/payments", tags=["Payment Gateways"])
 
-
-async def _send_order_confirmation_background(email: str, order_no: str, product_title: str, iccid: str, lpa_string: str, **details):
-    async with AsyncSessionLocal() as bg_db:
-        try:
-            await EmailService.send_order_confirmation(bg_db, email, order_no, product_title, iccid, lpa_string, **details)
-        except Exception as e:
-            logger.warning("order_confirmation_email_background_task_failed", email=email, error=str(e))
 
 MIN_TOPUP_USD = Decimal("1.00")
 MAX_TOPUP_USD = Decimal("2000.00")
@@ -228,9 +220,9 @@ async def shurjopay_callback(
 
 async def _complete_gateway_order(db: AsyncSession, customer_order_id: str, _fail) -> RedirectResponse:
     """Completes a direct-gateway eSIM purchase (POST
-    /payments/shurjopay/order-initiate) once ShurjoPay confirms payment -
-    the counterpart to the WALLET path's synchronous provisioning in
-    orders.py, using the same provision_esim() so behavior can't drift
+    /payments/shurjopay/order-initiate) once ShurjoPay confirms payment.
+    Hands off to the same background fulfil_order() the wallet checkout
+    uses, so provisioning, refunds and the delivery email can't drift
     between the two payment methods."""
     db_order_id = customer_order_id[len("ORDERPAY-"):]
 
@@ -241,10 +233,11 @@ async def _complete_gateway_order(db: AsyncSession, customer_order_id: str, _fai
         return _fail("unknown_order", "/my-esims", "payment")
 
     if order.status != OrderStatus.PENDING:
-        # Already completed (e.g. a replayed callback) or otherwise not
-        # awaiting payment - re-provisioning would duplicate the eSIM.
+        # Already handed off (a replayed callback) or otherwise not awaiting
+        # payment - starting fulfilment again would duplicate the eSIM.
+        # Redirect to the same polling view so a replay still shows status.
         await db.commit()
-        return RedirectResponse(f"{settings.FRONTEND_BASE_URL}/my-esims?payment=success", status_code=302)
+        return RedirectResponse(f"{settings.FRONTEND_BASE_URL}/my-esims?order={order.id}", status_code=302)
 
     p_res = await db.execute(select(Product).where(Product.id == order.product_id))
     product = p_res.scalar_one_or_none()
@@ -252,33 +245,14 @@ async def _complete_gateway_order(db: AsyncSession, customer_order_id: str, _fai
         await db.commit()
         return _fail("product_no_longer_available", "/my-esims", "payment")
 
-    buyer_res = await db.execute(select(User).where(User.id == order.buyer_id))
-    buyer = buyer_res.scalar_one_or_none()
-
-    profile = await provision_esim(
-        db, order, product, order.beneficiary_id,
-        actor_id=buyer.id if buyer else order.buyer_id,
-        actor_role=buyer.role.value if buyer else "USER",
-    )
+    # Payment is confirmed: hand off to background fulfilment and redirect
+    # at once, rather than holding the customer's browser on a blank
+    # redirect for the ~10-30s supplier call. The My eSIMs page polls this
+    # order and shows the outcome. If provisioning fails, fulfil_order
+    # refunds the full amount to the wallet (no gateway refund API is wired
+    # up, so wallet credit is the compensation). Moving off PENDING is also
+    # what makes a replayed callback a no-op.
+    order.status = OrderStatus.PROCESSING
     await db.commit()
-
-    if not profile:
-        # ShurjoPay already charged the customer for this order -
-        # provision_esim already refunded that amount to their wallet
-        # (there's no gateway refund API wired up, so wallet credit is the
-        # compensation) and marked the order FAILED. Redirect to the
-        # failure state instead of claiming success.
-        return _fail("provisioning_failed_refunded", "/my-esims", "payment")
-
-    beneficiary_res = await db.execute(select(User.email).where(User.id == order.beneficiary_id))
-    beneficiary_email = beneficiary_res.scalar_one_or_none()
-    if beneficiary_email:
-        asyncio.create_task(_send_order_confirmation_background(
-            beneficiary_email, order.order_no, product.title_en, profile.iccid, profile.lpa_string,
-            validity_days=product.validity_days,
-            data_label="Unlimited" if product.is_unlimited else f"{product.data_amount_gb} GB",
-            purchase_reference=profile.supplier_reference,
-            purchased_at=order.created_at,
-        ))
-
-    return RedirectResponse(f"{settings.FRONTEND_BASE_URL}/my-esims?payment=success", status_code=302)
+    start_fulfilment(order.id)
+    return RedirectResponse(f"{settings.FRONTEND_BASE_URL}/my-esims?order={order.id}", status_code=302)

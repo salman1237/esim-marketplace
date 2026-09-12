@@ -41,12 +41,15 @@ async def test_no_tiers_configured_uses_flat_rate(client, db_session, promote_ro
     await fund_wallet(db_session, merchant["user_id"], Decimal("100.0000"))
     product = await create_test_product(db_session, price=Decimal("10.0000"))
 
+    from conftest import wait_for_order
+
     res = await client.post(
         "/api/v1/orders/checkout",
         json={"product_id": product.id, "payment_method": "WALLET", "is_buy_for_user": True, "auto_create_user": True},
         headers=merchant["headers"],
     )
-    assert res.status_code == 200, res.text
+    assert res.status_code == 202, res.text
+    await wait_for_order(client, res.json()["id"], merchant["headers"])
 
     reseller_orders = await client.get("/api/v1/orders/reseller-orders", headers=merchant["headers"])
     # Default MerchantProfile.commission_rate_pct is 5.00 (model default).
@@ -69,13 +72,19 @@ async def test_commission_tier_applies_once_volume_threshold_crossed(client, db_
     await fund_wallet(db_session, merchant["user_id"], Decimal("100.0000"))
     product = await create_test_product(db_session, price=Decimal("10.0000"))
 
+    from conftest import wait_for_order
+
     for _ in range(3):
         res = await client.post(
             "/api/v1/orders/checkout",
             json={"product_id": product.id, "payment_method": "WALLET", "is_buy_for_user": True, "auto_create_user": True},
             headers=merchant["headers"],
         )
-        assert res.status_code == 200, res.text
+        assert res.status_code == 202, res.text
+        # Settle each order before placing the next: the tier rate depends
+        # on cumulative COMPLETED volume, so letting three provision
+        # concurrently would make the volume each one sees nondeterministic.
+        await wait_for_order(client, res.json()["id"], merchant["headers"])
 
     reseller_orders = await client.get("/api/v1/orders/reseller-orders", headers=merchant["headers"])
     commissions = sorted(Decimal(str(o["commission_earned"])) for o in reseller_orders.json())

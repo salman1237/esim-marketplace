@@ -115,6 +115,49 @@ def _extract_esim_details(esim_data: dict) -> dict | None:
     return None
 
 
+def _attach_profile(db: AsyncSession, order: Order, product: Product, beneficiary_id: str, trx_id, details: dict) -> ESIMProfile:
+    """Builds the delivered eSIM from parsed supplier details and marks the
+    order COMPLETED. Shared by first-time provisioning and crash recovery
+    so the two can't produce differently-shaped profiles."""
+    profile = ESIMProfile(
+        order_id=order.id,
+        beneficiary_id=beneficiary_id,
+        iccid=details["iccid"],
+        lpa_string=details["lpa"],
+        qr_code_data=details["lpa"],
+        smdp_address=details["smdp"] or "rsp.truphone.com",
+        matching_id=details["matching_id"] or uuid.uuid4().hex[:12].upper(),
+        # Shown as "Purchase ID" on the delivery email and the printable
+        # eSIM, and what support quotes to VivaPe.
+        supplier_reference=str(trx_id),
+        status=ESIMStatus.RELEASED,
+        is_mock_fallback=False,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=product.validity_days),
+    )
+    db.add(profile)
+    order.status = OrderStatus.COMPLETED
+    return profile
+
+
+async def complete_from_supplier_trx(db: AsyncSession, order: Order, product: Product, actor_id: str, actor_role: str) -> ESIMProfile | None:
+    """Recovery for an order whose supplier purchase already went through
+    (external_trx_id is set) but whose delivery never finished - typically
+    a deploy that killed the background task mid-provisioning.
+
+    Fetches the existing eSIM by that id and never calls create-transaction,
+    so a recovered order cannot be charged twice at the supplier. Refunds
+    only on a definitive answer (VivaPe responded but there's no usable
+    eSIM); a network error propagates so the caller can retry later rather
+    than refunding an eSIM that may well exist."""
+    esim_data = await VivaPeAdapter.get_esim_by_trx(db, order.external_trx_id)
+    details = _extract_esim_details(esim_data)
+    if details:
+        return _attach_profile(db, order, product, order.beneficiary_id, order.external_trx_id, details)
+    logger.warning("recovery_esim_details_unparseable_refunding_order", order_id=order.id, trx_id=order.external_trx_id)
+    await _refund_failed_order(db, order, actor_id, actor_role)
+    return None
+
+
 async def provision_esim(db: AsyncSession, order: Order, product: Product, beneficiary_id: str, actor_id: str, actor_role: str) -> ESIMProfile | None:
     """Creates the ESIMProfile for `order` from a real VivaPe purchase and
     marks the order COMPLETED. If VivaPe is unavailable/fails, or the
@@ -142,29 +185,15 @@ async def provision_esim(db: AsyncSession, order: Order, product: Product, benef
                 # (or a failed charge) means scanning supplier logs by
                 # timestamp.
                 order.external_trx_id = str(trx_id)
+                # Durable BEFORE the next supplier call. VivaPe has already
+                # charged us at this point; if the process dies now (a deploy
+                # mid-purchase), recovery can fetch this already-paid eSIM by
+                # id instead of buying a second one.
+                await db.commit()
                 esim_data = await VivaPeAdapter.get_esim_by_trx(db, trx_id)
                 details = _extract_esim_details(esim_data)
                 if details:
-                    matching_id = details["matching_id"] or uuid.uuid4().hex[:12].upper()
-                    smdp = details["smdp"] or "rsp.truphone.com"
-                    profile = ESIMProfile(
-                        order_id=order.id,
-                        beneficiary_id=beneficiary_id,
-                        iccid=details["iccid"],
-                        lpa_string=details["lpa"],
-                        qr_code_data=details["lpa"],
-                        smdp_address=smdp,
-                        matching_id=matching_id,
-                        # Shown as "Purchase ID" on the delivery email and the
-                        # printable eSIM, and what support quotes to VivaPe.
-                        supplier_reference=str(trx_id),
-                        status=ESIMStatus.RELEASED,
-                        is_mock_fallback=False,
-                        expires_at=datetime.now(timezone.utc) + timedelta(days=product.validity_days)
-                    )
-                    db.add(profile)
-                    order.status = OrderStatus.COMPLETED
-                    return profile
+                    return _attach_profile(db, order, product, beneficiary_id, trx_id, details)
                 logger.warning(
                     "vivape_esim_details_unparseable_refunding_order",
                     order_id=order.id, trx_id=trx_id,

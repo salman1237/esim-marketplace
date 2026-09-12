@@ -184,3 +184,22 @@ async def create_test_product(
     await db_session.commit()
     await db_session.refresh(product)
     return product
+
+
+async def wait_for_order(client, order_id: str, headers: dict, timeout: float = 10.0) -> dict:
+    """Checkout returns 202 and provisions in a background task on the
+    test's own event loop. Poll until the order settles instead of sleeping
+    a fixed amount, which flakes under CI load."""
+    import asyncio
+    import time
+
+    deadline = time.monotonic() + timeout
+    last = None
+    while time.monotonic() < deadline:
+        res = await client.get(f"/api/v1/orders/{order_id}", headers=headers)
+        if res.status_code == 200:
+            last = res.json()
+            if last["status"] in ("COMPLETED", "FAILED"):
+                return last
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"order {order_id} did not settle within {timeout}s (last seen: {last})")

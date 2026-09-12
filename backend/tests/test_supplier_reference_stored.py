@@ -2,7 +2,7 @@ import pytest
 from decimal import Decimal
 from sqlalchemy import select
 
-from conftest import register_and_login, create_test_product, fund_wallet
+from conftest import register_and_login, create_test_product, fund_wallet, wait_for_order
 from app.models.order import Order, ESIMProfile
 
 pytestmark = pytest.mark.asyncio
@@ -22,8 +22,9 @@ async def test_vivape_transaction_id_is_stored_on_order_and_profile(client, db_s
         json={"product_id": product.id, "payment_method": "WALLET"},
         headers=user["headers"],
     )
-    assert res.status_code == 200, res.text
+    assert res.status_code == 202, res.text
     order_id = res.json()["id"]
+    await wait_for_order(client, order_id, user["headers"])
 
     # Neither field is exposed through the API, so assert against the rows.
     order = (await db_session.execute(select(Order).where(Order.id == order_id))).scalar_one()

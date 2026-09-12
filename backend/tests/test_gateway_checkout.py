@@ -2,7 +2,7 @@ import pytest
 from decimal import Decimal
 from unittest.mock import patch
 from sqlalchemy import select
-from conftest import register_and_login, create_test_product
+from conftest import register_and_login, create_test_product, wait_for_order
 from app.models.wallet import Wallet, WalletType
 
 pytestmark = pytest.mark.asyncio
@@ -71,8 +71,12 @@ async def test_gateway_callback_completes_order_and_provisions_esim(client, db_s
     with patch("app.api.v1.payments.ShurjoPayService.verify_payment", return_value=response):
         callback = await client.get("/api/v1/payments/shurjopay/callback", params={"order_id": "sp6a99c460a9300"})
     assert callback.status_code == 302
-    assert "/my-esims" in callback.headers["location"]
-    assert "payment=success" in callback.headers["location"]
+    # Redirects at once to the polling view instead of holding the browser
+    # on a blank redirect for the supplier call.
+    assert f"/my-esims?order={order_id}" in callback.headers["location"]
+
+    settled = await wait_for_order(client, order_id, user["headers"])
+    assert settled["status"] == "COMPLETED"
 
     mine = await client.get("/api/v1/orders/my-esims", headers=user["headers"])
     assert len(mine.json()) == 1
@@ -97,6 +101,7 @@ async def test_gateway_callback_replay_does_not_duplicate_esim(client, db_sessio
         await client.get("/api/v1/payments/shurjopay/callback", params={"order_id": "sp6a99c460a9300"})
         await client.get("/api/v1/payments/shurjopay/callback", params={"order_id": "sp6a99c460a9300"})
 
+    await wait_for_order(client, order_id, user["headers"])
     mine = await client.get("/api/v1/orders/my-esims", headers=user["headers"])
     assert len(mine.json()) == 1
 
@@ -157,9 +162,11 @@ async def test_gateway_callback_refunds_wallet_when_vivape_fails(client, db_sess
     with patch("app.api.v1.payments.ShurjoPayService.verify_payment", return_value=response):
         callback = await client.get("/api/v1/payments/shurjopay/callback", params={"order_id": "sp6a99c460a9300"})
     assert callback.status_code == 302
-    assert "/my-esims" in callback.headers["location"]
-    assert "payment=failed" in callback.headers["location"]
-    assert "provisioning_failed_refunded" in callback.headers["location"]
+    # The outcome isn't known at redirect time any more - the page polls.
+    assert f"/my-esims?order={order_id}" in callback.headers["location"]
+
+    settled = await wait_for_order(client, order_id, user["headers"])
+    assert settled["status"] == "FAILED"
 
     mine = await client.get("/api/v1/orders/my-esims", headers=user["headers"])
     assert mine.json() == []

@@ -106,8 +106,8 @@ async def test_create_transaction_gives_up_after_exhausting_retries(db_session):
     """A genuine, persistent failure (real insufficient balance, not a
     stale token) must still surface as a failure after retries are
     exhausted - the retry logic must not mask real failures forever."""
-    post_responses = [_resp({"error": "Insufficient Balance."}) for _ in range(3)]
-    login_responses = [_resp({"access_token": f"token-{i}"}) for i in range(3)]
+    post_responses = [_resp({"error": "Insufficient Balance."}) for _ in range(2)]
+    login_responses = [_resp({"access_token": f"token-{i}"}) for i in range(2)]
 
     async def fake_post(url, headers=None, data=None, **kwargs):
         if url.endswith("/login"):
@@ -123,7 +123,7 @@ async def test_create_transaction_gives_up_after_exhausting_retries(db_session):
         result = await VivaPeAdapter.create_transaction(db_session, 16291, Decimal("21.627"))
 
     assert result["error"] == "Insufficient Balance."
-    assert mock_client.post.call_count == 6  # 3x (login + create-tx)
+    assert mock_client.post.call_count == 4  # 2x (login + create-tx): one delayed retry
 
 
 async def test_get_token_reuses_cache_within_window(db_session):

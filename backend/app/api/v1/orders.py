@@ -1,12 +1,11 @@
 import uuid
-import asyncio
 from decimal import Decimal
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from app.core.database import get_db, AsyncSessionLocal
+from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.catalog import Product
@@ -14,8 +13,8 @@ from app.models.wallet import Wallet, WalletType, LedgerRefType
 from app.models.order import Order, OrderStatus, PaymentMethod, ESIMProfile
 from app.schemas.order import OrderCreateRequest, OrderResponse, ESIMProfileResponse
 from app.services.ledger_svc import LedgerService
-from app.services.email_svc import EmailService
-from app.services.checkout_svc import resolve_beneficiary, provision_esim, distribute_commission, RESELLER_ROLES
+from app.services.checkout_svc import resolve_beneficiary, RESELLER_ROLES
+from app.services.order_fulfilment import start_fulfilment
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -23,15 +22,7 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/orders", tags=["Orders & eSIMs"])
 
 
-async def _send_order_confirmation_background(email: str, order_no: str, product_title: str, iccid: str, lpa_string: str, **details):
-    async with AsyncSessionLocal() as bg_db:
-        try:
-            await EmailService.send_order_confirmation(bg_db, email, order_no, product_title, iccid, lpa_string, **details)
-        except Exception as e:
-            logger.warning("order_confirmation_email_background_task_failed", email=email, error=str(e))
-
-
-@router.post("/checkout", response_model=OrderResponse)
+@router.post("/checkout", response_model=OrderResponse, status_code=202)
 async def checkout_esim(
     req: OrderCreateRequest,
     current_user: User = Depends(get_current_user),
@@ -99,36 +90,15 @@ async def checkout_esim(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # 4. Provision eSIM Profile from VivaPe (shared with the ShurjoPay
-    # gateway path, which calls this same function from its callback).
-    # Must happen before commission distribution: an order that fails and
-    # gets refunded here must not also leave the merchant with commission
-    # earned on a sale that didn't actually happen.
-    profile = await provision_esim(db, order, product, beneficiary_id, current_user.id, current_user.role.value)
-
-    if not profile:
-        await db.commit()
-        # provision_esim already marked the order FAILED and refunded the
-        # wallet debit - surface this as an error response (not a 200 with
-        # status=FAILED) so the frontend's existing catch/alert handles it
-        # instead of rendering a "success" screen with no eSIM data.
-        raise HTTPException(status_code=502, detail="eSIM provisioning failed. Your payment has been refunded to your wallet.")
-
-    # Commission Distribution for Merchants buying on behalf of a customer -
-    # only reached once provisioning has actually succeeded.
-    await distribute_commission(db, order, total_cost, current_user)
+    # 4. Commit the paid order, then provision in the background. The
+    # supplier call takes ~10-30s; holding the HTTP request open for it
+    # froze the storefront, so this returns 202 at once and the client
+    # polls GET /orders/{id}. fulfil_order handles the rest - eSIM,
+    # commission (only on success), refund on failure, and the delivery
+    # email - and recover_stuck_orders finishes the job if a deploy kills
+    # the task partway.
     await db.commit()
-
-    beneficiary_res = await db.execute(select(User.email).where(User.id == beneficiary_id))
-    beneficiary_email = beneficiary_res.scalar_one_or_none()
-    if beneficiary_email:
-        asyncio.create_task(_send_order_confirmation_background(
-            beneficiary_email, order.order_no, product.title_en, profile.iccid, profile.lpa_string,
-            validity_days=product.validity_days,
-            data_label="Unlimited" if product.is_unlimited else f"{product.data_amount_gb} GB",
-            purchase_reference=profile.supplier_reference,
-            purchased_at=order.created_at,
-        ))
+    start_fulfilment(order.id)
 
     # Re-fetch with the eSIM profile eagerly loaded: Pydantic's response
     # serialization is synchronous and can't trigger an async lazy load.
@@ -199,3 +169,19 @@ async def list_reseller_orders(current_user: User = Depends(get_current_user), d
             "created_at": order.created_at
         })
     return results
+
+
+# Declared last on purpose: a path parameter here would otherwise capture
+# the fixed /my-esims and /reseller-orders routes above.
+@router.get("/{order_id}", response_model=OrderResponse)
+async def get_order(order_id: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Polled while an order provisions in the background. Visible only to
+    its buyer or the eSIM's recipient - anyone else gets the same 404 as a
+    nonexistent id, so order ids can't be probed for existence."""
+    res = await db.execute(
+        select(Order).options(selectinload(Order.esim_profile)).where(Order.id == order_id)
+    )
+    order = res.scalar_one_or_none()
+    if not order or current_user.id not in (order.buyer_id, order.beneficiary_id):
+        raise HTTPException(status_code=404, detail="Order not found")
+    return order

@@ -21,6 +21,7 @@ from app.services.ledger_svc import LedgerService
 from app.services.currency_svc import CurrencyService
 from app.services.catalog_sync_svc import sync_vivape_catalog
 from app.services.webhook_svc import retry_failed_webhooks
+from app.services.order_fulfilment import recover_stuck_orders
 from app.core.seed_translations import SHIPPED_LOCALE_CODES, PLACEHOLDER_LANGUAGES, load_shipped_translations, flatten, EN_TRANSLATIONS
 from app.core.logging import configure_logging, get_logger
 from app.api.v1 import api_v1_router
@@ -156,6 +157,23 @@ async def lifespan(app: FastAPI):
         _scheduled_webhook_retry, "interval", minutes=5,
         id="partner_webhook_retry_sweep", max_instances=1,
     )
+
+    async def _scheduled_order_recovery():
+        try:
+            result = await recover_stuck_orders()
+            if any(result.values()):
+                logger.info("scheduled_order_recovery_completed", **result)
+        except Exception as e:
+            logger.warning("scheduled_order_recovery_failed", error=str(e))
+
+    scheduler.add_job(
+        _scheduled_order_recovery, "interval", minutes=2,
+        id="stuck_order_recovery", max_instances=1,
+    )
+    # Also once at startup: a deploy is exactly the event that kills
+    # in-flight background provisioning tasks.
+    asyncio.create_task(_scheduled_order_recovery())
+
     if not scheduler.running:
         scheduler.start()
 

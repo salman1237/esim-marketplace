@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { Briefcase, DollarSign, UserCheck, QrCode, CheckCircle2, Send, Share2, Sparkles, AlertCircle, History, List } from "lucide-react";
 import { api } from "@/lib/api";
+import { waitForOrder } from "@/lib/waitForOrder";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 
 export default function ResellerPortalPage() {
@@ -111,10 +112,21 @@ export default function ResellerPortalPage() {
           auto_create_user: true,
         });
       }
-      setOrderResult(res);
-
-      // refresh user data for balances
+      // Checkout returns once the wallet is charged; wait for the eSIM.
+      let settled;
+      try {
+        settled = await waitForOrder(token, res.id);
+      } catch {
+        alert(`Order #${res.order_no} is still being set up. It will appear in the order ledger shortly.`);
+        return;
+      }
+      // refresh user data for balances (a failed order was refunded)
       api.getMe(token).then(setUserData).catch(console.error);
+      if (settled.status !== "COMPLETED") {
+        alert(`eSIM provisioning failed for order #${settled.order_no}. The full amount has been refunded to your wallet.`);
+        return;
+      }
+      setOrderResult(settled);
     } catch (err: any) {
       alert(err.message || "B2B Provisioning failed. Please verify merchant wallet balance.");
     } finally {

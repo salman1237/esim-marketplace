@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 import { EsimListSkeleton } from "@/components/Skeleton";
 import { esimInstallLinks } from "@/lib/esimInstall";
+import { waitForOrder } from "@/lib/waitForOrder";
 
 function EsimCard({ item }: { item: any }) {
   const { t } = useAppSettings();
@@ -179,7 +180,9 @@ function EsimCard({ item }: { item: any }) {
 export default function MyESIMsPage() {
   const [esims, setEsims] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [paymentBanner, setPaymentBanner] = useState<{ kind: "success" | "failed"; reason?: string } | null>(null);
+  const [paymentBanner, setPaymentBanner] = useState<
+    { kind: "processing" | "success" | "failed" | "slow"; reason?: string } | null
+  >(null);
 
   useEffect(() => {
     const token = localStorage.getItem("esim_token");
@@ -188,19 +191,35 @@ export default function MyESIMsPage() {
       return;
     }
 
+    const loadEsims = () =>
+      api.getMyESIMs(token)
+        .then(setEsims)
+        .catch(console.error)
+        .finally(() => setLoading(false));
+
     // ShurjoPay redirects the browser back here after a direct-gateway
-    // eSIM purchase — see GET /api/v1/payments/shurjopay/callback.
+    // eSIM purchase — see GET /api/v1/payments/shurjopay/callback. A paid
+    // order arrives as ?order=<id> while its eSIM is still being set up in
+    // the background, so poll it and refresh the list once it settles.
     const params = new URLSearchParams(window.location.search);
+    const orderId = params.get("order");
     const payment = params.get("payment");
-    if (payment === "success" || payment === "failed") {
-      setPaymentBanner({ kind: payment, reason: params.get("reason") || undefined });
+    if (orderId || payment) {
       window.history.replaceState({}, "", window.location.pathname);
     }
+    if (orderId) {
+      setPaymentBanner({ kind: "processing" });
+      waitForOrder(token, orderId)
+        .then((order) => {
+          setPaymentBanner({ kind: order.status === "COMPLETED" ? "success" : "failed", reason: order.status === "COMPLETED" ? undefined : "provisioning_failed_refunded" });
+          loadEsims();
+        })
+        .catch(() => setPaymentBanner({ kind: "slow" }));
+    } else if (payment === "success" || payment === "failed") {
+      setPaymentBanner({ kind: payment, reason: params.get("reason") || undefined });
+    }
 
-    api.getMyESIMs(token)
-      .then(setEsims)
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    loadEsims();
   }, []);
 
   return (
@@ -213,12 +232,21 @@ export default function MyESIMsPage() {
       </div>
 
       {paymentBanner && (
-        <div className={`mb-6 p-3 rounded-xl border text-xs font-medium ${
+        <div className={`mb-6 p-3 rounded-xl border text-xs font-medium flex items-center gap-2 ${
           paymentBanner.kind === "success"
             ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+            : paymentBanner.kind === "processing" || paymentBanner.kind === "slow"
+            ? "bg-brand-50 border-brand-200 text-brand-700"
             : "bg-rose-50 border-rose-200 text-rose-700"
         }`}>
-          {paymentBanner.kind === "success"
+          {paymentBanner.kind === "processing" && (
+            <span className="w-4 h-4 rounded-full border-2 border-brand-600 border-t-transparent animate-spin shrink-0" />
+          )}
+          {paymentBanner.kind === "processing"
+            ? "Payment received — setting up your eSIM. This usually takes 10–20 seconds."
+            : paymentBanner.kind === "slow"
+            ? "Payment received — your eSIM is taking longer than usual to set up. Refresh this page in a minute; you'll also get it by email."
+            : paymentBanner.kind === "success"
             ? "Payment received — your eSIM is ready below."
             : paymentBanner.reason === "provisioning_failed_refunded"
             ? "Your payment went through, but eSIM provisioning failed. The full amount has been refunded to your wallet balance."

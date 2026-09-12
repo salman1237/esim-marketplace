@@ -216,7 +216,7 @@ async def test_admin_orders_includes_esim_support_data(client, db_session, promo
     """Regression test: /admin/orders previously returned no ICCID/QR/LPA
     at all, so support staff had no way to look up a customer's actual
     eSIM from this screen without a direct DB query."""
-    from conftest import fund_wallet, create_test_product
+    from conftest import fund_wallet, create_test_product, wait_for_order
 
     buyer = await register_and_login(client, "esimbuyer")
     await fund_wallet(db_session, buyer["user_id"], Decimal("50.0000"))
@@ -226,8 +226,9 @@ async def test_admin_orders_includes_esim_support_data(client, db_session, promo
         json={"product_id": product.id, "payment_method": "WALLET"},
         headers=buyer["headers"],
     )
-    assert checkout.status_code == 200, checkout.text
-    iccid = checkout.json()["esim_profile"]["iccid"]
+    assert checkout.status_code == 202, checkout.text
+    settled = await wait_for_order(client, checkout.json()["id"], buyer["headers"])
+    iccid = settled["esim_profile"]["iccid"]
 
     admin = await register_and_login(client, "supportadmin")
     await promote_role(admin["user_id"], "ADMIN")

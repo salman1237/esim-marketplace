@@ -191,14 +191,12 @@ class VivaPeAdapter:
         # it's always safe to retry with a fresh login before treating it
         # as a genuine failure.
         #
-        # A retry fired immediately (sub-second) after a failure was ALSO
-        # observed to fail live even with a real balance and a brand new
-        # token, while a manual retry a bit later succeeded for the exact
-        # same payload - VivaPe appears to need a short settle window
-        # (likely a transient hold/lock from the failed attempt) before a
-        # retry can succeed. So retry a few times with a short delay
-        # rather than immediately.
-        for delay in (2.0, 4.0):
+        # One delayed retry only. Earlier failures blamed on transient token
+        # and settle-window issues turned out to be the app authenticating
+        # to an empty VivaPe account, so extra attempts mostly just delayed
+        # a genuine failure - and with provisioning now in the background,
+        # a long retry chain only holds an order in PROCESSING for longer.
+        for delay in (2.0,):
             if _trx_id(result):
                 break
             await asyncio.sleep(delay)
