@@ -42,6 +42,13 @@ class EmailService:
         message.set_content("This email requires an HTML-capable client.")
         message.add_alternative(html_body, subtype="html")
 
+        # Port 465 is implicit TLS (SMTPS): the connection is encrypted from
+        # the first byte and there is no STARTTLS command to issue. Port 587
+        # is the opposite - it opens in the clear and upgrades via STARTTLS.
+        # Passing start_tls=True on 465 makes the handshake hang until the
+        # timeout, so the two are selected here rather than conflated under
+        # one "use TLS" flag.
+        implicit_tls = settings.SMTP_PORT == 465
         try:
             await aiosmtplib.send(
                 message,
@@ -49,7 +56,9 @@ class EmailService:
                 port=settings.SMTP_PORT,
                 username=settings.SMTP_USERNAME,
                 password=settings.SMTP_PASSWORD,
-                start_tls=settings.SMTP_USE_TLS,
+                use_tls=implicit_tls,
+                start_tls=False if implicit_tls else settings.SMTP_USE_TLS,
+                timeout=20,
             )
             logger.info("email_sent", to=to_email, subject=subject)
             return True

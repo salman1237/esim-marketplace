@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 import secrets
 import hashlib
@@ -9,7 +10,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import get_db, AsyncSessionLocal
 from app.core.deps import require_admin, require_super_admin
 from app.core.security import get_password_hash
 from app.models.user import User, UserRole, UserStatus
@@ -34,10 +35,15 @@ from app.services.audit_svc import AuditService
 from app.services.catalog_sync_svc import sync_vivape_catalog
 from app.services.currency_svc import CurrencyService
 from app.services.checkout_svc import provision_esim
+from app.services.email_svc import EmailService
 
 
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 class ProductUpdateRequest(BaseModel):
     retail_price: Optional[float] = None
@@ -507,6 +513,17 @@ async def recharge_customer_wallet(
     return {"status": "success", "new_balance": float(entry.balance_after)}
 
 
+async def _send_order_confirmation_background(email: str, order_no: str, product_title: str, iccid: str, lpa_string: str):
+    # Own session, not the request's - that one closes as soon as the
+    # response is returned, before this background task gets to run.
+    # Mirrors the same helper in orders.py / payments.py.
+    async with AsyncSessionLocal() as bg_db:
+        try:
+            await EmailService.send_order_confirmation(bg_db, email, order_no, product_title, iccid, lpa_string)
+        except Exception as e:
+            logger.warning("order_confirmation_email_background_task_failed", email=email, error=str(e))
+
+
 class AdminPurchaseEsimRequest(BaseModel):
     product_id: str
 
@@ -578,6 +595,14 @@ async def admin_purchase_esim_for_customer(
         user_agent=request.headers.get("user-agent")
     )
     await db.commit()
+
+    # The customer gets the same eSIM delivery email as a self-service
+    # purchase - an admin buying on their behalf shouldn't leave them
+    # without the ICCID and activation code.
+    if target.email:
+        asyncio.create_task(_send_order_confirmation_background(
+            target.email, order.order_no, product.title_en, profile.iccid, profile.lpa_string
+        ))
 
     return {"order_id": order.id, "order_no": order_no, "status": order.status.value, "iccid": profile.iccid}
 
