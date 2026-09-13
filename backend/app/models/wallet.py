@@ -31,7 +31,7 @@ class Wallet(Base):
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     wallet_type = Column(Enum(WalletType), default=WalletType.DEFAULT, nullable=False)
     balance = Column(Numeric(18, 4), default=0.0000, nullable=False)
-    currency = Column(String(3), default="USD", nullable=False)
+    currency = Column(String(3), default="EUR", nullable=False)
     is_frozen = Column(Boolean, default=False)
     
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

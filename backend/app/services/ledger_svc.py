@@ -12,7 +12,7 @@ class LedgerService:
             select(Wallet).where(Wallet.user_id == user_id, Wallet.wallet_type == WalletType.DEFAULT)
         )
         if not res.scalar_one_or_none():
-            w = Wallet(user_id=user_id, wallet_type=WalletType.DEFAULT, balance=Decimal("0.0000"), currency="USD")
+            w = Wallet(user_id=user_id, wallet_type=WalletType.DEFAULT, balance=Decimal("0.0000"), currency="EUR")
             db.add(w)
 
         # 2. Reward Wallet for User
@@ -21,7 +21,7 @@ class LedgerService:
                 select(Wallet).where(Wallet.user_id == user_id, Wallet.wallet_type == WalletType.REWARD)
             )
             if not res_r.scalar_one_or_none():
-                w_r = Wallet(user_id=user_id, wallet_type=WalletType.REWARD, balance=Decimal("0.0000"), currency="USD")
+                w_r = Wallet(user_id=user_id, wallet_type=WalletType.REWARD, balance=Decimal("0.0000"), currency="EUR")
                 db.add(w_r)
 
         # 3. Commission Wallet for Merchant
@@ -30,7 +30,7 @@ class LedgerService:
                 select(Wallet).where(Wallet.user_id == user_id, Wallet.wallet_type == WalletType.COMMISSION)
             )
             if not res_c.scalar_one_or_none():
-                w_c = Wallet(user_id=user_id, wallet_type=WalletType.COMMISSION, balance=Decimal("0.0000"), currency="USD")
+                w_c = Wallet(user_id=user_id, wallet_type=WalletType.COMMISSION, balance=Decimal("0.0000"), currency="EUR")
                 db.add(w_c)
 
         await db.commit()

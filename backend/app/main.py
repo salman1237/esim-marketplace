@@ -63,7 +63,7 @@ async def lifespan(app: FastAPI):
             ("support_phone", "+880 1700-000000"),
             ("support_email", "support@esim.local"),
             ("support_whatsapp", "+880 1700-000000"),
-            ("default_currency", "USD"),
+            ("default_currency", "EUR"),
             ("maintenance_mode", False)
         ]
         for k, v in default_settings:
@@ -99,16 +99,17 @@ async def lifespan(app: FastAPI):
                 for namespace, key, value in flatten(EN_TRANSLATIONS):
                     db.add(Translation(language_code=code, namespace=namespace, key=key, value=value, is_machine_translated=True))
 
-        # Default Currency Rates
+        # Default Currency Rates - per 1 EUR, the base currency. Only used
+        # until the first live sync replaces them.
         rates = [
-            ("USD", Decimal("1.0"), False),
-            ("BDT", Decimal("122.63"), False),
-            ("EUR", Decimal("0.863"), False),
-            ("GBP", Decimal("0.741"), False),
-            ("AED", Decimal("3.672"), False),
-            ("SAR", Decimal("3.750"), False),
-            ("THB", Decimal("33.20"), False),
-            ("SGD", Decimal("1.271"), False)
+            ("EUR", Decimal("1.0"), False),
+            ("USD", Decimal("1.1587"), False),
+            ("BDT", Decimal("142.10"), False),
+            ("GBP", Decimal("0.8586"), False),
+            ("AED", Decimal("4.2549"), False),
+            ("SAR", Decimal("4.3453"), False),
+            ("THB", Decimal("38.47"), False),
+            ("SGD", Decimal("1.4728"), False)
         ]
         for c_code, r_val, ov in rates:
             res = await db.execute(select(CurrencyRate).where(CurrencyRate.currency_code == c_code))

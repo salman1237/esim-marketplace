@@ -99,7 +99,7 @@ async def sync_vivape_catalog(db: AsyncSession) -> dict:
                     validity_days=parsed["validity_days"],
                     cost_price=parsed["cost_price"],
                     retail_price=parsed["retail_price"],
-                    currency="USD",
+                    currency="EUR",  # VivaPe prices in euro
                     is_unlimited=parsed["is_unlimited"],
                     supplier_reference=parsed["supplier_reference"],
                     supplier_receiver_amount=parsed["supplier_receiver_amount"]

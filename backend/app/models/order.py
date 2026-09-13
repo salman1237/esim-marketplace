@@ -27,7 +27,7 @@ class Order(Base):
     beneficiary_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
     product_id = Column(String(36), ForeignKey("products.id"), nullable=False)
     total_amount = Column(Numeric(18, 4), nullable=False)
-    currency = Column(String(10), default="USD")
+    currency = Column(String(10), default="EUR")
     payment_method = Column(Enum(PaymentMethod), nullable=False)
     status = Column(Enum(OrderStatus), default=OrderStatus.PENDING, nullable=False)
     is_reseller_order = Column(Boolean, default=False)

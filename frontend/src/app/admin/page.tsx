@@ -55,7 +55,7 @@ export default function AdminConsolePage() {
   const [purchasingEsim, setPurchasingEsim] = useState(false);
   const [purchaseResult, setPurchaseResult] = useState<{ ok: boolean; message: string } | null>(null);
 
-  const [branding, setBranding] = useState({ platform_name: "", support_email: "", support_phone: "", maintenance_mode: false, default_currency: "USD", seo_title: "", seo_description: "" });
+  const [branding, setBranding] = useState({ platform_name: "", support_email: "", support_phone: "", maintenance_mode: false, default_currency: "EUR", seo_title: "", seo_description: "" });
   const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
   const [brandingAssets, setBrandingAssets] = useState<{ logo_light?: string; logo_dark?: string; favicon?: string; og_image?: string; bangla_qr_image?: string }>({});
   const [uploadingKind, setUploadingKind] = useState<string | null>(null);
@@ -542,8 +542,8 @@ export default function AdminConsolePage() {
           <div className="text-2xl font-black text-slate-900 mt-1">{stats.total_orders}</div>
         </div>
         <div className="glass-panel rounded-2xl p-5 border border-gray-200">
-          <div className="text-xs font-semibold text-slate-500">Total Revenue (USD)</div>
-          <div className="text-2xl font-black text-emerald-600 mt-1">{formatPrice(parseFloat(stats.total_revenue_usd || 0))}</div>
+          <div className="text-xs font-semibold text-slate-500">Total Revenue (EUR)</div>
+          <div className="text-2xl font-black text-emerald-600 mt-1">{formatPrice(parseFloat(stats.total_revenue || 0))}</div>
         </div>
         <div className="glass-panel rounded-2xl p-5 border border-gray-200">
           <div className="text-xs font-semibold text-slate-500">Active eSIMs Issued</div>
@@ -596,7 +596,7 @@ export default function AdminConsolePage() {
               ) : (
                 commissionTiers.map((t) => (
                   <span key={t.id} className="flex items-center gap-2 text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-white border border-gray-300 text-slate-700">
-                    ${t.min_volume_usd}+ &rarr; <span className="text-admin-600">{t.rate_pct}%</span>
+                    €{t.min_volume_usd}+ &rarr; <span className="text-admin-600">{t.rate_pct}%</span>
                     {isSuperAdmin && (
                       <button onClick={() => handleDeleteCommissionTier(t.id)} aria-label="Remove tier" className="text-slate-500 hover:text-rose-600">
                         <X className="w-3 h-3" />
@@ -608,7 +608,7 @@ export default function AdminConsolePage() {
             </div>
             <form onSubmit={handleCreateCommissionTier} className="flex flex-wrap items-end gap-3">
               <div>
-                <label className="text-xs text-slate-700 font-semibold block mb-1">Min. Volume (USD)</label>
+                <label className="text-xs text-slate-700 font-semibold block mb-1">Min. Volume (EUR)</label>
                 <input type="number" min={0} step="0.01" required value={newTier.min_volume_usd} onChange={(e) => setNewTier({ ...newTier, min_volume_usd: e.target.value })} className="w-32 bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900" />
               </div>
               <div>
@@ -805,7 +805,7 @@ export default function AdminConsolePage() {
                   onChange={(e) => setBranding({ ...branding, default_currency: e.target.value })}
                   className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
                 >
-                  {["USD", "BDT", "EUR", "GBP", "AED", "SAR", "THB", "SGD"].map((c) => (
+                  {["EUR", "USD", "BDT", "GBP", "AED", "SAR", "THB", "SGD"].map((c) => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
@@ -924,7 +924,7 @@ export default function AdminConsolePage() {
               </div>
 
               <div>
-                <label className="text-xs text-slate-700 font-semibold block mb-1">Manual Rate per 1 USD</label>
+                <label className="text-xs text-slate-700 font-semibold block mb-1">Manual Rate per 1 EUR</label>
                 <input
                   type="number"
                   step="0.01"
@@ -1158,7 +1158,7 @@ export default function AdminConsolePage() {
                         <td className="py-2.5 font-semibold text-slate-900">{c.username}</td>
                         <td className="py-2.5 text-slate-700">{c.email}</td>
                         <td className="py-2.5 text-slate-500">{c.role}</td>
-                        <td className="py-2.5 font-mono text-emerald-600">${c.wallet_balance.toFixed(2)}</td>
+                        <td className="py-2.5 font-mono text-emerald-600">€{c.wallet_balance.toFixed(2)}</td>
                         <td className="py-2.5">
                           <button onClick={() => handleSelectCustomer(c)} className="bg-gray-100 hover:bg-gray-200 text-slate-700 px-2.5 py-1 rounded text-[11px] font-bold">
                             {selectedCustomer?.id === c.id ? "Selected" : "Select"}
@@ -1177,11 +1177,11 @@ export default function AdminConsolePage() {
               <div className="glass-panel rounded-2xl p-6 border border-gray-200">
                 <h3 className="text-base font-bold text-slate-900 mb-1">Recharge Wallet</h3>
                 <p className="text-xs text-slate-500 mb-4">
-                  {selectedCustomer.username} — current balance <span className="font-mono text-emerald-600">${selectedCustomer.wallet_balance.toFixed(2)}</span>
+                  {selectedCustomer.username} — current balance <span className="font-mono text-emerald-600">€{selectedCustomer.wallet_balance.toFixed(2)}</span>
                 </p>
                 <form onSubmit={handleRechargeWallet} className="space-y-3">
                   <div>
-                    <label className="text-xs text-slate-700 font-semibold block mb-1">Amount (USD)</label>
+                    <label className="text-xs text-slate-700 font-semibold block mb-1">Amount (EUR)</label>
                     <input
                       type="number" min="0.01" step="0.01" required
                       value={rechargeAmount}
@@ -1235,7 +1235,7 @@ export default function AdminConsolePage() {
                         <option value="">-- Select Product --</option>
                         {purchaseProducts.map((p) => (
                           <option key={p.id} value={p.id}>
-                            {p.title_en} — {p.is_unlimited ? "Unlimited" : `${p.data_amount_gb} GB`} ({p.validity_days} Days) — ${parseFloat(p.retail_price).toFixed(2)}
+                            {p.title_en} — {p.is_unlimited ? "Unlimited" : `${p.data_amount_gb} GB`} ({p.validity_days} Days) — €{parseFloat(p.retail_price).toFixed(2)}
                           </option>
                         ))}
                       </select>

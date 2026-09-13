@@ -27,7 +27,7 @@ class User(Base):
     phone = Column(String(50), nullable=True)
     role = Column(Enum(UserRole), default=UserRole.USER, nullable=False)
     status = Column(Enum(UserStatus), default=UserStatus.ACTIVE, nullable=False)
-    preferred_currency = Column(String(10), default="USD")
+    preferred_currency = Column(String(10), default="EUR")
     preferred_language = Column(String(10), default="en")
     is_kyc_verified = Column(Boolean, default=False)
     # Sign in with Google. google_sub is Google's stable account id (the ID

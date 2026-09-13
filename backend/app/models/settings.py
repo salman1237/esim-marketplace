@@ -17,7 +17,7 @@ class CurrencyRate(Base):
     __tablename__ = "currency_rates"
 
     currency_code = Column(String(3), primary_key=True)
-    rate_to_base = Column(Numeric(18, 6), nullable=False)  # rate against USD (1 USD = X Currency)
+    rate_to_base = Column(Numeric(18, 6), nullable=False)  # against the base currency (1 EUR = X Currency)
     is_manual_override = Column(Boolean, default=False)
     manual_rate = Column(Numeric(18, 6), nullable=True)
     source = Column(String(50), default="AUTO_API")  # AUTO_API or MANUAL_OVERRIDE

@@ -188,7 +188,7 @@ curl -s https://triptel.co/api/v1/partner/me \\
     "data_amount_gb": 1.0,
     "validity_days": 7,
     "retail_price": 4.50,
-    "currency": "USD",
+    "currency": "EUR",
     "is_unlimited": false,
     "is_active": true,
     "coverage_networks": null
@@ -203,7 +203,7 @@ curl -s https://triptel.co/api/v1/partner/me \\
   "business_name": "Acme Travel Co",
   "commission_rate_pct": 5.00,
   "wallet_balance": 142.5000,
-  "wallet_currency": "USD",
+  "wallet_currency": "EUR",
   "commission_balance": 3.2500,
   "webhook_configured": true
 }`}</CodeBlock>
@@ -251,7 +251,7 @@ curl -s https://triptel.co/api/v1/partner/me \\
   "customer_reference": "your-order-id-123",
   "status": "COMPLETED",
   "amount": "4.5000",
-  "currency": "USD",
+  "currency": "EUR",
   "product": {
     "id": "a1b2c3d4-...",
     "title": "Singapore 1GB 7 Days",

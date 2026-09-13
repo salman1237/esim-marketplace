@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     VIVAPE_BASE_URL: str = os.getenv("VIVAPE_BASE_URL", "https://app.vivape.net/api")
     VIVAPE_EMAIL: str = os.getenv("VIVAPE_EMAIL", "dev-only-not-a-real-account@example.com")
     VIVAPE_PASSWORD: str = os.getenv("VIVAPE_PASSWORD", "dev-only-not-a-real-password")
-    VIVAPE_CURRENCY: str = "USD"
+    VIVAPE_CURRENCY: str = "EUR"
 
     # Payment Gateway: ShurjoPay
     SHURJOPAY_BASE_URL: str = os.getenv("SHURJOPAY_BASE_URL", "https://sandbox.shurjopayment.com")
@@ -93,7 +93,12 @@ class Settings(BaseSettings):
     # Currency Engine
     EXCHANGE_RATE_API_URL: str = "https://open.er-api.com/v6/latest"
     EXCHANGE_RATE_FALLBACK_URL: str = "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies"
-    DEFAULT_CURRENCY: str = "USD"
+    # Every stored money amount - product prices, wallet balances, ledger,
+    # orders, commission - is in this currency. It is VivaPe's pricing
+    # currency, so catalog costs are stored exactly as VivaPe reports them.
+    # Exchange rates are stored as "1 BASE_CURRENCY = X".
+    BASE_CURRENCY: str = "EUR"
+    DEFAULT_CURRENCY: str = "EUR"
 
     # CORS: comma-separated list of allowed origins. Never combine a "*"
     # wildcard with allow_credentials=True (browsers reject it, and any

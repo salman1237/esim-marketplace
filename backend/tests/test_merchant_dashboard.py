@@ -81,17 +81,18 @@ async def test_overview_reports_balances_sales_and_success_rate(client, db_sessi
 
     all_time = body["stats"]["all_time"]
     assert (all_time["orders"], all_time["completed"], all_time["failed"], all_time["in_progress"]) == (3, 2, 1, 0)
-    assert all_time["volume_usd"] == "20.0000"
+    assert all_time["volume"] == "20.0000"
     # Both completed orders were placed below any volume tier: 5% of $10 each.
-    assert all_time["commission_usd"] == "1.0000"
+    assert all_time["commission"] == "1.0000"
     assert all_time["success_rate_pct"] == 66.7
     assert body["stats"]["last_30_days"]["orders"] == 3
 
     # 3 x $10 charged, the failed one refunded.
     assert body["wallets"]["wallet_balance"] == "80.0000"
     assert body["wallets"]["commission_balance"] == "1.0000"
+    assert body["wallets"]["currency"] == "EUR"
     assert body["business"]["name"] == "Dash Travel ov"
-    assert body["commission"]["completed_volume_usd"] == "20.0000"
+    assert body["commission"]["completed_volume"] == "20.0000"
     assert len(body["recent_orders"]) == 3
     assert body["api"]["key_active"] is False
 

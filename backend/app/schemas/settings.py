@@ -12,7 +12,7 @@ class PublicSettingsResponse(BaseModel):
     support_phone: Optional[str] = None
     support_email: Optional[str] = None
     support_whatsapp: Optional[str] = None
-    default_currency: str = "USD"
+    default_currency: str = "EUR"
     maintenance_mode: bool = False
     social_links: Dict[str, str] = {}
     seo_title: Optional[str] = None

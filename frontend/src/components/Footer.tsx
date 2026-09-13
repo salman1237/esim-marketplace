@@ -95,7 +95,7 @@ export default function Footer() {
         <div className="space-y-3">
           <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Global Reach</h4>
           <p className="text-xs leading-relaxed text-slate-500">
-            Available in English, বাংলা, العربية, and Español. Multi-currency settlement in USD, BDT, EUR, GBP, and SAR.
+            Available in English, বাংলা, العربية, and Español. Prices in EUR, with live conversion to USD, BDT, GBP, AED and SAR.
           </p>
           <div className="flex items-center space-x-2 text-xs text-slate-500">
             <Globe2 className="w-4 h-4 text-brand-600" />

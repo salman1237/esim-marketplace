@@ -118,7 +118,7 @@ async def get_partner_profile(
         "business_name": ctx.merchant.business_name,
         "commission_rate_pct": rate,
         "wallet_balance": wallet.balance if wallet else 0,
-        "wallet_currency": wallet.currency if wallet else "USD",
+        "wallet_currency": wallet.currency if wallet else "EUR",
         "commission_balance": commission_wallet.balance if commission_wallet else 0,
         "webhook_configured": bool(ctx.merchant.webhook_url),
     }

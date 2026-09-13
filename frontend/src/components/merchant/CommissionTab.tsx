@@ -81,7 +81,7 @@ export default function CommissionTab({ overview, formatPrice, onChanged }: Prop
               step="0.01"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              placeholder="Amount (USD)"
+              placeholder="Amount (EUR)"
               className="flex-1 min-w-0 bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900"
             />
             <button disabled={busy} onClick={() => transfer(false)} className="px-3 py-2 rounded-xl bg-merchant-600 hover:bg-merchant-500 disabled:opacity-60 text-white text-xs font-bold flex items-center gap-1">

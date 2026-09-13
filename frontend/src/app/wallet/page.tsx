@@ -152,7 +152,7 @@ export default function WalletPage() {
 
           <div className="space-y-4">
             <div>
-              <label className="text-xs text-slate-700 font-semibold block mb-1">Amount (USD)</label>
+              <label className="text-xs text-slate-700 font-semibold block mb-1">Amount (EUR)</label>
               <div className="flex gap-2">
                 {["5", "10", "20", "50"].map((amt) => (
                   <button
@@ -163,7 +163,7 @@ export default function WalletPage() {
                       depositAmount === amt ? "bg-brand-600 border-brand-500 text-white" : "bg-gray-50 border-gray-300 text-slate-700 hover:bg-gray-100"
                     }`}
                   >
-                    ${amt}
+                    €{amt}
                   </button>
                 ))}
               </div>
@@ -174,7 +174,7 @@ export default function WalletPage() {
               disabled={payingViaGateway}
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 text-white text-xs font-bold shadow-md shadow-emerald-900/10 hover:opacity-95 disabled:opacity-60"
             >
-              {payingViaGateway ? "Redirecting to ShurjoPay..." : `Pay via ShurjoPay Sandbox ($${depositAmount})`}
+              {payingViaGateway ? "Redirecting to ShurjoPay..." : `Pay via ShurjoPay Sandbox (€${depositAmount})`}
             </button>
           </div>
         </div>

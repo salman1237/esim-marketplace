@@ -23,10 +23,10 @@ def _mock_get_factory(primary_ok: bool):
         if "open.er-api.com" in str(url):
             if not primary_ok:
                 raise httpx.ConnectError("simulated primary outage")
-            return _FakeResponse(200, {"rates": {"USD": 1, "BDT": 111.11, "EUR": 0.80}})
+            return _FakeResponse(200, {"rates": {"EUR": 1, "BDT": 111.11, "USD": 1.16}})
         if "jsdelivr.net" in str(url):
-            # Real shape: {"usd": {"bdt": ..., "eur": ...}} - lowercase keys.
-            return _FakeResponse(200, {"usd": {"bdt": 122.22, "eur": 0.85}})
+            # Real shape: {"eur": {"bdt": ..., "usd": ...}} - lowercase keys.
+            return _FakeResponse(200, {"eur": {"bdt": 122.22, "usd": 1.17}})
         raise AssertionError(f"Unexpected URL in test: {url}")
     return _mock_get
 
@@ -61,7 +61,7 @@ async def test_fallback_to_jsdelivr_when_primary_fails(db_session, monkeypatch):
     """Regression-proofing for the plan's explicit requirement: 'Verify
     live rates fetch from open.er-api.com and fallback to jsDelivr CDN if
     mock failure is injected.' Confirms both that the fallback fires at
-    all and that its differently-shaped response ({"usd": {...}}
+    all and that its differently-shaped response ({"eur": {...}}
     lowercase, vs. primary's {"rates": {...}} uppercase) parses correctly."""
     monkeypatch.setattr(httpx.AsyncClient, "get", _mock_get_factory(primary_ok=False))
     result = await CurrencyService.sync_rates_from_api(db_session)
@@ -129,3 +129,24 @@ async def test_convert_uses_fixed_point_decimal_not_float(db_session):
     assert isinstance(converted, Decimal)
     # Quantized to 4 decimal places, not an unbounded float-derived tail.
     assert converted == converted.quantize(Decimal("0.0001"))
+
+
+async def test_rates_are_fetched_and_applied_against_the_euro_base(db_session, monkeypatch):
+    """Every stored amount is in EUR (VivaPe's pricing currency), so rates
+    must be "1 EUR = X": fetched with EUR as the base, and EUR itself
+    converts 1:1 without touching the rate table or the network."""
+    requested = []
+
+    async def _record(self, url, *args, **kwargs):
+        requested.append(str(url))
+        return _FakeResponse(200, {"rates": {"EUR": 1, "BDT": 140.0, "USD": 1.16}})
+    monkeypatch.setattr(httpx.AsyncClient, "get", _record)
+
+    await CurrencyService.sync_rates_from_api(db_session)
+    assert requested and requested[0].endswith("/EUR")
+
+    async def _fail_if_called(self, url, *args, **kwargs):
+        raise AssertionError("the base currency must not need a rate lookup")
+    monkeypatch.setattr(httpx.AsyncClient, "get", _fail_if_called)
+    assert await CurrencyService.get_effective_rate(db_session, "EUR") == Decimal("1.0")
+    assert await CurrencyService.convert(db_session, Decimal("4.50"), "EUR") == Decimal("4.5000")

@@ -6,7 +6,7 @@ import { AlertTriangle, ArrowRight, Code2, Coins, Percent, TrendingUp, Wallet, S
 import { MerchantTab, Panel, SourceBadge, StatusBadge, dataLabel, formatDateTime } from "./shared";
 
 // Below this, a typical order will fail with "insufficient balance".
-const LOW_BALANCE_USD = 10;
+const LOW_BALANCE = 10;
 
 type Props = {
   overview: any | null;
@@ -45,12 +45,12 @@ export default function OverviewTab({ overview, formatPrice, onNavigate }: Props
   const allTime = stats.all_time;
   const nextTier = commission.next_tier;
   const tierProgress = nextTier
-    ? Math.min(100, (Number(commission.completed_volume_usd) / Number(nextTier.min_volume_usd)) * 100)
+    ? Math.min(100, (Number(commission.completed_volume) / Number(nextTier.min_volume)) * 100)
     : 100;
 
   return (
     <div className="space-y-6">
-      {walletBalance < LOW_BALANCE_USD && (
+      {walletBalance < LOW_BALANCE && (
         <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
           <div className="flex-1">
@@ -83,13 +83,13 @@ export default function OverviewTab({ overview, formatPrice, onNavigate }: Props
         <StatCard
           icon={TrendingUp}
           label="Sales · 30 days"
-          value={formatPrice(Number(last30.volume_usd))}
+          value={formatPrice(Number(last30.volume))}
           hint={`${last30.completed} completed of ${last30.orders} orders`}
         />
         <StatCard
           icon={Percent}
           label="Commission · 30 days"
-          value={formatPrice(Number(last30.commission_usd))}
+          value={formatPrice(Number(last30.commission))}
           hint={`Current rate ${Number(commission.effective_rate_pct)}%`}
         />
       </div>
@@ -100,9 +100,9 @@ export default function OverviewTab({ overview, formatPrice, onNavigate }: Props
             <div className="flex justify-between"><dt className="text-slate-500">Success rate</dt><dd className="font-bold text-slate-900">{allTime.success_rate_pct === null ? "—" : `${allTime.success_rate_pct}%`}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-500">Setting up now</dt><dd className="font-bold text-slate-900">{allTime.in_progress}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-500">Failed (auto-refunded)</dt><dd className="font-bold text-slate-900">{allTime.failed}</dd></div>
-            <div className="flex justify-between border-t border-gray-100 pt-2.5"><dt className="text-slate-500">All-time sales</dt><dd className="font-bold text-slate-900">{formatPrice(Number(allTime.volume_usd))}</dd></div>
+            <div className="flex justify-between border-t border-gray-100 pt-2.5"><dt className="text-slate-500">All-time sales</dt><dd className="font-bold text-slate-900">{formatPrice(Number(allTime.volume))}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-500">All-time orders</dt><dd className="font-bold text-slate-900">{allTime.orders}</dd></div>
-            <div className="flex justify-between"><dt className="text-slate-500">All-time commission</dt><dd className="font-bold text-merchant-600">{formatPrice(Number(allTime.commission_usd))}</dd></div>
+            <div className="flex justify-between"><dt className="text-slate-500">All-time commission</dt><dd className="font-bold text-merchant-600">{formatPrice(Number(allTime.commission))}</dd></div>
           </dl>
         </Panel>
 
@@ -115,7 +115,7 @@ export default function OverviewTab({ overview, formatPrice, onNavigate }: Props
                 <div className="h-full bg-merchant-500 rounded-full" style={{ width: `${tierProgress}%` }} />
               </div>
               <p className="text-[11px] text-slate-600 mt-2">
-                Sell <strong>{formatPrice(Number(nextTier.volume_remaining_usd))}</strong> more in completed orders to earn{" "}
+                Sell <strong>{formatPrice(Number(nextTier.volume_remaining))}</strong> more in completed orders to earn{" "}
                 <strong>{Number(nextTier.rate_pct)}%</strong>.
               </p>
             </div>

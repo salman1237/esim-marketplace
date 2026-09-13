@@ -18,7 +18,7 @@ async def _make_wallet(db_session, balance=Decimal("0.0000")):
     )
     db_session.add(user)
     await db_session.flush()
-    wallet = Wallet(user_id=user.id, wallet_type=WalletType.DEFAULT, balance=balance, currency="USD")
+    wallet = Wallet(user_id=user.id, wallet_type=WalletType.DEFAULT, balance=balance, currency="EUR")
     db_session.add(wallet)
     await db_session.commit()
     await db_session.refresh(wallet)

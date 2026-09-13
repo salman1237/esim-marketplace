@@ -33,14 +33,14 @@ export default function HomePage() {
 
   // Default popular destinations
   const defaultPopular = [
-    { iso2: "US", name: "United States", flag: "🇺🇸", minPrice: "$4.50" },
-    { iso2: "TH", name: "Thailand", flag: "🇹🇭", minPrice: "$3.90" },
-    { iso2: "JP", name: "Japan", flag: "🇯🇵", minPrice: "$4.90" },
-    { iso2: "SA", name: "Saudi Arabia", flag: "🇸🇦", minPrice: "$6.00" },
-    { iso2: "AE", name: "United Arab Emirates", flag: "🇦🇪", minPrice: "$5.50" },
-    { iso2: "GB", name: "United Kingdom", flag: "🇬🇧", minPrice: "$4.50" },
-    { iso2: "TR", name: "Turkey", flag: "🇹🇷", minPrice: "$3.50" },
-    { iso2: "BD", name: "Bangladesh", flag: "🇧🇩", minPrice: "$2.90" },
+    { iso2: "US", name: "United States", flag: "🇺🇸", minPrice: "€4.50" },
+    { iso2: "TH", name: "Thailand", flag: "🇹🇭", minPrice: "€3.90" },
+    { iso2: "JP", name: "Japan", flag: "🇯🇵", minPrice: "€4.90" },
+    { iso2: "SA", name: "Saudi Arabia", flag: "🇸🇦", minPrice: "€6.00" },
+    { iso2: "AE", name: "United Arab Emirates", flag: "🇦🇪", minPrice: "€5.50" },
+    { iso2: "GB", name: "United Kingdom", flag: "🇬🇧", minPrice: "€4.50" },
+    { iso2: "TR", name: "Turkey", flag: "🇹🇷", minPrice: "€3.50" },
+    { iso2: "BD", name: "Bangladesh", flag: "🇧🇩", minPrice: "€2.90" },
   ];
 
   useEffect(() => {
@@ -84,10 +84,10 @@ export default function HomePage() {
     } catch {
       // Fallback sample packages for demonstration
       setProducts([
-        { id: "pkg_1", title_en: `${c.name_en || c.name} 1 GB`, data_amount_gb: 1.0, validity_days: 7, retail_price: 4.50, currency: "USD" },
-        { id: "pkg_2", title_en: `${c.name_en || c.name} 3 GB`, data_amount_gb: 3.0, validity_days: 15, retail_price: 9.00, currency: "USD" },
-        { id: "pkg_3", title_en: `${c.name_en || c.name} 5 GB`, data_amount_gb: 5.0, validity_days: 30, retail_price: 13.50, currency: "USD" },
-        { id: "pkg_4", title_en: `${c.name_en || c.name} 10 GB`, data_amount_gb: 10.0, validity_days: 30, retail_price: 22.00, currency: "USD" },
+        { id: "pkg_1", title_en: `${c.name_en || c.name} 1 GB`, data_amount_gb: 1.0, validity_days: 7, retail_price: 4.50, currency: "EUR" },
+        { id: "pkg_2", title_en: `${c.name_en || c.name} 3 GB`, data_amount_gb: 3.0, validity_days: 15, retail_price: 9.00, currency: "EUR" },
+        { id: "pkg_3", title_en: `${c.name_en || c.name} 5 GB`, data_amount_gb: 5.0, validity_days: 30, retail_price: 13.50, currency: "EUR" },
+        { id: "pkg_4", title_en: `${c.name_en || c.name} 10 GB`, data_amount_gb: 10.0, validity_days: 30, retail_price: 22.00, currency: "EUR" },
       ]);
     } finally {
       setLoading(false);

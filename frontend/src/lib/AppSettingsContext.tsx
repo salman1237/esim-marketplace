@@ -42,10 +42,10 @@ const ZERO_DECIMAL_CURRENCIES = new Set(["JPY"]);
 
 export function AppSettingsProvider({ children, initialSettings }: { children: React.ReactNode; initialSettings?: any | null }) {
   const [lang, setLangState] = useState("en");
-  const [currency, setCurrencyState] = useState("USD");
+  const [currency, setCurrencyState] = useState("EUR");
   const [languages, setLanguages] = useState<LanguageMeta[]>([]);
   const [translations, setTranslations] = useState<Record<string, Record<string, string>>>({});
-  const [rates, setRates] = useState<Record<string, number>>({ USD: 1 });
+  const [rates, setRates] = useState<Record<string, number>>({ EUR: 1 });
   // Seeded from the server so the real brand is in the first paint - a
   // hardcoded placeholder name here flashed on every page load until the
   // client-side fetch replaced it.
@@ -56,7 +56,7 @@ export function AppSettingsProvider({ children, initialSettings }: { children: R
   useEffect(() => {
     try {
       const savedLang = localStorage.getItem("esim_lang");
-      const savedCurrency = localStorage.getItem("esim_currency");
+      const savedCurrency = localStorage.getItem("esim_currency_v2");
       if (savedLang) setLangState(savedLang);
       if (savedCurrency) setCurrencyState(savedCurrency);
     } catch {
@@ -85,7 +85,7 @@ export function AppSettingsProvider({ children, initialSettings }: { children: R
 
   useEffect(() => {
     api.getRates().then((rows: any[]) => {
-      const map: Record<string, number> = { USD: 1 };
+      const map: Record<string, number> = { EUR: 1 };
       for (const r of rows) {
         const rate = r.is_manual_override && r.manual_rate ? parseFloat(r.manual_rate) : parseFloat(r.rate_to_base);
         if (!Number.isNaN(rate)) map[r.currency_code] = rate;
@@ -105,7 +105,7 @@ export function AppSettingsProvider({ children, initialSettings }: { children: R
 
   const setCurrency = useCallback((code: string) => {
     setCurrencyState(code);
-    try { localStorage.setItem("esim_currency", code); } catch {}
+    try { localStorage.setItem("esim_currency_v2", code); } catch {}
   }, []);
 
   const t = useCallback(

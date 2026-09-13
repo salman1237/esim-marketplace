@@ -3,15 +3,15 @@
 Base URL: `https://triptel.co/api/v1/partner`
 Interactive version of this guide: <https://triptel.co/api-docs>
 
-This API lets an approved reseller partner browse the eSIM catalog, buy eSIMs for their own customers from a prepaid USD wallet, and receive the activation details from their own backend — by webhook, by polling, or both.
+This API lets an approved reseller partner browse the eSIM catalog, buy eSIMs for their own customers from a prepaid EUR wallet, and receive the activation details from their own backend — by webhook, by polling, or both.
 
 ---
 
 ## 0. How it works in one minute
 
-1. **Onboarding (done by Triptel):** your account is made an approved reseller and a Super Admin issues you a long-lived **API key** (`esim_live_...`). You top up your **reseller wallet** (USD).
+1. **Onboarding (done by Triptel):** your account is made an approved reseller and a Super Admin issues you a long-lived **API key** (`esim_live_...`). You top up your **reseller wallet** (EUR).
 2. **Authenticate:** exchange the API key for a 1-hour **access token** (§1).
-3. **Browse:** list countries and their products (§2.1, §2.2). `retail_price` (USD) is what your wallet is charged per eSIM.
+3. **Browse:** list countries and their products (§2.1, §2.2). `retail_price` (EUR) is what your wallet is charged per eSIM.
 4. **Order:** `POST /orders` with a `product_id` and your own `customer_reference`. Your wallet is debited immediately and the order comes back as `PROCESSING` (§2.4).
 5. **Delivery:** within ~10–30 seconds the order becomes `COMPLETED` (eSIM details filled in) or `FAILED` (wallet refunded automatically). You learn this from the webhook (§3) or by polling `GET /orders/{order_id}` (§2.5).
 6. **Commission:** on every completed order, your commission percentage of the order amount is credited to your separate commission balance (§2.3).
@@ -63,7 +63,7 @@ curl -s https://triptel.co/api/v1/partner/me -H "Authorization: Bearer $TOKEN"
 
 ## 2. Endpoints
 
-JSON in, JSON out. All amounts are **decimal strings or numbers in USD**; treat them as decimals, never floats, in your own accounting.
+JSON in, JSON out. All amounts are **decimal strings or numbers in EUR** (Triptel's supplier prices in euro); treat them as decimals, never floats, in your own accounting.
 
 ### 2.1 `GET /countries`
 
@@ -92,7 +92,7 @@ Active products for a country (ISO2 is case-insensitive), smallest data allowanc
     "data_amount_gb": 1.0,
     "validity_days": 7,
     "retail_price": 4.50,
-    "currency": "USD",
+    "currency": "EUR",
     "is_unlimited": false,
     "is_active": true,
     "coverage_networks": null
@@ -113,7 +113,7 @@ Rate limit: 120/minute.
   "business_name": "Ovigo Travel",
   "commission_rate_pct": 5.00,
   "wallet_balance": 142.5000,
-  "wallet_currency": "USD",
+  "wallet_currency": "EUR",
   "commission_balance": 3.2500,
   "webhook_configured": true
 }
@@ -144,7 +144,7 @@ Buys one eSIM. Your wallet is debited `retail_price` immediately; provisioning h
   "customer_reference": "your-order-id-123",
   "status": "PROCESSING",
   "amount": "4.5000",
-  "currency": "USD",
+  "currency": "EUR",
   "product": { "id": "a1b2c3d4-...", "title": "Singapore 1GB 7 Days", "country_iso2": "SG",
                "data_amount_gb": 1.0, "is_unlimited": false, "validity_days": 7 },
   "iccid": null, "lpa_string": null, "qr_code_data": null,
@@ -201,7 +201,7 @@ Orders you placed through this API, newest first — for reconciliation and supp
 | `order_no` | Human-readable number (`PTR-...`) — quote it to support. |
 | `customer_reference` | Your reference, echoed back. |
 | `status` | `PROCESSING`, `COMPLETED` or `FAILED`. |
-| `amount`, `currency` | What your wallet was charged, e.g. `"4.5000"`, `"USD"`. |
+| `amount`, `currency` | What your wallet was charged, e.g. `"4.5000"`, `"EUR"`. |
 | `product` | `id`, `title`, `country_iso2`, `data_amount_gb`, `is_unlimited`, `validity_days` at the time of the order. |
 | `iccid` | The eSIM's ICCID. |
 | `lpa_string` | Activation code `LPA:1$<smdp>$<matching id>`. Encode this into the QR code the customer scans. |
@@ -250,7 +250,7 @@ Content-Type: application/json
 X-Webhook-Signature: 5d41402abc4b2a76b9719d911017c592...
 
 { "order_id": "e5f6a7b8-...", "order_no": "PTR-20260913-A1B2C3", "customer_reference": "your-order-id-123",
-  "status": "COMPLETED", "amount": "4.5000", "currency": "USD", "product": { "...": "..." },
+  "status": "COMPLETED", "amount": "4.5000", "currency": "EUR", "product": { "...": "..." },
   "iccid": "8965012345678901234", "lpa_string": "LPA:1$smdp.example.com$ABC123",
   "qr_code_data": "LPA:1$smdp.example.com$ABC123", "smdp_address": "smdp.example.com", "matching_id": "ABC123",
   "install_links": { "ios": "https://esimsetup.apple.com/esim_qrcode_provisioning?carddata=LPA%3A1%24...",

@@ -108,8 +108,8 @@ async def _order_stats(db: AsyncSession, user_id: str, since: Optional[datetime]
         "failed": n_failed,
         "in_progress": n_open,
         "success_rate_pct": round(n_completed * 100 / settled, 1) if settled else None,
-        "volume_usd": _money(volume),
-        "commission_usd": _money(commission),
+        "volume": _money(volume),
+        "commission": _money(commission),
     }
 
 
@@ -125,11 +125,11 @@ async def _commission_info(db: AsyncSession, merchant: MerchantProfile, complete
     return {
         "flat_rate_pct": str(flat),
         "effective_rate_pct": str(effective),
-        "completed_volume_usd": _money(completed_volume),
+        "completed_volume": _money(completed_volume),
         "next_tier": {
-            "min_volume_usd": _money(next_tier.min_volume_usd),
+            "min_volume": _money(next_tier.min_volume_usd),
             "rate_pct": str(next_tier.rate_pct),
-            "volume_remaining_usd": _money(Decimal(str(next_tier.min_volume_usd)) - completed_volume),
+            "volume_remaining": _money(Decimal(str(next_tier.min_volume_usd)) - completed_volume),
         } if next_tier else None,
     }
 
@@ -212,10 +212,10 @@ async def get_overview(ctx: MerchantContext = Depends(get_current_merchant), db:
         "wallets": {
             "wallet_balance": _money(default_wallet.balance if default_wallet else 0),
             "commission_balance": _money(commission_wallet.balance if commission_wallet else 0),
-            "currency": "USD",
+            "currency": settings.BASE_CURRENCY,
         },
         "stats": {"last_30_days": last_30_days, "all_time": all_time},
-        "commission": await _commission_info(db, ctx.merchant, Decimal(all_time["volume_usd"])),
+        "commission": await _commission_info(db, ctx.merchant, Decimal(all_time["volume"])),
         "api": {
             "key_active": key is not None,
             "key_prefix": key.key_prefix if key else None,

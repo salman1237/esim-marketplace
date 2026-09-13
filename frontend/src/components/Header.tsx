@@ -6,7 +6,7 @@ import { Globe, DollarSign, User, Shield, Briefcase, Wifi, Menu, X } from "lucid
 import { api, API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 
-const CURRENCIES = ["USD", "BDT", "EUR", "GBP", "AED", "SAR"];
+const CURRENCIES = ["EUR", "USD", "BDT", "GBP", "AED", "SAR"];
 
 export default function Header() {
   const { lang, setLang, currency, setCurrency, languages, t, publicSettings, formatPrice } = useAppSettings();

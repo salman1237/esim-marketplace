@@ -24,22 +24,22 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/payments", tags=["Payment Gateways"])
 
 
-MIN_TOPUP_USD = Decimal("1.00")
-MAX_TOPUP_USD = Decimal("2000.00")
+MIN_TOPUP = Decimal("1.00")
+MAX_TOPUP = Decimal("2000.00")
 
 
 @router.post("/shurjopay/topup")
 async def topup_via_shurjopay(
-    amount_usd: Decimal,
+    amount: Decimal,  # in the base currency (EUR)
     request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    if amount_usd < MIN_TOPUP_USD or amount_usd > MAX_TOPUP_USD:
-        raise HTTPException(status_code=400, detail=f"Amount must be between {MIN_TOPUP_USD} and {MAX_TOPUP_USD} USD")
+    if amount < MIN_TOPUP or amount > MAX_TOPUP:
+        raise HTTPException(status_code=400, detail=f"Amount must be between {MIN_TOPUP} and {MAX_TOPUP} {settings.BASE_CURRENCY}")
 
-    # Convert USD amount to BDT
-    amount_bdt = await CurrencyService.convert(db, amount_usd, "BDT")
+    # Convert the base-currency amount to BDT for the gateway
+    amount_bdt = await CurrencyService.convert(db, amount, "BDT")
     order_id = f"TOPUP-{current_user.id}-{uuid.uuid4().hex[:10]}"
 
     pay_res = await ShurjoPayService.initiate_payment(
@@ -200,15 +200,15 @@ async def shurjopay_callback(
         await db.commit()
         return _fail("no_wallet")
 
-    # Convert BDT back to USD
+    # Convert the BDT actually paid back into the base currency
     rate = await CurrencyService.get_effective_rate(db, "BDT")
-    usd_val = (amount_paid_bdt / rate).quantize(Decimal("0.0001"))
+    amount_base = (amount_paid_bdt / rate).quantize(Decimal("0.0001"))
 
     # idempotency_key keyed on ShurjoPay's own order_id (globally unique)
     # means a replayed/duplicate callback for the same order can never
     # credit the wallet twice.
     await LedgerService.credit(
-        db, wallet.id, usd_val,
+        db, wallet.id, amount_base,
         LedgerRefType.DEPOSIT_GATEWAY,
         ref_id=order_id,
         description=f"ShurjoPay Deposit: {amount_paid_bdt} BDT",

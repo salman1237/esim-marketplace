@@ -31,7 +31,7 @@ class Product(Base):
     validity_days = Column(Integer, nullable=False)
     cost_price = Column(Numeric(18, 4), nullable=False)
     retail_price = Column(Numeric(18, 4), nullable=False)
-    currency = Column(String(3), default="USD", nullable=False)
+    currency = Column(String(3), default="EUR", nullable=False)
     is_unlimited = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     supplier_reference = Column(String(100), nullable=True)  # esimgo_bundle or worldmove_esim

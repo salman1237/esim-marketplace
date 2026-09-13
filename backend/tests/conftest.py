@@ -175,7 +175,7 @@ async def create_test_product(
         validity_days=15,
         cost_price=Decimal("5.0000"),
         retail_price=price,
-        currency="USD",
+        currency="EUR",
         is_active=True,
         supplier_product_id=supplier_product_id,
         supplier_receiver_amount=supplier_receiver_amount,

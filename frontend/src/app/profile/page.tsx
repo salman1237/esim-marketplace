@@ -179,7 +179,7 @@ export default function ProfilePage() {
           {(userData.wallets || []).map((w: any) => (
             <div key={w.type} className="bg-gray-50 p-3 rounded-lg border border-gray-200">
               <div className="text-[10px] uppercase font-semibold text-slate-500">{w.type}</div>
-              <div className="text-lg font-bold text-slate-900 font-mono">${w.balance.toFixed(2)}</div>
+              <div className="text-lg font-bold text-slate-900 font-mono">€{w.balance.toFixed(2)}</div>
             </div>
           ))}
         </div>

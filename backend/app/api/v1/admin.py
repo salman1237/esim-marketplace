@@ -82,7 +82,8 @@ async def get_admin_stats(db: AsyncSession = Depends(get_db)):
     return {
         "total_users": users_count or 0,
         "total_orders": orders_count or 0,
-        "total_revenue_usd": float(revenue or 0),
+        "total_revenue": float(revenue or 0),
+        "currency": settings.BASE_CURRENCY,
         "total_esims_issued": esims_count or 0
     }
 
@@ -395,11 +396,11 @@ async def approve_manual_payment(
     )
     wallet = w_res.scalar_one_or_none()
     if wallet:
-        # Convert BDT to USD if currency is BDT
+        # Convert the deposited currency (usually BDT) into the base currency.
         rate = await CurrencyService.get_effective_rate(db, p.currency)
-        amount_usd = (Decimal(str(p.amount)) / rate).quantize(Decimal("0.0001"))
+        amount_base = (Decimal(str(p.amount)) / rate).quantize(Decimal("0.0001"))
         await LedgerService.credit(
-            db, wallet.id, amount_usd,
+            db, wallet.id, amount_base,
             LedgerRefType.DEPOSIT_MANUAL,
             ref_id=p.id,
             description=f"Manual Deposit Approved ({p.amount} {p.currency})",

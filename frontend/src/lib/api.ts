@@ -60,7 +60,7 @@ export const api = {
 
   // Payments
   initiateShurjopayTopup: (token: string, amountUsd: number) =>
-    fetchApi(`/api/v1/payments/shurjopay/topup?amount_usd=${amountUsd}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+    fetchApi(`/api/v1/payments/shurjopay/topup?amount=${amountUsd}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
 
   // Orders
   checkout: (token: string, data: any) => fetchApi("/api/v1/orders/checkout", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),

@@ -17,7 +17,7 @@ class CurrencyService:
         # 1. Try Primary: open.er-api.com
         try:
             async with httpx.AsyncClient(verify=True, timeout=10.0) as client:
-                resp = await client.get(f"{settings.EXCHANGE_RATE_API_URL}/USD")
+                resp = await client.get(f"{settings.EXCHANGE_RATE_API_URL}/{settings.BASE_CURRENCY}")
                 if resp.status_code == 200:
                     data = resp.json()
                     rates = data.get("rates", {})
@@ -28,10 +28,10 @@ class CurrencyService:
         if not rates:
             try:
                 async with httpx.AsyncClient(verify=True, timeout=10.0) as client:
-                    resp = await client.get(f"{settings.EXCHANGE_RATE_FALLBACK_URL}/usd.json")
+                    resp = await client.get(f"{settings.EXCHANGE_RATE_FALLBACK_URL}/{settings.BASE_CURRENCY.lower()}.json")
                     if resp.status_code == 200:
                         data = resp.json()
-                        raw_rates = data.get("usd", {})
+                        raw_rates = data.get(settings.BASE_CURRENCY.lower(), {})
                         rates = {k.upper(): v for k, v in raw_rates.items()}
             except Exception as e:
                 logger.warning("currency_api_fallback_failed", error=str(e))
@@ -66,7 +66,7 @@ class CurrencyService:
 
     @staticmethod
     async def get_effective_rate(db: AsyncSession, currency_code: str) -> Decimal:
-        if currency_code.upper() == "USD":
+        if currency_code.upper() == settings.BASE_CURRENCY:
             return Decimal("1.0")
 
         res = await db.execute(select(CurrencyRate).where(CurrencyRate.currency_code == currency_code.upper()))
@@ -91,11 +91,13 @@ class CurrencyService:
         if record2:
             return Decimal(str(record2.rate_to_base))
 
-        defaults = {"BDT": Decimal("122.50"), "EUR": Decimal("0.86"), "GBP": Decimal("0.74")}
+        # Last-resort rates per 1 EUR, only if no source has ever been reachable.
+        defaults = {"BDT": Decimal("142.10"), "USD": Decimal("1.16"), "GBP": Decimal("0.86")}
         return defaults.get(currency_code.upper(), Decimal("1.0"))
 
     @staticmethod
-    async def convert(db: AsyncSession, amount_usd: Decimal, target_currency: str) -> Decimal:
+    async def convert(db: AsyncSession, amount: Decimal, target_currency: str) -> Decimal:
+        """Converts an amount in the base currency (EUR) to target_currency."""
         rate = await CurrencyService.get_effective_rate(db, target_currency)
-        converted = amount_usd * rate
+        converted = amount * rate
         return converted.quantize(Decimal("0.0001"))
