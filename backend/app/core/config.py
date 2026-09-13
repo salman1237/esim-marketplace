@@ -46,9 +46,12 @@ class Settings(BaseSettings):
     FRONTEND_BASE_URL: str = os.getenv("FRONTEND_BASE_URL", "https://triptel.co")
 
     # Sign in with Google - the OAuth 2.0 *Web* client ID from Google Cloud
-    # Console. Not a secret (it ships to browsers); empty disables the button
-    # and POST /auth/google.
-    GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
+    # Console (project "triptel", authorized origin https://triptel.co). Not a
+    # secret: it ships to browsers. Only the ID-token flow is used, so the
+    # client secret is never needed. Set the env var to "" to disable.
+    GOOGLE_CLIENT_ID: str = os.getenv(
+        "GOOGLE_CLIENT_ID", "1095507553767-hkuh44db04q1lvrnptill6frtckcb42t.apps.googleusercontent.com"
+    )
 
     # Transactional email (password reset, order confirmation, welcome).
     # Deliberately optional, unlike the VivaPe/ShurjoPay/SECRET_KEY guards:

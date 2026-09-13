@@ -43,8 +43,10 @@ services:
       SHURJOPAY_CANCEL_URL: ${SHURJOPAY_CANCEL_URL:-https://triptel.co/wallet?topup=cancelled}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://triptel.co}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://triptel.co}
-      # Sign in with Google (OAuth Web client ID). Empty = Google login hidden.
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      # Sign in with Google (OAuth Web client ID, Google Cloud project
+      # "triptel"). Public, not a secret - it ships to every browser. The
+      # client *secret* is not used by this flow and must not be set anywhere.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-1095507553767-hkuh44db04q1lvrnptill6frtckcb42t.apps.googleusercontent.com}
       # Outgoing mail. Compose only passes through variables named here, so
       # omitting these left SMTP unset inside the container no matter what
       # was configured in the deploy environment - welcome, password-reset

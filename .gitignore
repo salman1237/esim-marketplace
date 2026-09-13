@@ -11,6 +11,8 @@ desktop.ini
 *_deploy_key.pub
 id_ed25519*
 id_rsa*
+# Google OAuth client downloads - contain the client secret
+client_secret_*.json
 
 # Node / Next.js
 node_modules/
