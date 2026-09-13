@@ -204,8 +204,13 @@ curl -s https://triptel.co/api/v1/partner/me \\
   "commission_rate_pct": 5.00,
   "wallet_balance": 142.5000,
   "wallet_currency": "USD",
+  "commission_balance": 3.2500,
   "webhook_configured": true
 }`}</CodeBlock>
+            <p>
+              <IC>wallet_balance</IC> is the prepaid balance orders are paid from &mdash; check it before charging your own
+              customer. <IC>commission_balance</IC> is commission earned on completed orders, held separately.
+            </p>
             <p className="text-xs text-slate-500">Reflects any active volume-based commission tier, falling back to your flat rate. Rate limit: 120/minute.</p>
           </Endpoint>
 
@@ -220,34 +225,76 @@ curl -s https://triptel.co/api/v1/partner/me \\
   "product_id": "a1b2c3d4-...",
   "customer_reference": "your-internal-order-id-123"
 }`}</CodeBlock>
-            <p><IC>customer_reference</IC> is optional &mdash; echoed back in every response and webhook so you can reconcile without storing our <IC>order_id</IC> first.</p>
-            <CodeBlock label="Response 200">{`{
-  "order_id": "e5f6a7b8-...",
-  "order_no": "PTR-20260904-A1B2C3",
-  "status": "PROCESSING"
-}`}</CodeBlock>
-            <p className="font-semibold text-slate-900">What happens after PROCESSING:</p>
+            <p>The response is the full order object (see <IC>GET /orders/{"{order_id}"}</IC> below) plus <IC>idempotent_replay</IC>.</p>
+
+            <p className="font-semibold text-slate-900">Always send customer_reference &mdash; it makes retries safe</p>
             <ul className="list-disc ps-5 space-y-1.5">
-              <li><strong>Success</strong> &mdash; order becomes <IC>COMPLETED</IC>, <IC>iccid</IC>/<IC>lpa_string</IC>/<IC>qr_code_data</IC> are populated, and commission is credited to your account.</li>
-              <li><strong>Failure</strong> &mdash; order becomes <IC>FAILED</IC>, no eSIM is issued, and the full amount is refunded to your wallet automatically. No commission is paid on a failed order.</li>
+              <li>The <strong>same</strong> <IC>customer_reference</IC> with the same <IC>product_id</IC> returns the <strong>original</strong> order (<IC>{`"idempotent_replay": true`}</IC>) and <strong>never charges your wallet again</strong>.</li>
+              <li>The same <IC>customer_reference</IC> with a different <IC>product_id</IC> returns <IC>409</IC>.</li>
+              <li>Without one, every call is a new purchase &mdash; a retried timeout can buy two eSIMs. Use one unique value per eSIM you sell, e.g. your own order ID.</li>
             </ul>
-            <p className="text-xs text-slate-500"><IC>400</IC> insufficient wallet balance (no order created) &middot; <IC>404</IC> product not found/inactive &middot; rate limit 30/minute.</p>
+
+            <p className="font-semibold text-slate-900">What happens after PROCESSING (usually 10&ndash;30 seconds):</p>
+            <ul className="list-disc ps-5 space-y-1.5">
+              <li><strong>Success</strong> &mdash; order becomes <IC>COMPLETED</IC>, the eSIM fields and install links are filled in, and commission is credited to your account.</li>
+              <li><strong>Failure</strong> &mdash; order becomes <IC>FAILED</IC>, no eSIM is issued, and the full amount is refunded to your wallet automatically. No commission is paid on a failed order.</li>
+              <li>If our server restarts mid-order, a recovery job still settles it within minutes &mdash; a <IC>PROCESSING</IC> order always ends as <IC>COMPLETED</IC> or <IC>FAILED</IC>.</li>
+            </ul>
+            <p className="text-xs text-slate-500"><IC>400</IC> insufficient wallet balance (nothing charged) &middot; <IC>404</IC> product not found/inactive &middot; <IC>409</IC> customer_reference reused for another product &middot; rate limit 30/minute.</p>
           </Endpoint>
 
           <Endpoint method="GET" path="/orders/{order_id}">
-            <p>Polls the current state of an order &mdash; the fallback if you&apos;re not using webhooks.</p>
+            <p>The current state of one of your orders. Poll every 3&ndash;5 seconds while <IC>PROCESSING</IC>. The webhook sends this same object.</p>
             <CodeBlock label="Response 200">{`{
   "order_id": "e5f6a7b8-...",
-  "order_no": "PTR-20260904-A1B2C3",
-  "customer_reference": "your-internal-order-id-123",
-  "status": "PROCESSING",
-  "iccid": null,
-  "lpa_string": null,
-  "qr_code_data": null,
-  "is_mock_fallback": null,
-  "created_at": "2026-09-04T12:00:00Z"
+  "order_no": "PTR-20260913-A1B2C3",
+  "customer_reference": "your-order-id-123",
+  "status": "COMPLETED",
+  "amount": "4.5000",
+  "currency": "USD",
+  "product": {
+    "id": "a1b2c3d4-...",
+    "title": "Singapore 1GB 7 Days",
+    "country_iso2": "SG",
+    "data_amount_gb": 1.0,
+    "is_unlimited": false,
+    "validity_days": 7
+  },
+  "iccid": "8965012345678901234",
+  "lpa_string": "LPA:1$smdp.example.com$ABC123",
+  "qr_code_data": "LPA:1$smdp.example.com$ABC123",
+  "smdp_address": "smdp.example.com",
+  "matching_id": "ABC123",
+  "install_links": {
+    "ios": "https://esimsetup.apple.com/esim_qrcode_provisioning?carddata=LPA%3A1%24...",
+    "android": "https://esimsetup.android.com/esim_qrcode_provisioning?carddata=LPA%3A1%24..."
+  },
+  "is_mock_fallback": false,
+  "created_at": "2026-09-13T10:00:00+00:00",
+  "updated_at": "2026-09-13T10:00:14+00:00"
 }`}</CodeBlock>
-            <p className="text-xs text-slate-500"><IC>status</IC> is one of PROCESSING, COMPLETED, FAILED. <IC>404</IC> if the order doesn&apos;t exist or isn&apos;t yours. Rate limit: 120/minute.</p>
+            <ul className="list-disc ps-5 space-y-1.5">
+              <li>Encode <IC>qr_code_data</IC> into the QR code your customer scans; show <IC>smdp_address</IC> and <IC>matching_id</IC> for manual entry.</li>
+              <li><IC>install_links.ios</IC> works on iOS 17.4+; Android support is still uneven &mdash; always show the QR code too.</li>
+              <li>For unlimited plans <IC>is_unlimited</IC> is true and <IC>data_amount_gb</IC> is 0.</li>
+              <li>Fields are only ever added, never removed or renamed &mdash; ignore ones you don&apos;t recognise. <IC>is_mock_fallback</IC> is legacy and always false.</li>
+            </ul>
+            <p className="text-xs text-slate-500"><IC>404</IC> if the order doesn&apos;t exist or isn&apos;t yours. Rate limit: 120/minute.</p>
+          </Endpoint>
+
+          <Endpoint method="GET" path="/orders">
+            <p>
+              Orders you placed through this API, newest first &mdash; for reconciliation. Query params:{" "}
+              <IC>customer_reference</IC>, <IC>status</IC> (PROCESSING, COMPLETED, FAILED), <IC>limit</IC> (1&ndash;100,
+              default 50), <IC>offset</IC>.
+            </p>
+            <CodeBlock label="Response 200">{`{
+  "orders": [ { "order_id": "e5f6a7b8-...", "status": "COMPLETED", "...": "..." } ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0
+}`}</CodeBlock>
+            <p className="text-xs text-slate-500">Rate limit: 120/minute.</p>
           </Endpoint>
 
           <Endpoint method="PUT" path="/webhook-config">
@@ -274,23 +321,24 @@ curl -s https://triptel.co/api/v1/partner/me \\
             state (<IC>COMPLETED</IC> or <IC>FAILED</IC>).
           </p>
           <p>
-            <strong>Delivery attempts:</strong> one immediately when the order finishes processing; if that
-            fails (non-2xx response, timeout, connection error), a retry sweep runs every 5 minutes and tries
-            again, up to <strong>3 attempts total</strong>. There&apos;s no dead-letter queue after that &mdash;
-            poll <IC>GET /orders/{"{id}"}</IC> if you suspect a delivery was missed.
+            <strong>Delivery attempts:</strong> one immediately when the order settles; if that fails (non-2xx
+            response, 10-second timeout, connection error), a sweep every 5 minutes retries it, up to{" "}
+            <strong>3 attempts total</strong> within 24 hours &mdash; for both <IC>COMPLETED</IC> and{" "}
+            <IC>FAILED</IC> orders. Poll <IC>GET /orders/{"{order_id}"}</IC> if you suspect a delivery was missed.
           </p>
 
           <h3 className="text-sm font-bold text-slate-900 pt-2">Payload</h3>
-          <CodeBlock>{`{
-  "order_id": "e5f6a7b8-...",
-  "customer_reference": "your-internal-order-id-123",
-  "status": "COMPLETED",
-  "iccid": "8988212345678901234",
-  "lpa_string": "LPA:1$rsp.truphone.com$MATCHID123",
-  "qr_code_data": "LPA:1$rsp.truphone.com$MATCHID123",
-  "is_mock_fallback": false
-}`}</CodeBlock>
-          <p>On a <IC>FAILED</IC> order, the eSIM fields are all <IC>null</IC> &mdash; check <IC>status</IC> first.</p>
+          <p>
+            The body is exactly the order object returned by <IC>GET /orders/{"{order_id}"}</IC> (&sect;2). On a{" "}
+            <IC>FAILED</IC> order the eSIM fields are <IC>null</IC> &mdash; check <IC>status</IC> first.
+          </p>
+
+          <h3 className="text-sm font-bold text-slate-900 pt-2">Your receiver must</h3>
+          <ul className="list-disc ps-5 space-y-1.5">
+            <li>Verify the signature on the raw body (below) and reject mismatches with <IC>401</IC>.</li>
+            <li>Be idempotent: the same order can arrive more than once, or race your own polling &mdash; key on <IC>order_id</IC>.</li>
+            <li>Respond <IC>2xx</IC> quickly and do slow work afterwards.</li>
+          </ul>
 
           <h3 className="text-sm font-bold text-slate-900 pt-4">Signature verification</h3>
           <p>

@@ -4,10 +4,10 @@ import secrets
 from decimal import Decimal
 from datetime import datetime, timedelta
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db, AsyncSessionLocal
 from app.core.security import create_access_token
@@ -21,7 +21,7 @@ from app.models.order import Order, OrderStatus, PaymentMethod
 from app.schemas.catalog import CountryResponse, ProductResponse
 from app.services.checkout_svc import get_effective_commission_rate, resolve_beneficiary, provision_esim, distribute_commission
 from app.services.ledger_svc import LedgerService
-from app.services.webhook_svc import deliver_webhook
+from app.services.webhook_svc import deliver_webhook, build_partner_order_payload
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -29,6 +29,10 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/partner", tags=["Partner API"])
 
 PARTNER_TOKEN_EXPIRY = timedelta(hours=1)
+
+# The event loop only weakly references tasks; without this a paid partner
+# order's provisioning task could be garbage-collected mid-flight.
+_background_tasks: set[asyncio.Task] = set()
 
 
 class PartnerTokenRequest(BaseModel):
@@ -105,12 +109,17 @@ async def get_partner_profile(
         select(Wallet).where(Wallet.user_id == ctx.user.id, Wallet.wallet_type == WalletType.DEFAULT)
     )
     wallet = w_res.scalar_one_or_none()
+    cw_res = await db.execute(
+        select(Wallet).where(Wallet.user_id == ctx.user.id, Wallet.wallet_type == WalletType.COMMISSION)
+    )
+    commission_wallet = cw_res.scalar_one_or_none()
 
     return {
         "business_name": ctx.merchant.business_name,
         "commission_rate_pct": rate,
         "wallet_balance": wallet.balance if wallet else 0,
         "wallet_currency": wallet.currency if wallet else "USD",
+        "commission_balance": commission_wallet.balance if commission_wallet else 0,
         "webhook_configured": bool(ctx.merchant.webhook_url),
     }
 
@@ -118,21 +127,6 @@ async def get_partner_profile(
 class PartnerOrderCreateRequest(BaseModel):
     product_id: str
     customer_reference: Optional[str] = None
-
-
-def _serialize_order(order: Order) -> dict:
-    profile = order.esim_profile
-    return {
-        "order_id": order.id,
-        "order_no": order.order_no,
-        "customer_reference": order.partner_customer_reference,
-        "status": order.status.value,
-        "iccid": profile.iccid if profile else None,
-        "lpa_string": profile.lpa_string if profile else None,
-        "qr_code_data": profile.qr_code_data if profile else None,
-        "is_mock_fallback": profile.is_mock_fallback if profile else None,
-        "created_at": order.created_at,
-    }
 
 
 async def _process_partner_order_background(order_id: str):
@@ -176,6 +170,33 @@ async def create_partner_order(
     ctx: PartnerContext = Depends(get_current_partner),
     db: AsyncSession = Depends(get_db)
 ):
+    # Lock the wallet before anything else. It serialises concurrent orders
+    # from this partner, which is what makes the customer_reference replay
+    # check below race-free: two identical retries can't both see "no
+    # existing order" and both get charged.
+    w_res = await db.execute(
+        select(Wallet).where(Wallet.user_id == ctx.user.id, Wallet.wallet_type == WalletType.DEFAULT).with_for_update()
+    )
+    wallet = w_res.scalar_one_or_none()
+
+    if req.customer_reference:
+        e_res = await db.execute(
+            select(Order).options(selectinload(Order.esim_profile))
+            .where(Order.buyer_id == ctx.user.id, Order.partner_customer_reference == req.customer_reference)
+            .order_by(Order.created_at.asc()).limit(1)
+        )
+        existing = e_res.scalar_one_or_none()
+        if existing:
+            if existing.product_id != req.product_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail="customer_reference was already used for an order of a different product",
+                )
+            # A retry of an order we already accepted (e.g. the response was
+            # lost to a timeout): hand back that order, never charge again.
+            payload = await build_partner_order_payload(db, existing, existing.esim_profile)
+            return {**payload, "idempotent_replay": True}
+
     p_res = await db.execute(select(Product).where(Product.id == req.product_id, Product.is_active == True))
     product = p_res.scalar_one_or_none()
     if not product:
@@ -184,10 +205,6 @@ async def create_partner_order(
     beneficiary_id = await resolve_beneficiary(db, ctx.user, True, True, None, None)
 
     total_cost = Decimal(str(product.retail_price))
-    w_res = await db.execute(
-        select(Wallet).where(Wallet.user_id == ctx.user.id, Wallet.wallet_type == WalletType.DEFAULT)
-    )
-    wallet = w_res.scalar_one_or_none()
     if not wallet or Decimal(str(wallet.balance)) < total_cost:
         raise HTTPException(status_code=400, detail="Insufficient wallet balance. Please top up.")
 
@@ -221,11 +238,41 @@ async def create_partner_order(
     # Commission is distributed in the background task, only once
     # provisioning has actually succeeded - see _process_partner_order_background.
     await db.commit()
-    order_id = order.id
 
-    asyncio.create_task(_process_partner_order_background(order_id))
+    task = asyncio.create_task(_process_partner_order_background(order.id))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
-    return {"order_id": order_id, "order_no": order_no, "status": "PROCESSING"}
+    payload = await build_partner_order_payload(db, order, None)
+    return {**payload, "idempotent_replay": False}
+
+
+@router.get("/orders")
+@limiter.limit("120/minute", key_func=get_partner_api_key)
+async def list_partner_orders(
+    request: Request,
+    customer_reference: Optional[str] = None,
+    status: Optional[OrderStatus] = None,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    ctx: PartnerContext = Depends(get_current_partner),
+    db: AsyncSession = Depends(get_db)
+):
+    """Orders placed through this API, newest first - for reconciling
+    against the partner's own records."""
+    conditions = [Order.buyer_id == ctx.user.id, Order.order_no.startswith("PTR-")]
+    if customer_reference:
+        conditions.append(Order.partner_customer_reference == customer_reference)
+    if status:
+        conditions.append(Order.status == status)
+
+    total = (await db.execute(select(func.count(Order.id)).where(*conditions))).scalar_one()
+    res = await db.execute(
+        select(Order).options(selectinload(Order.esim_profile)).where(*conditions)
+        .order_by(Order.created_at.desc()).limit(limit).offset(offset)
+    )
+    orders = [await build_partner_order_payload(db, o, o.esim_profile) for o in res.scalars().all()]
+    return {"orders": orders, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/orders/{order_id}")
@@ -243,7 +290,7 @@ async def get_partner_order(
     order = res.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    return _serialize_order(order)
+    return await build_partner_order_payload(db, order, order.esim_profile)
 
 
 class WebhookConfigRequest(BaseModel):

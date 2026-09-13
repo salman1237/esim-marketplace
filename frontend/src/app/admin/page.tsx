@@ -160,6 +160,34 @@ export default function AdminConsolePage() {
     alert("Role updated.");
   };
 
+  const [userSearch, setUserSearch] = useState("");
+
+  const handleSearchUsers = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    api.getAdminUsers(token, userSearch.trim() || undefined).then(setUsers).catch(console.error);
+  };
+
+  // Turns an existing account into an approved reseller in one step - for
+  // a partner onboarded by us rather than through the /reseller application.
+  const handleMakeReseller = async (u: any) => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    const businessName = window.prompt(`Business name for ${u.username}:`, u.username);
+    if (!businessName?.trim()) return;
+    const contactPhone = window.prompt("Business contact phone:");
+    if (!contactPhone?.trim()) return;
+    try {
+      await api.makeUserReseller(token, u.id, { business_name: businessName.trim(), contact_phone: contactPhone.trim() });
+      setUsers(users.map(x => x.id === u.id ? { ...x, role: "MERCHANT" } : x));
+      api.getMerchantQueue(token).then(setMerchants).catch(console.error);
+      alert(`${u.username} is now an approved reseller. Issue their Partner API key from Merchants → API Access.`);
+    } catch (err: any) {
+      alert("Failed to make reseller: " + err.message);
+    }
+  };
+
   const loadCatalog = async (token: string, opts?: { q?: string; is_active?: boolean; offset?: number }) => {
     setCatalogLoading(true);
     try {
@@ -1262,11 +1290,22 @@ export default function AdminConsolePage() {
 
         <div className="glass-panel rounded-2xl p-6 border border-gray-200">
           <h3 className="text-base font-bold text-slate-900 mb-4">Staff & User Management</h3>
+          <form onSubmit={handleSearchUsers} className="flex gap-2 mb-4">
+            <input
+              type="text"
+              value={userSearch}
+              onChange={(e) => setUserSearch(e.target.value)}
+              placeholder="Search by username or email"
+              className="flex-1 bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
+            />
+            <button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-lg">Search</button>
+          </form>
           <div className="overflow-x-auto frozen-col-table">
             <table className="w-full text-start text-xs">
               <thead className="text-slate-500 border-b border-gray-200">
                 <tr>
                   <th className="py-2">User ID</th>
+                  <th className="py-2">Username</th>
                   <th className="py-2">Email</th>
                   <th className="py-2">Role</th>
                   <th className="py-2">Joined</th>
@@ -1277,6 +1316,7 @@ export default function AdminConsolePage() {
                 {users.map((u) => (
                   <tr key={u.id}>
                     <td className="py-2.5 font-mono text-slate-500">{u.id.substring(0,8)}...</td>
+                    <td className="py-2.5 text-slate-900 font-semibold">{u.username}</td>
                     <td className="py-2.5 text-slate-700">{u.email}</td>
                     <td className="py-2.5 font-bold text-admin-600">{u.role}</td>
                     <td className="py-2.5 text-slate-500">{new Date(u.created_at).toLocaleDateString()}</td>
@@ -1291,6 +1331,14 @@ export default function AdminConsolePage() {
                         <option value="ADMIN">Admin</option>
                         <option value="SUPER_ADMIN">Super Admin</option>
                       </select>
+                      {u.role === "USER" && (
+                        <button
+                          onClick={() => handleMakeReseller(u)}
+                          className="bg-merchant-600 hover:bg-merchant-500 text-white font-bold px-2.5 py-1 rounded"
+                        >
+                          Make reseller
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

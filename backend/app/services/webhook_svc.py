@@ -8,9 +8,11 @@ from datetime import datetime, timedelta, timezone
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from app.models.catalog import Country, Product
 from app.models.merchant import MerchantProfile
 from app.models.order import Order, OrderStatus
 from app.models.partner_api import WebhookDeliveryLog
+from app.services.esim_links import esim_install_links
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -22,16 +24,46 @@ def _sign(body: bytes, secret: str) -> str:
     return hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 
 
-def _build_payload(order: Order, esim_profile) -> dict:
+def serialize_partner_order(order: Order, esim_profile, product: Product | None, country_iso2: str | None) -> dict:
+    """The one shape a partner ever sees for an order - the POST/GET
+    /partner/orders responses and the webhook body - so polling and
+    webhooks can never disagree. Fields are only ever added here, never
+    renamed or removed: integrations built against the original payload
+    keep working."""
+    lpa = esim_profile.lpa_string if esim_profile else None
     return {
         "order_id": order.id,
+        "order_no": order.order_no,
         "customer_reference": order.partner_customer_reference,
         "status": order.status.value,
+        "amount": str(order.total_amount),
+        "currency": order.currency,
+        "product": {
+            "id": product.id,
+            "title": product.title_en,
+            "country_iso2": country_iso2,
+            "data_amount_gb": float(product.data_amount_gb) if product.data_amount_gb is not None else None,
+            "is_unlimited": bool(product.is_unlimited),
+            "validity_days": product.validity_days,
+        } if product else None,
         "iccid": esim_profile.iccid if esim_profile else None,
-        "lpa_string": esim_profile.lpa_string if esim_profile else None,
+        "lpa_string": lpa,
         "qr_code_data": esim_profile.qr_code_data if esim_profile else None,
+        "smdp_address": esim_profile.smdp_address if esim_profile else None,
+        "matching_id": esim_profile.matching_id if esim_profile else None,
+        "install_links": esim_install_links(lpa),
         "is_mock_fallback": esim_profile.is_mock_fallback if esim_profile else None,
+        "created_at": order.created_at.isoformat() if order.created_at else None,
+        "updated_at": order.updated_at.isoformat() if order.updated_at else None,
     }
+
+
+async def build_partner_order_payload(db: AsyncSession, order: Order, esim_profile) -> dict:
+    row = (await db.execute(
+        select(Product, Country.iso2).join(Country, Product.country_id == Country.id).where(Product.id == order.product_id)
+    )).first()
+    product, iso2 = (row[0], row[1]) if row else (None, None)
+    return serialize_partner_order(order, esim_profile, product, iso2)
 
 
 async def deliver_webhook(db: AsyncSession, merchant: MerchantProfile, order: Order, esim_profile, attempt: int = 1) -> None:
@@ -42,7 +74,7 @@ async def deliver_webhook(db: AsyncSession, merchant: MerchantProfile, order: Or
     if not merchant.webhook_url or not merchant.webhook_secret:
         return
 
-    payload = _build_payload(order, esim_profile)
+    payload = await build_partner_order_payload(db, order, esim_profile)
     body = json.dumps(payload).encode()
     signature = _sign(body, merchant.webhook_secret)
 
@@ -77,7 +109,9 @@ async def retry_failed_webhooks(db: AsyncSession) -> dict:
     orders_res = await db.execute(
         select(Order).options(selectinload(Order.esim_profile)).where(
             Order.is_reseller_order == True,
-            Order.status == OrderStatus.COMPLETED,
+            # FAILED too: a partner that never hears about a failure keeps
+            # waiting on an eSIM that will never come.
+            Order.status.in_([OrderStatus.COMPLETED, OrderStatus.FAILED]),
             Order.created_at >= cutoff,
         )
     )

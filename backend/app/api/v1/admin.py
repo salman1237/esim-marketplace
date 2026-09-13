@@ -1064,8 +1064,13 @@ async def create_staff_account(
     return {"status": "success", "user_id": user.id, "email": user.email, "role": user.role.value}
 
 @router.get("/users", dependencies=[Depends(require_super_admin)])
-async def get_all_users(limit: int = 100, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(User).order_by(User.created_at.desc()).limit(limit))
+async def get_all_users(limit: int = 100, q: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    query = select(User)
+    if q:
+        # Without this only the newest `limit` users are reachable, so an
+        # older account couldn't be found to promote or make a reseller.
+        query = query.where(User.username.ilike(f"%{q}%") | User.email.ilike(f"%{q}%"))
+    res = await db.execute(query.order_by(User.created_at.desc()).limit(limit))
     users = res.scalars().all()
     return [
         {
@@ -1079,6 +1084,71 @@ async def get_all_users(limit: int = 100, db: AsyncSession = Depends(get_db)):
         }
         for u in users
     ]
+
+class MakeResellerRequest(BaseModel):
+    business_name: str
+    contact_phone: str
+    commission_rate_pct: Optional[float] = None
+
+
+@router.post("/users/{user_id}/make-reseller", dependencies=[Depends(require_super_admin)])
+async def make_user_reseller(
+    user_id: str,
+    req: MakeResellerRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Makes an existing account an approved reseller in one step, for a
+    partner onboarded directly by us rather than through the /reseller
+    application form. Same end state as apply + approve: an APPROVED
+    MerchantProfile, the MERCHANT role, and a commission wallet - after
+    which a Partner API key can be issued from the Merchants tab."""
+    res = await db.execute(select(User).where(User.id == user_id))
+    u = res.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+    if u.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+        raise HTTPException(status_code=400, detail="Staff accounts can't be made resellers")
+    if not req.business_name.strip() or not req.contact_phone.strip():
+        raise HTTPException(status_code=400, detail="Business name and contact phone are required")
+    if req.commission_rate_pct is not None and not (0 <= req.commission_rate_pct <= 100):
+        raise HTTPException(status_code=400, detail="Commission rate must be between 0 and 100")
+
+    m_res = await db.execute(select(MerchantProfile).where(MerchantProfile.user_id == u.id))
+    merchant = m_res.scalar_one_or_none()
+    if merchant and merchant.status == MerchantStatus.APPROVED and u.role == UserRole.MERCHANT:
+        raise HTTPException(status_code=400, detail="This user is already an approved reseller")
+
+    before = {"role": u.role.value, "merchant_status": merchant.status.value if merchant else None}
+    if not merchant:
+        merchant = MerchantProfile(user_id=u.id, business_name=req.business_name.strip(), contact_phone=req.contact_phone.strip())
+        db.add(merchant)
+    else:
+        # An earlier pending/rejected/suspended application is approved in
+        # place - user_id is unique, so a second profile can't be created.
+        merchant.business_name = req.business_name.strip()
+        merchant.contact_phone = req.contact_phone.strip()
+        merchant.rejection_reason = None
+    merchant.status = MerchantStatus.APPROVED
+    merchant.reviewed_by_id = admin_user.id
+    if req.commission_rate_pct is not None:
+        merchant.commission_rate_pct = Decimal(str(req.commission_rate_pct))
+
+    u.role = UserRole.MERCHANT
+    await LedgerService.ensure_wallets_for_user(db, u.id, UserRole.MERCHANT)
+    await db.flush()
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="MAKE_RESELLER", before_state=before,
+        after_state={"user_id": u.id, "merchant_id": merchant.id, "business": merchant.business_name},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success", "merchant_id": merchant.id, "message": "User is now an approved reseller"}
+
 
 @router.put("/users/{user_id}/role", dependencies=[Depends(require_super_admin)])
 async def update_user_role(

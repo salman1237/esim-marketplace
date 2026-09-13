@@ -121,7 +121,8 @@ export const api = {
     return fetchApi(`/api/v1/admin/catalog?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
   },
   updateAdminCatalogProduct: (token: string, id: string, data: any) => fetchApi(`/api/v1/admin/catalog/${id}`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
-  getAdminUsers: (token: string) => fetchApi("/api/v1/admin/users", { headers: { Authorization: `Bearer ${token}` } }),
+  getAdminUsers: (token: string, q?: string) => fetchApi(`/api/v1/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
+  makeUserReseller: (token: string, userId: string, data: { business_name: string; contact_phone: string; commission_rate_pct?: number }) => fetchApi(`/api/v1/admin/users/${userId}/make-reseller`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
   createStaffAccount: (token: string, data: any) => fetchApi("/api/v1/admin/users", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
   getKycQueue: (token: string) => fetchApi("/api/v1/admin/kyc/queue", { headers: { Authorization: `Bearer ${token}` } }),
   approveKyc: (token: string, id: string) => fetchApi(`/api/v1/admin/kyc/${id}/approve`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
