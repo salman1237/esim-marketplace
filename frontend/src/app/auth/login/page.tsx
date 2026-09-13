@@ -2,7 +2,8 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { Wifi, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
+import AuthBrandMark from "@/components/AuthBrandMark";
 import { api } from "@/lib/api";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
 
@@ -32,9 +33,7 @@ export default function LoginPage() {
     <div className="min-h-[80vh] flex items-center justify-center px-4">
       <div className="glass-panel rounded-2xl p-8 max-w-sm w-full border border-gray-200 shadow-lg">
         <div className="text-center mb-6">
-          <div className="w-12 h-12 rounded-xl bg-brand-600 flex items-center justify-center mx-auto mb-3">
-            <Wifi className="w-6 h-6 text-white" />
-          </div>
+          <AuthBrandMark />
           <h2 className="text-xl font-bold text-slate-900">Sign in to your account</h2>
           <p className="text-xs text-slate-500 mt-1">Access your eSIMs, wallets, and orders</p>
         </div>

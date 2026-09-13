@@ -39,7 +39,7 @@ type Props = {
 // returns a normal Triptel session. Renders nothing until an OAuth client
 // ID is configured on the backend.
 export default function GoogleSignInButton({ mode = "signin", oneTap = false }: Props) {
-  const { publicSettings } = useAppSettings();
+  const { publicSettings, lang } = useAppSettings();
   const clientId: string | undefined = publicSettings?.google_client_id || undefined;
   const containerRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
@@ -89,6 +89,9 @@ export default function GoogleSignInButton({ mode = "signin", oneTap = false }: 
           shape: "pill",
           text: mode === "signup" ? "signup_with" : "continue_with",
           logo_alignment: "center",
+          // Match the site's selected language - otherwise Google uses the
+          // browser's, e.g. a Bengali button on an English page.
+          locale: lang,
           width: Math.min(400, Math.max(220, container.offsetWidth || 320)),
         });
         if (oneTap) window.google.accounts.id.prompt();
@@ -101,7 +104,7 @@ export default function GoogleSignInButton({ mode = "signin", oneTap = false }: 
       cancelled = true;
       window.google?.accounts?.id?.cancel?.();
     };
-  }, [clientId, mode, oneTap]);
+  }, [clientId, mode, oneTap, lang]);
 
   if (!clientId) return null;
 

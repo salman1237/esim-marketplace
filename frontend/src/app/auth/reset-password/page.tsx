@@ -3,7 +3,8 @@
 import React, { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Wifi, ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+import AuthBrandMark from "@/components/AuthBrandMark";
 import { api } from "@/lib/api";
 
 function ResetPasswordForm() {
@@ -104,9 +105,7 @@ export default function ResetPasswordPage() {
     <div className="min-h-[80vh] flex items-center justify-center px-4">
       <div className="glass-panel rounded-2xl p-8 max-w-sm w-full border border-gray-200 shadow-lg">
         <div className="text-center mb-6">
-          <div className="w-12 h-12 rounded-xl bg-brand-600 flex items-center justify-center mx-auto mb-3">
-            <Wifi className="w-6 h-6 text-white" />
-          </div>
+          <AuthBrandMark />
           <h2 className="text-xl font-bold text-slate-900">Set a new password</h2>
         </div>
 
