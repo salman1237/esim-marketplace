@@ -72,14 +72,30 @@ export default function ProfilePage() {
 
       <div className="glass-panel rounded-2xl p-6 border border-gray-200 mb-6">
         <div className="flex items-center space-x-4 mb-6">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-accent-500 flex items-center justify-center shrink-0">
-            <User className="w-8 h-8 text-white" />
-          </div>
+          {userData.avatar_url ? (
+            <img
+              src={userData.avatar_url}
+              alt={userData.full_name || userData.username}
+              referrerPolicy="no-referrer"
+              className="w-16 h-16 rounded-2xl object-cover shrink-0 border border-gray-200"
+            />
+          ) : (
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-accent-500 flex items-center justify-center shrink-0">
+              <User className="w-8 h-8 text-white" />
+            </div>
+          )}
           <div>
             <h2 className="text-lg font-bold text-slate-900">{userData.full_name || userData.username}</h2>
-            <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-brand-50 text-brand-700 border border-brand-200">
-              {userData.role}
-            </span>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+              <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-brand-50 text-brand-700 border border-brand-200">
+                {userData.role}
+              </span>
+              {userData.has_google && (
+                <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-white text-slate-700 border border-gray-200">
+                  Google account linked
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -87,6 +103,9 @@ export default function ProfilePage() {
           <div className="flex items-center space-x-3 text-slate-700">
             <Mail className="w-4 h-4 text-slate-400 shrink-0" />
             <span>{userData.email}</span>
+            {userData.email_verified && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">Verified</span>
+            )}
           </div>
           {userData.phone && (
             <div className="flex items-center space-x-3 text-slate-700">

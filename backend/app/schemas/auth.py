@@ -33,6 +33,10 @@ class UserResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class GoogleLoginRequest(BaseModel):
+    # The ID token (JWT) Google Identity Services hands the browser.
+    credential: str
+
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 

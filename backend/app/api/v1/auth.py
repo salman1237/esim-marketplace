@@ -1,3 +1,4 @@
+import re
 import uuid
 import asyncio
 import secrets
@@ -6,7 +7,9 @@ from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
+from app.core.config import settings
 from app.core.database import get_db, AsyncSessionLocal
 from app.core.rate_limit import limiter
 from app.core.security import verify_password, get_password_hash, create_access_token
@@ -18,8 +21,9 @@ from app.models.wallet import Wallet, WalletType
 from app.models.password_reset import PasswordResetToken
 from app.schemas.auth import (
     UserRegister, UserLogin, Token, UserResponse, MerchantApplicationRequest,
-    ForgotPasswordRequest, ResetPasswordRequest,
+    ForgotPasswordRequest, ResetPasswordRequest, GoogleLoginRequest,
 )
+from app.services.google_auth import GoogleTokenError, GoogleUnavailableError, verify_google_id_token
 from app.services.ledger_svc import LedgerService
 from app.services.email_svc import EmailService
 
@@ -138,6 +142,103 @@ async def reset_password(request: Request, req: ResetPasswordRequest, db: AsyncS
     return {"status": "success", "message": "Password has been reset. You can now log in."}
 
 
+async def _unique_username(db: AsyncSession, email: str) -> str:
+    base = re.sub(r"[^a-z0-9_]", "", email.split("@")[0].lower())[:20] or "user"
+    candidate = base
+    for _ in range(10):
+        if not (await db.execute(select(User.id).where(User.username == candidate))).first():
+            return candidate
+        candidate = f"{base}_{secrets.token_hex(2)}"
+    return f"user_{uuid.uuid4().hex[:10]}"
+
+
+@router.post("/google", response_model=Token)
+@limiter.limit("20/minute")
+async def google_login(request: Request, req: GoogleLoginRequest, db: AsyncSession = Depends(get_db)):
+    """One-click sign-in (and sign-up) with a Google account.
+
+    Account resolution, in order:
+    1. Google account id (`sub`) already linked -> that user.
+    2. Otherwise an existing account with the same email is linked - but
+       only when Google says it has verified that address, or anyone could
+       take over an account by creating a Google login for its email.
+    3. Otherwise a new account is created with the Google name, photo and
+       verified email.
+    """
+    if not settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=503, detail="Google sign-in is not available")
+    try:
+        claims = await verify_google_id_token(req.credential, settings.GOOGLE_CLIENT_ID)
+    except GoogleUnavailableError:
+        raise HTTPException(status_code=503, detail="Google sign-in is temporarily unavailable. Please try again.")
+    except GoogleTokenError as e:
+        logger.info("google_login_rejected", reason=str(e))
+        raise HTTPException(status_code=401, detail="Google sign-in could not be verified. Please try again.")
+
+    google_sub = claims["sub"]
+    email = claims["email"].strip().lower()
+    email_verified = claims.get("email_verified") in (True, "true")
+
+    user = (await db.execute(select(User).where(User.google_sub == google_sub))).scalar_one_or_none()
+    created = False
+    if not user:
+        if not email_verified:
+            raise HTTPException(
+                status_code=400,
+                detail="Your Google account's email address isn't verified. Verify it with Google, or sign up with email.",
+            )
+        user = (await db.execute(select(User).where(func.lower(User.email) == email))).scalar_one_or_none()
+        if user:
+            if user.google_sub and user.google_sub != google_sub:
+                raise HTTPException(status_code=409, detail="This email is already linked to a different Google account")
+            user.google_sub = google_sub
+        else:
+            user = User(
+                email=email,
+                username=await _unique_username(db, email),
+                # Unusable random password: the account signs in with Google,
+                # and can still set a password later via "Forgot password".
+                hashed_password=get_password_hash(secrets.token_urlsafe(32)),
+                full_name=claims.get("name"),
+                role=UserRole.USER,
+                status=UserStatus.ACTIVE,
+                google_sub=google_sub,
+            )
+            db.add(user)
+            created = True
+
+    if user.status == UserStatus.SUSPENDED:
+        raise HTTPException(status_code=403, detail="Account suspended")
+
+    # Refresh from Google on every sign-in: the photo changes, and the email
+    # is verified by Google for this address.
+    if claims.get("picture"):
+        user.avatar_url = claims["picture"][:1024]
+    if not user.full_name and claims.get("name"):
+        user.full_name = claims["name"]
+    if email_verified and user.email.lower() == email:
+        user.email_verified = True
+
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Two first-time sign-ins for the same Google account raced.
+        await db.rollback()
+        user = (await db.execute(select(User).where(User.google_sub == google_sub))).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=409, detail="Couldn't finish Google sign-in. Please try again.")
+        created = False
+    await db.refresh(user)
+
+    if created:
+        await LedgerService.ensure_wallets_for_user(db, user.id, user.role)
+        asyncio.create_task(_send_welcome_email_background(user.email, user.username))
+    logger.info("google_login_succeeded", user_id=user.id, created=created)
+
+    token = create_access_token(subject=user.id, role=user.role.value)
+    return Token(access_token=token, token_type="bearer", role=user.role.value, user_id=user.id, username=user.username)
+
+
 @router.get("/me")
 async def get_me(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     wallets_res = await db.execute(select(Wallet).where(Wallet.user_id == current_user.id))
@@ -158,6 +259,9 @@ async def get_me(current_user: User = Depends(get_current_user), db: AsyncSessio
         "phone": current_user.phone,
         "full_name": current_user.full_name,
         "is_kyc_verified": current_user.is_kyc_verified,
+        "avatar_url": current_user.avatar_url,
+        "email_verified": bool(current_user.email_verified),
+        "has_google": bool(current_user.google_sub),
         # wallet_type matches /wallets/my-wallets; the reseller portal reads
         # that key. "type" is kept for existing clients.
         "wallets": [

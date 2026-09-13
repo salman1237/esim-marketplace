@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { Wifi } from "lucide-react";
 import { api } from "@/lib/api";
+import GoogleSignInButton from "@/components/GoogleSignInButton";
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("");
@@ -45,6 +46,8 @@ export default function RegisterPage() {
             {error}
           </div>
         )}
+
+        <GoogleSignInButton mode="signup" />
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>

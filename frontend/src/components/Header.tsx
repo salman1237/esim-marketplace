@@ -115,7 +115,12 @@ export default function Header() {
           {/* User Account / Auth */}
           {token && userData ? (
             <Link href="/profile" className="flex items-center space-x-2 bg-gray-50 hover:bg-gray-100 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-slate-900 transition-colors">
-              <User className="w-3.5 h-3.5 text-brand-600" />
+              {userData.avatar_url ? (
+                // Google photo URLs reject requests that carry a referrer.
+                <img src={userData.avatar_url} alt="" referrerPolicy="no-referrer" className="w-5 h-5 rounded-full object-cover" />
+              ) : (
+                <User className="w-3.5 h-3.5 text-brand-600" />
+              )}
               <span>{userData.username}</span>
               <span className="text-emerald-600 font-mono">
                 {/* The spendable DEFAULT wallet - not wallets[0], which can be

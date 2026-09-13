@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Boolean, DateTime, Enum, ForeignKey, Text
+from sqlalchemy import Column, String, Boolean, DateTime, Enum, ForeignKey, Text, false
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 import enum
@@ -30,6 +30,11 @@ class User(Base):
     preferred_currency = Column(String(10), default="USD")
     preferred_language = Column(String(10), default="en")
     is_kyc_verified = Column(Boolean, default=False)
+    # Sign in with Google. google_sub is Google's stable account id (the ID
+    # token's `sub`) - matched on first, since an email address can change.
+    google_sub = Column(String(255), unique=True, index=True, nullable=True)
+    avatar_url = Column(String(1024), nullable=True)
+    email_verified = Column(Boolean, default=False, server_default=false(), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

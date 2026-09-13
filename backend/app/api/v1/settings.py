@@ -2,6 +2,7 @@ from typing import List, Dict, Any
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from app.core.config import settings as app_settings
 from app.core.database import get_db
 from app.core.seed_translations import EN_TRANSLATIONS
 from app.models.settings import PlatformSetting, CurrencyRate, Language, Translation
@@ -32,6 +33,7 @@ async def get_public_settings(db: AsyncSession = Depends(get_db)):
         seo_description=cfg.get("seo_description"),
         og_image=cfg.get("og_image"),
         bangla_qr_image=cfg.get("bangla_qr_image"),
+        google_client_id=app_settings.GOOGLE_CLIENT_ID or None,
     )
 
 @router.get("/languages", response_model=List[LanguageResponse])

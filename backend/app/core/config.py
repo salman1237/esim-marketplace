@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     # processing — the frontend's own origin, not this API's.
     FRONTEND_BASE_URL: str = os.getenv("FRONTEND_BASE_URL", "https://triptel.co")
 
+    # Sign in with Google - the OAuth 2.0 *Web* client ID from Google Cloud
+    # Console. Not a secret (it ships to browsers); empty disables the button
+    # and POST /auth/google.
+    GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
+
     # Transactional email (password reset, order confirmation, welcome).
     # Deliberately optional, unlike the VivaPe/ShurjoPay/SECRET_KEY guards:
     # an unconfigured SMTP_HOST means EmailService just logs a warning and
