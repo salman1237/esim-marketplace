@@ -7,6 +7,8 @@ import { useAppSettings } from "@/lib/AppSettingsContext";
 import TranslationsManager from "@/components/TranslationsManager";
 import PricingCard from "@/components/admin/PricingCard";
 import SalesReportTab from "@/components/admin/SalesReportTab";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { Trash2 } from "lucide-react";
 
 type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales";
 
@@ -430,12 +432,22 @@ export default function AdminConsolePage() {
     }
   };
 
+  const [pendingTierDelete, setPendingTierDelete] = useState<any | null>(null);
+  const [deletingTier, setDeletingTier] = useState(false);
+
   const handleDeleteCommissionTier = async (id: string) => {
     const token = localStorage.getItem("esim_token");
     if (!token) return;
-    if (!window.confirm("Remove this commission tier?")) return;
-    await api.deleteCommissionTier(token, id);
-    setCommissionTiers(commissionTiers.filter((t) => t.id !== id));
+    setDeletingTier(true);
+    try {
+      await api.deleteCommissionTier(token, id);
+      setCommissionTiers(commissionTiers.filter((t) => t.id !== id));
+    } catch (err: any) {
+      alert("Failed to remove tier: " + err.message);
+    } finally {
+      setDeletingTier(false);
+      setPendingTierDelete(null);
+    }
   };
 
   const handleApproveKyc = async (id: string) => {
@@ -584,7 +596,7 @@ export default function AdminConsolePage() {
                   <span key={t.id} className="flex items-center gap-2 text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-white border border-gray-300 text-slate-700">
                     €{t.min_volume_usd}+ &rarr; <span className="text-admin-600">{t.rate_pct}%</span>
                     {isSuperAdmin && (
-                      <button onClick={() => handleDeleteCommissionTier(t.id)} aria-label="Remove tier" className="text-slate-500 hover:text-rose-600">
+                      <button onClick={() => setPendingTierDelete(t)} aria-label="Remove tier" className="text-slate-500 hover:text-rose-600">
                         <X className="w-3 h-3" />
                       </button>
                     )}
@@ -993,6 +1005,25 @@ export default function AdminConsolePage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingTierDelete !== null}
+        title="Remove this commission tier?"
+        tone="danger"
+        icon={<Trash2 className="w-5 h-5" />}
+        confirmLabel="Remove tier"
+        busy={deletingTier}
+        onConfirm={() => pendingTierDelete && handleDeleteCommissionTier(pendingTierDelete.id)}
+        onCancel={() => setPendingTierDelete(null)}
+      >
+        <p>
+          The <strong>{pendingTierDelete ? Number(pendingTierDelete.rate_pct) : ""}%</strong> tier for merchants with
+          <strong> €{pendingTierDelete ? Number(pendingTierDelete.min_volume_usd) : ""}+</strong> in completed sales will be removed.
+        </p>
+        <p className="text-xs text-slate-500">
+          Those merchants fall back to the next lower tier or their own flat rate on future orders. Commission already paid is not affected.
+        </p>
+      </ConfirmDialog>
 
       {/* Tab: Sales & Profit report */}
       {activeTab === "sales" && <SalesReportTab />}

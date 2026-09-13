@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { ArrowRightLeft, Coins, Wallet } from "lucide-react";
 import { api } from "@/lib/api";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { Panel, formatDateTime, getToken } from "./shared";
 
 type Props = {
@@ -16,6 +17,7 @@ export default function CommissionTab({ overview, formatPrice, onChanged }: Prop
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [ledger, setLedger] = useState<any[] | null>(null);
+  const [pendingTransfer, setPendingTransfer] = useState<{ all: boolean; label: string } | null>(null);
 
   const loadLedger = () => {
     const token = getToken();
@@ -30,16 +32,18 @@ export default function CommissionTab({ overview, formatPrice, onChanged }: Prop
   const commissionBalance = Number(overview?.wallets?.commission_balance ?? 0);
   const walletBalance = Number(overview?.wallets?.wallet_balance ?? 0);
 
-  const transfer = async (all: boolean) => {
-    const token = getToken();
-    if (!token) return;
+  const requestTransfer = (all: boolean) => {
     if (!all && !(Number(amount) > 0)) {
       setMessage({ kind: "error", text: "Enter an amount greater than zero." });
       return;
     }
-    const label = all ? formatPrice(commissionBalance) : formatPrice(Number(amount));
-    if (!window.confirm(`Move ${label} from your commission balance to your main wallet?`)) return;
+    setMessage(null);
+    setPendingTransfer({ all, label: all ? formatPrice(commissionBalance) : formatPrice(Number(amount)) });
+  };
 
+  const transfer = async (all: boolean) => {
+    const token = getToken();
+    if (!token) return;
     setBusy(true);
     setMessage(null);
     try {
@@ -52,6 +56,7 @@ export default function CommissionTab({ overview, formatPrice, onChanged }: Prop
       setMessage({ kind: "error", text: err.message || "Transfer failed" });
     } finally {
       setBusy(false);
+      setPendingTransfer(null);
     }
   };
 
@@ -84,11 +89,11 @@ export default function CommissionTab({ overview, formatPrice, onChanged }: Prop
               placeholder="Amount (EUR)"
               className="flex-1 min-w-0 bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900"
             />
-            <button disabled={busy} onClick={() => transfer(false)} className="px-3 py-2 rounded-xl bg-merchant-600 hover:bg-merchant-500 disabled:opacity-60 text-white text-xs font-bold flex items-center gap-1">
+            <button disabled={busy} onClick={() => requestTransfer(false)} className="px-3 py-2 rounded-xl bg-merchant-600 hover:bg-merchant-500 disabled:opacity-60 text-white text-xs font-bold flex items-center gap-1">
               <ArrowRightLeft className="w-3.5 h-3.5" /> Move
             </button>
           </div>
-          <button disabled={busy || commissionBalance <= 0} onClick={() => transfer(true)} className="mt-2 w-full py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-50 text-xs font-bold text-slate-700">
+          <button disabled={busy || commissionBalance <= 0} onClick={() => requestTransfer(true)} className="mt-2 w-full py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-50 text-xs font-bold text-slate-700">
             Move everything ({formatPrice(commissionBalance)})
           </button>
           {message && (
@@ -127,6 +132,22 @@ export default function CommissionTab({ overview, formatPrice, onChanged }: Prop
           </table>
         </div>
       </Panel>
+
+      <ConfirmDialog
+        open={pendingTransfer !== null}
+        title="Move commission to your wallet?"
+        tone="merchant"
+        icon={<ArrowRightLeft className="w-5 h-5" />}
+        confirmLabel={`Move ${pendingTransfer?.label ?? ""}`}
+        busy={busy}
+        onConfirm={() => pendingTransfer && transfer(pendingTransfer.all)}
+        onCancel={() => setPendingTransfer(null)}
+      >
+        <p>
+          <strong>{pendingTransfer?.label}</strong> moves from your commission balance to your main wallet, where it can pay for
+          new eSIM orders. This happens instantly.
+        </p>
+      </ConfirmDialog>
     </div>
   );
 }

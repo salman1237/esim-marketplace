@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Percent } from "lucide-react";
+import { Percent, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 type Props = {
   isSuperAdmin: boolean;
@@ -19,11 +20,13 @@ function getToken() {
 }
 
 const EXAMPLE_COSTS = [1, 5, 10];
+const priceAt = (cost: number, pct: number) => (cost * (1 + pct / 100)).toFixed(2);
 
 export default function PricingCard({ isSuperAdmin, onRepriced }: Props) {
   const [pricing, setPricing] = useState<any | null>(null);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
 
   const load = async () => {
@@ -47,24 +50,20 @@ export default function PricingCard({ isSuperAdmin, onRepriced }: Props) {
   const current = pricing ? Number(pricing.selling_profit_pct) : null;
   const changed = isValid && current !== null && pct !== current;
   const shownPct = isValid ? pct : current ?? 0;
-  const sellingFor = (cost: number) => (cost * (1 + shownPct / 100)).toFixed(2);
 
-  const save = async () => {
+  const reprice = async () => {
     const token = getToken();
-    if (!token || !pricing || !isValid) return;
-    const ok = window.confirm(
-      `Set the selling profit to ${pct}%?\n\nThe selling price of all ${pricing.product_count} products will be recalculated immediately (VivaPe cost × ${(1 + pct / 100).toFixed(2)}). Orders already placed keep their price.`
-    );
-    if (!ok) return;
-
+    if (!token || !isValid) return;
     setSaving(true);
     setNotice(null);
     try {
       const res = await api.updateAdminPricing(token, draft.trim());
       setNotice({ kind: "ok", text: `Done — ${res.products_repriced} products now sell at ${Number(res.selling_profit_pct)}% profit.` });
+      setConfirmOpen(false);
       await load();
       onRepriced();
     } catch (err: any) {
+      setConfirmOpen(false);
       setNotice({ kind: "error", text: err.message || "Couldn't update the selling profit" });
     } finally {
       setSaving(false);
@@ -103,7 +102,7 @@ export default function PricingCard({ isSuperAdmin, onRepriced }: Props) {
             </div>
             {isSuperAdmin ? (
               <button
-                onClick={save}
+                onClick={() => setConfirmOpen(true)}
                 disabled={!changed || saving}
                 className="bg-admin-600 hover:bg-admin-500 disabled:opacity-50 text-white text-xs font-bold px-4 py-2.5 rounded-lg"
               >
@@ -120,9 +119,7 @@ export default function PricingCard({ isSuperAdmin, onRepriced }: Props) {
         </div>
 
         <div className="lg:w-72 rounded-xl bg-gray-50 border border-gray-200 p-4">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
-            At {shownPct}% profit
-          </div>
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">At {shownPct}% profit</div>
           <table className="w-full text-xs">
             <thead className="text-slate-500">
               <tr>
@@ -135,8 +132,8 @@ export default function PricingCard({ isSuperAdmin, onRepriced }: Props) {
               {EXAMPLE_COSTS.map((cost) => (
                 <tr key={cost}>
                   <td className="py-1 font-mono text-slate-700">€{cost.toFixed(2)}</td>
-                  <td className="py-1 text-end font-mono font-bold text-slate-900">€{sellingFor(cost)}</td>
-                  <td className="py-1 text-end font-mono text-emerald-600">€{(Number(sellingFor(cost)) - cost).toFixed(2)}</td>
+                  <td className="py-1 text-end font-mono font-bold text-slate-900">€{priceAt(cost, shownPct)}</td>
+                  <td className="py-1 text-end font-mono text-emerald-600">€{(Number(priceAt(cost, shownPct)) - cost).toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>
@@ -144,6 +141,56 @@ export default function PricingCard({ isSuperAdmin, onRepriced }: Props) {
           {pricing && <p className="text-[11px] text-slate-500 mt-2">{pricing.product_count} products in the catalog.</p>}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen && isValid && current !== null}
+        title="Reprice the whole catalog?"
+        icon={<RefreshCw className="w-5 h-5" />}
+        confirmLabel={`Reprice ${pricing?.product_count ?? ""} products`}
+        busy={saving}
+        onConfirm={reprice}
+        onCancel={() => setConfirmOpen(false)}
+      >
+        <div className="flex items-center gap-3 rounded-xl bg-gray-50 border border-gray-200 px-4 py-3">
+          <div className="text-center">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Now</div>
+            <div className="text-xl font-black text-slate-500">{current}%</div>
+          </div>
+          <div className="flex-1 text-center text-slate-400 text-lg">→</div>
+          <div className="text-center">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">New</div>
+            <div className="text-xl font-black text-admin-600">{pct}%</div>
+          </div>
+        </div>
+
+        <p>
+          Every one of the <strong>{pricing?.product_count}</strong> products gets a new selling price right away:
+          VivaPe cost × <strong>{(1 + pct / 100).toFixed(2)}</strong>.
+        </p>
+
+        <table className="w-full text-xs">
+          <thead className="text-slate-500">
+            <tr>
+              <th className="text-start font-medium pb-1">VivaPe cost</th>
+              <th className="text-end font-medium pb-1">Current price</th>
+              <th className="text-end font-medium pb-1">New price</th>
+            </tr>
+          </thead>
+          <tbody>
+            {EXAMPLE_COSTS.map((cost) => (
+              <tr key={cost} className="border-t border-gray-100">
+                <td className="py-1.5 font-mono text-slate-700">€{cost.toFixed(2)}</td>
+                <td className="py-1.5 text-end font-mono text-slate-500">€{priceAt(cost, current ?? 0)}</td>
+                <td className="py-1.5 text-end font-mono font-bold text-slate-900">€{priceAt(cost, pct)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <p className="text-xs text-slate-500">
+          Orders already placed keep the price they were paid at. Catalog syncs will keep using {pct}%.
+        </p>
+      </ConfirmDialog>
     </div>
   );
 }

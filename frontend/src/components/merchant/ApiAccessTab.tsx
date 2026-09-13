@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, BookOpen, KeyRound, Send, ShieldCheck, Webhook } from "lucide-react";
 import { api } from "@/lib/api";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { CopyButton, Panel, formatDateTime, getToken } from "./shared";
 
 export default function ApiAccessTab() {
@@ -15,6 +16,7 @@ export default function ApiAccessTab() {
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<any | null>(null);
+  const [pendingWebhook, setPendingWebhook] = useState<"rotate" | "remove" | null>(null);
 
   const load = async () => {
     const token = getToken();
@@ -32,15 +34,19 @@ export default function ApiAccessTab() {
     load();
   }, []);
 
+  const requestSaveWebhook = (clear: boolean) => {
+    if (clear) {
+      setPendingWebhook("remove");
+    } else if (access?.webhook.configured) {
+      setPendingWebhook("rotate");
+    } else {
+      saveWebhook(false);
+    }
+  };
+
   const saveWebhook = async (clear: boolean) => {
     const token = getToken();
     if (!token) return;
-    if (!clear && access?.webhook.configured) {
-      const ok = window.confirm("Saving generates a NEW signing secret and the current one stops working immediately. Continue?");
-      if (!ok) return;
-    }
-    if (clear && !window.confirm("Remove your webhook? You'll only be able to poll for order updates.")) return;
-
     setSavingWebhook(true);
     setWebhookMessage(null);
     setTestResult(null);
@@ -53,6 +59,7 @@ export default function ApiAccessTab() {
       setWebhookMessage({ kind: "error", text: err.message || "Couldn't save the webhook" });
     } finally {
       setSavingWebhook(false);
+      setPendingWebhook(null);
     }
   };
 
@@ -137,7 +144,7 @@ curl -s -X POST ${access.base_url}/orders \\
             placeholder="https://api.yourcompany.com/webhooks/triptel"
             className="flex-1 bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900 font-mono"
           />
-          <button disabled={savingWebhook || !webhookUrl.trim()} onClick={() => saveWebhook(false)} className="px-4 py-2 rounded-xl bg-merchant-600 hover:bg-merchant-500 disabled:opacity-60 text-white text-xs font-bold">
+          <button disabled={savingWebhook || !webhookUrl.trim()} onClick={() => requestSaveWebhook(false)} className="px-4 py-2 rounded-xl bg-merchant-600 hover:bg-merchant-500 disabled:opacity-60 text-white text-xs font-bold">
             {access.webhook.configured ? "Save & rotate secret" : "Save webhook"}
           </button>
           {access.webhook.configured && (
@@ -145,7 +152,7 @@ curl -s -X POST ${access.base_url}/orders \\
               <button disabled={testing} onClick={sendTest} className="px-4 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 text-xs font-bold text-slate-700 flex items-center justify-center gap-1.5">
                 <Send className="w-3.5 h-3.5" /> {testing ? "Sending…" : "Send test"}
               </button>
-              <button disabled={savingWebhook} onClick={() => saveWebhook(true)} className="px-4 py-2 rounded-xl border border-rose-200 bg-white hover:bg-rose-50 text-xs font-bold text-rose-600">
+              <button disabled={savingWebhook} onClick={() => requestSaveWebhook(true)} className="px-4 py-2 rounded-xl border border-rose-200 bg-white hover:bg-rose-50 text-xs font-bold text-rose-600">
                 Remove
               </button>
             </>
@@ -220,6 +227,33 @@ curl -s -X POST ${access.base_url}/orders \\
           <div className="absolute top-2 end-2"><CopyButton value={quickStart} /></div>
         </div>
       </Panel>
+
+      <ConfirmDialog
+        open={pendingWebhook === "rotate"}
+        title="Rotate your webhook secret?"
+        tone="merchant"
+        icon={<KeyRound className="w-5 h-5" />}
+        confirmLabel="Save & rotate secret"
+        busy={savingWebhook}
+        onConfirm={() => saveWebhook(false)}
+        onCancel={() => setPendingWebhook(null)}
+      >
+        <p>Saving generates a <strong>new signing secret</strong>. The current secret stops working immediately.</p>
+        <p className="text-xs text-slate-500">Update your server with the new secret right away, or webhook signature checks will fail.</p>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pendingWebhook === "remove"}
+        title="Remove your webhook?"
+        tone="danger"
+        icon={<Webhook className="w-5 h-5" />}
+        confirmLabel="Remove webhook"
+        busy={savingWebhook}
+        onConfirm={() => saveWebhook(true)}
+        onCancel={() => setPendingWebhook(null)}
+      >
+        <p>Triptel will stop sending order updates to your server. You&apos;ll only be able to poll the API for order status.</p>
+      </ConfirmDialog>
     </div>
   );
 }
