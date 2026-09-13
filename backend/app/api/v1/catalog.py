@@ -40,7 +40,9 @@ async def list_country_products(iso2: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Country not found")
 
     p_res = await db.execute(
-        select(Product).where(Product.country_id == country.id, Product.is_active == True).order_by(Product.data_amount_gb.asc())
+        select(Product).where(Product.country_id == country.id, Product.is_active == True)
+        # Cheapest first - what a traveler compares on; data amount breaks ties.
+        .order_by(Product.retail_price.asc(), Product.data_amount_gb.asc())
     )
     return p_res.scalars().all()
 

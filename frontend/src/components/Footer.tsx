@@ -89,6 +89,13 @@ export default function Footer() {
               <li><span className="flex items-center space-x-2 text-slate-500"><Phone className="w-3.5 h-3.5" /><span>{settings.support_phone}</span></span></li>
             )}
           </ul>
+          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider pt-2">Legal</h4>
+          <ul className="space-y-2 text-xs">
+            <li><Link href="/legal/terms" className="hover:text-slate-900">Terms &amp; Conditions</Link></li>
+            <li><Link href="/legal/privacy" className="hover:text-slate-900">Privacy Policy</Link></li>
+            <li><Link href="/legal/data-policy" className="hover:text-slate-900">Data Policy</Link></li>
+            <li><Link href="/legal/refund-policy" className="hover:text-slate-900">Refund Policy</Link></li>
+          </ul>
         </div>
 
         {/* Col 4: International */}

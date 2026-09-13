@@ -100,6 +100,13 @@ export default function RegisterPage() {
           </button>
         </form>
 
+        <p className="mt-4 text-[11px] leading-relaxed text-center text-slate-500">
+          By creating an account or continuing with Google, you agree to our{" "}
+          <Link href="/legal/terms" className="text-brand-600 hover:underline">Terms &amp; Conditions</Link>,{" "}
+          <Link href="/legal/privacy" className="text-brand-600 hover:underline">Privacy Policy</Link> and{" "}
+          <Link href="/legal/refund-policy" className="text-brand-600 hover:underline">Refund Policy</Link>.
+        </p>
+
         <div className="mt-6 text-center text-xs text-slate-500">
           Already have an account?{" "}
           <Link href="/auth/login" className="text-brand-600 font-semibold hover:underline">

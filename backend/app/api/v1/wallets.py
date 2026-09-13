@@ -8,6 +8,7 @@ from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.wallet import Wallet, WalletLedgerEntry, WalletType
 from app.models.payment import ManualPaymentRequest, ManualPaymentStatus
+from app.services.payment_methods_svc import get_payment_methods
 from app.schemas.wallet import WalletResponse, LedgerEntryResponse, ManualDepositRequest, ManualDepositResponse
 
 router = APIRouter(prefix="/wallets", tags=["Wallets & Ledger"])
@@ -46,12 +47,28 @@ async def submit_manual_deposit(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    if req.amount <= 0:
+        raise HTTPException(status_code=400, detail="Deposit amount must be greater than zero")
+    if not req.transaction_id.strip():
+        raise HTTPException(status_code=400, detail="Transaction ID is required")
+
+    # Once the Super Admin has configured deposit accounts, a deposit must
+    # name one of the active ones - otherwise an admin could be asked to
+    # approve money sent to an account that was retired or never existed.
+    bank_name = req.bank_name.strip()
+    active = await get_payment_methods(db, active_only=True)
+    if active:
+        match = next((m for m in active if m.name.lower() == bank_name.lower()), None)
+        if not match:
+            raise HTTPException(status_code=400, detail="Please choose one of the listed payment methods")
+        bank_name = match.name
+
     deposit = ManualPaymentRequest(
         user_id=current_user.id,
         amount=req.amount,
         currency=req.currency,
-        bank_name=req.bank_name,
-        transaction_id=req.transaction_id,
+        bank_name=bank_name,
+        transaction_id=req.transaction_id.strip(),
         receipt_url=req.receipt_url,
         status=ManualPaymentStatus.PENDING
     )

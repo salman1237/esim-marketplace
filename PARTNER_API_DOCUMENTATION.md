@@ -80,7 +80,7 @@ Rate limit: 120/minute.
 
 ### 2.2 `GET /countries/{iso2}/products`
 
-Active products for a country (ISO2 is case-insensitive), smallest data allowance first. `404` if the country doesn't exist.
+Active products for a country (ISO2 is case-insensitive), cheapest first. `404` if the country doesn't exist.
 
 ```json
 [

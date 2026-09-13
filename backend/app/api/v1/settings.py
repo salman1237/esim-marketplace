@@ -1,11 +1,13 @@
 from typing import List, Dict, Any
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from app.services.legal_content_svc import LEGAL_TITLES, fill_placeholders, get_legal_document
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.config import settings as app_settings
 from app.core.database import get_db
 from app.core.seed_translations import EN_TRANSLATIONS
 from app.models.settings import PlatformSetting, CurrencyRate, Language, Translation
+from app.services.payment_methods_svc import PAYMENT_METHODS_KEY, parse_payment_methods
 from app.schemas.settings import PublicSettingsResponse, CurrencyRateResponse, LanguageResponse, TranslationsResponse
 
 router = APIRouter(prefix="/settings", tags=["Public Settings"])
@@ -23,9 +25,10 @@ async def get_public_settings(db: AsyncSession = Depends(get_db)):
         logo_light=cfg.get("logo_light"),
         logo_dark=cfg.get("logo_dark"),
         favicon=cfg.get("favicon"),
-        support_phone=cfg.get("support_phone", "+880 1700-000000"),
-        support_email=cfg.get("support_email", "support@esim.local"),
-        support_whatsapp=cfg.get("support_whatsapp", "+880 1700-000000"),
+        # No made-up fallbacks: an unset contact is hidden, not shown as a fake number.
+        support_phone=cfg.get("support_phone") or None,
+        support_email=cfg.get("support_email") or None,
+        support_whatsapp=cfg.get("support_whatsapp") or None,
         default_currency=cfg.get("default_currency", app_settings.DEFAULT_CURRENCY),
         maintenance_mode=bool(cfg.get("maintenance_mode", False)),
         social_links=cfg.get("social_links") or {},
@@ -33,8 +36,30 @@ async def get_public_settings(db: AsyncSession = Depends(get_db)):
         seo_description=cfg.get("seo_description"),
         og_image=cfg.get("og_image"),
         bangla_qr_image=cfg.get("bangla_qr_image"),
+        payment_methods=[m for m in parse_payment_methods(cfg.get(PAYMENT_METHODS_KEY)) if m.is_active],
         google_client_id=app_settings.GOOGLE_CLIENT_ID or None,
     )
+
+@router.get("/legal")
+async def list_legal_documents(db: AsyncSession = Depends(get_db)):
+    docs = [await get_legal_document(db, slug) for slug in LEGAL_TITLES]
+    return [{k: d[k] for k in ("slug", "title", "updated_at")} for d in docs]
+
+@router.get("/legal/{slug}")
+async def get_legal(slug: str, db: AsyncSession = Depends(get_db)):
+    doc = await get_legal_document(db, slug)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    res = await db.execute(
+        select(PlatformSetting).where(PlatformSetting.key.in_(["platform_name", "support_email"]), PlatformSetting.is_public == True)
+    )
+    cfg = {s.key: s.value for s in res.scalars().all()}
+    return {
+        "slug": doc["slug"],
+        "title": doc["title"],
+        "body": fill_placeholders(doc["body"], cfg.get("platform_name"), cfg.get("support_email")),
+        "updated_at": doc["updated_at"],
+    }
 
 @router.get("/languages", response_model=List[LanguageResponse])
 async def list_languages(db: AsyncSession = Depends(get_db)):

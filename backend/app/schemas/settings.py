@@ -1,6 +1,24 @@
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, List, Literal
 from decimal import Decimal
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+class PaymentMethodConfig(BaseModel):
+    """One manual-deposit account shown on the wallet page."""
+    id: Optional[str] = Field(default=None, max_length=64)
+    name: str = Field(min_length=1, max_length=60)
+    kind: Literal["mobile", "bank", "qr"] = "mobile"
+    account_name: Optional[str] = Field(default=None, max_length=100)
+    account_number: Optional[str] = Field(default=None, max_length=60)
+    branch: Optional[str] = Field(default=None, max_length=100)
+    instructions: Optional[str] = Field(default=None, max_length=500)
+    is_active: bool = True
+
+class UpdateLegalDocumentRequest(BaseModel):
+    # Empty resets the document to its built-in draft.
+    body: str = Field(default="", max_length=60_000)
+
+class UpdatePaymentMethodsRequest(BaseModel):
+    methods: List[PaymentMethodConfig] = Field(default_factory=list, max_length=20)
 
 class PublicSettingsResponse(BaseModel):
     platform_name: str = "eSIM Global"
@@ -19,6 +37,8 @@ class PublicSettingsResponse(BaseModel):
     seo_description: Optional[str] = None
     og_image: Optional[str] = None
     bangla_qr_image: Optional[str] = None
+    # Active manual-deposit methods only; admins edit the full list.
+    payment_methods: List[PaymentMethodConfig] = []
     # OAuth client ID for the "Sign in with Google" button; None hides it.
     google_client_id: Optional[str] = None
 

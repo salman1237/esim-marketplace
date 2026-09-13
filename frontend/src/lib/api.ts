@@ -154,6 +154,10 @@ export const api = {
     return fetchApi(`/api/v1/admin/catalog?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
   },
   updateAdminCatalogProduct: (token: string, id: string, data: any) => fetchApi(`/api/v1/admin/catalog/${id}`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  getAdminPaymentMethods: (token: string) => fetchApi("/api/v1/admin/payment-methods", { headers: { Authorization: `Bearer ${token}` } }),
+  updateAdminPaymentMethods: (token: string, methods: any[]) => fetchApi("/api/v1/admin/payment-methods", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ methods }) }),
+  getAdminLegalDocuments: (token: string) => fetchApi("/api/v1/admin/legal", { headers: { Authorization: `Bearer ${token}` } }),
+  updateAdminLegalDocument: (token: string, slug: string, body: string) => fetchApi(`/api/v1/admin/legal/${slug}`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ body }) }),
   getAdminPricing: (token: string) => fetchApi("/api/v1/admin/pricing", { headers: { Authorization: `Bearer ${token}` } }),
   updateAdminPricing: (token: string, sellingProfitPct: string) => fetchApi("/api/v1/admin/pricing", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ selling_profit_pct: sellingProfitPct }) }),
   getSalesReport: (token: string, params: SalesReportParams) => fetchApi(`/api/v1/admin/reports/sales?${salesReportQuery(params)}`, { headers: { Authorization: `Bearer ${token}` } }),

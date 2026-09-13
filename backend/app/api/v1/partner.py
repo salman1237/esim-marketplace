@@ -91,7 +91,8 @@ async def list_country_products(
         raise HTTPException(status_code=404, detail="Country not found")
 
     p_res = await db.execute(
-        select(Product).where(Product.country_id == country.id, Product.is_active == True).order_by(Product.data_amount_gb.asc())
+        select(Product).where(Product.country_id == country.id, Product.is_active == True)
+        .order_by(Product.retail_price.asc(), Product.data_amount_gb.asc())
     )
     return p_res.scalars().all()
 

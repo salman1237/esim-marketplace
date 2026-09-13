@@ -1,10 +1,40 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Wallet, ArrowDownRight, ArrowUpRight, Plus, Upload, CheckCircle2 } from "lucide-react";
+import { Wallet, CheckCircle2, Copy, Check } from "lucide-react";
 import { animate } from "framer-motion";
 import { api, API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
+
+type DepositMethod = {
+  id?: string;
+  name: string;
+  kind: "mobile" | "bank" | "qr";
+  account_name?: string | null;
+  account_number?: string | null;
+  branch?: string | null;
+  instructions?: string | null;
+};
+
+function CopyValue({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        navigator.clipboard?.writeText(value).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }).catch(() => {});
+      }}
+      className="inline-flex items-center gap-1 font-mono font-bold text-slate-900 hover:text-brand-600"
+      title="Copy"
+    >
+      {value}
+      {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+    </button>
+  );
+}
 
 function CountUpBalance({ value, formatPrice }: { value: number; formatPrice: (n: number) => string }) {
   const [display, setDisplay] = useState(0);
@@ -25,13 +55,16 @@ export default function WalletPage() {
   const [ledger, setLedger] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [depositAmount, setDepositAmount] = useState("10");
-  const [bankName, setBankName] = useState("bKash");
+  const [bankName, setBankName] = useState("");
   const [txId, setTxId] = useState("");
   const [submittingSlip, setSubmittingSlip] = useState(false);
   const [slipSuccess, setSlipSuccess] = useState(false);
   const [payingViaGateway, setPayingViaGateway] = useState(false);
   const [topupBanner, setTopupBanner] = useState<{ kind: "success" | "failed"; reason?: string } | null>(null);
-  const [settings, setSettings] = useState<{ bangla_qr_image?: string }>({});
+  const [settings, setSettings] = useState<{ bangla_qr_image?: string; payment_methods?: DepositMethod[] }>({});
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const depositMethods = settings.payment_methods || [];
+  const selectedMethod = depositMethods.find((m) => m.name === bankName);
 
   useEffect(() => {
     const token = localStorage.getItem("esim_token");
@@ -57,7 +90,14 @@ export default function WalletPage() {
       .catch(console.error)
       .finally(() => setLoading(false));
 
-    api.getPublicSettings().then(setSettings).catch(() => {});
+    api
+      .getPublicSettings()
+      .then((s) => {
+        setSettings(s);
+        if (s.payment_methods?.length) setBankName(s.payment_methods[0].name);
+      })
+      .catch(() => {})
+      .finally(() => setSettingsLoaded(true));
   }, []);
 
   const handleGatewayTopup = async () => {
@@ -174,7 +214,7 @@ export default function WalletPage() {
               disabled={payingViaGateway}
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 text-white text-xs font-bold shadow-md shadow-emerald-900/10 hover:opacity-95 disabled:opacity-60"
             >
-              {payingViaGateway ? "Redirecting to ShurjoPay..." : `Pay via ShurjoPay Sandbox (€${depositAmount})`}
+              {payingViaGateway ? "Redirecting to ShurjoPay..." : `Pay via ShurjoPay (€${depositAmount})`}
             </button>
           </div>
         </div>
@@ -191,6 +231,12 @@ export default function WalletPage() {
               <p className="text-xs text-slate-500 mt-1">An admin will verify your transaction and credit your balance shortly.</p>
               <button onClick={() => setSlipSuccess(false)} className="mt-4 text-xs text-brand-600 underline">Submit Another</button>
             </div>
+          ) : !settingsLoaded ? (
+            <div className="h-40 rounded-xl bg-gray-50 animate-pulse" />
+          ) : depositMethods.length === 0 ? (
+            <div className="p-6 bg-gray-50 border border-gray-200 rounded-xl text-center text-xs text-slate-500">
+              Manual deposit isn&apos;t available right now — please use instant top up.
+            </div>
           ) : (
             <form onSubmit={handleManualSlip} className="space-y-3">
               <div>
@@ -200,25 +246,42 @@ export default function WalletPage() {
                   onChange={(e) => setBankName(e.target.value)}
                   className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
                 >
-                  <option value="bKash">bKash (01700-000000)</option>
-                  <option value="Nagad">Nagad (01700-000000)</option>
-                  <option value="City Bank">City Bank (A/C: 1234567890)</option>
-                  <option value="Bangla QR">Bangla QR</option>
+                  {depositMethods.map((m) => (
+                    <option key={m.id || m.name} value={m.name}>{m.name}</option>
+                  ))}
                 </select>
               </div>
 
-              {bankName === "Bangla QR" && (
-                <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl text-center">
-                  {settings.bangla_qr_image ? (
-                    <img
-                      src={`${API_BASE}${settings.bangla_qr_image}`}
-                      alt="Bangla QR payment code"
-                      className="w-40 h-40 mx-auto rounded-lg bg-white p-2 border border-gray-200"
-                    />
-                  ) : (
-                    <p className="text-xs text-slate-500 py-4">Bangla QR code not configured yet — please use another method.</p>
+              {selectedMethod && (
+                <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs space-y-1.5">
+                  {selectedMethod.kind === "qr" && (
+                    <div className="text-center pb-1">
+                      {settings.bangla_qr_image ? (
+                        <img
+                          src={`${API_BASE}${settings.bangla_qr_image}`}
+                          alt={`${selectedMethod.name} payment code`}
+                          className="w-40 h-40 mx-auto rounded-lg bg-white p-2 border border-gray-200"
+                        />
+                      ) : (
+                        <p className="text-slate-500 py-4">QR code not uploaded yet — please use another method.</p>
+                      )}
+                    </div>
                   )}
-                  <p className="text-[11px] text-slate-500 mt-2">Scan to pay, then submit the transaction ID below for approval.</p>
+                  {selectedMethod.account_name && (
+                    <div className="flex justify-between gap-3"><span className="text-slate-500">Account name</span><span className="font-semibold text-slate-900 text-end">{selectedMethod.account_name}</span></div>
+                  )}
+                  {selectedMethod.account_number && (
+                    <div className="flex justify-between gap-3"><span className="text-slate-500">{selectedMethod.kind === "bank" ? "Account number" : "Number"}</span><CopyValue value={selectedMethod.account_number} /></div>
+                  )}
+                  {selectedMethod.branch && (
+                    <div className="flex justify-between gap-3"><span className="text-slate-500">Branch</span><span className="text-slate-900 text-end">{selectedMethod.branch}</span></div>
+                  )}
+                  <p className="text-[11px] text-slate-500 pt-1">
+                    {selectedMethod.instructions || (selectedMethod.kind === "qr" ? "Scan to pay, then submit the transaction ID below." : "Send the amount, then submit the transaction ID below.")}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Amount to send: <strong className="text-slate-900">≈ ৳{Math.round(convertTo(parseFloat(depositAmount) || 0, "BDT")).toLocaleString()}</strong> (€{depositAmount})
+                  </p>
                 </div>
               )}
 

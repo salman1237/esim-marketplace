@@ -81,6 +81,13 @@ export default function LoginPage() {
           </button>
         </form>
 
+        {/* Google sign-in also creates accounts, so the consent note belongs here too. */}
+        <p className="mt-4 text-[11px] leading-relaxed text-center text-slate-500">
+          By continuing, you agree to our{" "}
+          <Link href="/legal/terms" className="text-brand-600 hover:underline">Terms &amp; Conditions</Link> and{" "}
+          <Link href="/legal/privacy" className="text-brand-600 hover:underline">Privacy Policy</Link>.
+        </p>
+
         <div className="mt-6 text-center text-xs text-slate-500">
           Don't have an account?{" "}
           <Link href="/auth/register" className="text-brand-600 font-semibold hover:underline">

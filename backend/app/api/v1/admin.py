@@ -30,9 +30,11 @@ from datetime import date as Date, datetime, timedelta, timezone
 from app.core.seed_translations import EN_TRANSLATIONS, flatten
 from app.schemas.settings import (
     UpdateBrandingRequest, CurrencyOverrideRequest, LanguageToggleRequest,
-    LanguageCreateRequest, TranslationUpsertRequest,
+    LanguageCreateRequest, TranslationUpsertRequest, UpdatePaymentMethodsRequest, UpdateLegalDocumentRequest,
 )
 from app.services.ledger_svc import LedgerService
+from app.services.payment_methods_svc import get_payment_methods, set_payment_methods
+from app.services.legal_content_svc import LEGAL_TITLES, get_legal_document, save_legal_document
 from app.services.pricing_svc import MAX_SELLING_PROFIT_PCT, get_selling_profit_pct, retail_price_for, set_selling_profit_pct
 from app.services.audit_svc import AuditService
 from app.services.catalog_sync_svc import sync_vivape_catalog
@@ -645,6 +647,63 @@ async def update_branding(
     )
     await db.commit()
     return {"status": "success", "updated": list(updates.keys())}
+
+@router.get("/payment-methods", dependencies=[Depends(require_admin)])
+async def list_payment_methods(db: AsyncSession = Depends(get_db)):
+    """Full list including inactive methods - admins approve deposits
+    against these, so they can see them; only a Super Admin edits."""
+    return {"methods": [m.model_dump() for m in await get_payment_methods(db)]}
+
+
+@router.put("/payment-methods", dependencies=[Depends(require_super_admin)])
+async def update_payment_methods(
+    req: UpdatePaymentMethodsRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        before, after = await set_payment_methods(db, req.methods, admin_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_PAYMENT_METHODS", before_state={"methods": before}, after_state={"methods": after},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    await db.commit()
+    return {"methods": after}
+
+
+@router.get("/legal", dependencies=[Depends(require_admin)])
+async def list_legal_for_admin(db: AsyncSession = Depends(get_db)):
+    """Raw bodies (placeholders unfilled) plus whether each is still the built-in draft."""
+    return {"documents": [await get_legal_document(db, slug) for slug in LEGAL_TITLES]}
+
+
+@router.put("/legal/{slug}", dependencies=[Depends(require_super_admin)])
+async def update_legal_document(
+    slug: str,
+    req: UpdateLegalDocumentRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if slug not in LEGAL_TITLES:
+        raise HTTPException(status_code=404, detail="Document not found")
+    before_body, doc = await save_legal_document(db, slug, req.body, admin_user.id)
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_LEGAL_DOCUMENT",
+        before_state={"slug": slug, "chars": len(before_body)},
+        after_state={"slug": slug, "chars": len(doc["body"]), "reset_to_default": doc["is_default"]},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    await db.commit()
+    return doc
+
 
 UPLOAD_DIR = Path(settings.UPLOADS_DIR) / "branding"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)

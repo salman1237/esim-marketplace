@@ -6,6 +6,8 @@ import { api, API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 import TranslationsManager from "@/components/TranslationsManager";
 import PricingCard from "@/components/admin/PricingCard";
+import PaymentMethodsCard from "@/components/admin/PaymentMethodsCard";
+import LegalContentCard from "@/components/admin/LegalContentCard";
 import SalesReportTab from "@/components/admin/SalesReportTab";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { Trash2 } from "lucide-react";
@@ -59,7 +61,7 @@ export default function AdminConsolePage() {
   const [purchasingEsim, setPurchasingEsim] = useState(false);
   const [purchaseResult, setPurchaseResult] = useState<{ ok: boolean; message: string } | null>(null);
 
-  const [branding, setBranding] = useState({ platform_name: "", support_email: "", support_phone: "", maintenance_mode: false, default_currency: "EUR", seo_title: "", seo_description: "" });
+  const [branding, setBranding] = useState({ platform_name: "", support_email: "", support_phone: "", support_whatsapp: "", maintenance_mode: false, default_currency: "EUR", seo_title: "", seo_description: "" });
   const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
   const [brandingAssets, setBrandingAssets] = useState<{ logo_light?: string; logo_dark?: string; favicon?: string; og_image?: string; bangla_qr_image?: string }>({});
   const [uploadingKind, setUploadingKind] = useState<string | null>(null);
@@ -110,6 +112,7 @@ export default function AdminConsolePage() {
         platform_name: s.platform_name ?? b.platform_name,
         support_email: s.support_email ?? b.support_email,
         support_phone: s.support_phone ?? b.support_phone,
+        support_whatsapp: s.support_whatsapp ?? b.support_whatsapp,
         maintenance_mode: !!s.maintenance_mode,
         default_currency: s.default_currency ?? b.default_currency,
         seo_title: s.seo_title ?? "",
@@ -817,6 +820,28 @@ export default function AdminConsolePage() {
                   className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
                 />
               </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-slate-700 font-semibold block mb-1">Support Phone</label>
+                  <input
+                    type="tel"
+                    placeholder="Hidden when empty"
+                    value={branding.support_phone}
+                    onChange={(e) => setBranding({ ...branding, support_phone: e.target.value })}
+                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-700 font-semibold block mb-1">WhatsApp Number</label>
+                  <input
+                    type="tel"
+                    placeholder="Hidden when empty"
+                    value={branding.support_whatsapp}
+                    onChange={(e) => setBranding({ ...branding, support_whatsapp: e.target.value })}
+                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
+                  />
+                </div>
+              </div>
               <div>
                 <label className="text-xs text-slate-700 font-semibold block mb-1">SEO Title</label>
                 <input
@@ -950,6 +975,14 @@ export default function AdminConsolePage() {
                 Save Rate Override
               </button>
             </form>
+          </div>
+
+          <div className="md:col-span-2">
+            <PaymentMethodsCard isSuperAdmin={isSuperAdmin} />
+          </div>
+
+          <div className="md:col-span-2">
+            <LegalContentCard isSuperAdmin={isSuperAdmin} />
           </div>
         </div>
       )}
