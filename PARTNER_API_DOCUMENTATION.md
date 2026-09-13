@@ -234,6 +234,7 @@ Sets, rotates or clears your webhook endpoint. Self-service.
 
 - A **new** `webhook_secret` is generated on every call, even if you resubmit the same URL. The previous secret stops matching immediately, so deploy the new secret right away.
 - `{"webhook_url": null}` clears the webhook; you can still poll.
+- You can also set, rotate, remove and **test** your webhook from the Partner Dashboard at <https://triptel.co/reseller#api>. It must be a public `https://` URL.
 
 Rate limit: 10/minute.
 
@@ -255,6 +256,15 @@ X-Webhook-Signature: 5d41402abc4b2a76b9719d911017c592...
   "install_links": { "ios": "https://esimsetup.apple.com/esim_qrcode_provisioning?carddata=LPA%3A1%24...",
                      "android": "https://esimsetup.android.com/esim_qrcode_provisioning?carddata=LPA%3A1%24..." },
   "is_mock_fallback": false, "created_at": "...", "updated_at": "..." }
+```
+
+**Headers:** `X-Webhook-Signature` (see below) and `X-Webhook-Event`, which is `order.updated` for order deliveries.
+
+**Test deliveries:** the dashboard's "Send test" button posts a signed ping with `X-Webhook-Event: webhook.test` and this body. It is not an order, so verify the signature and respond `2xx` without processing it:
+
+```json
+{ "event": "webhook.test", "business_name": "Ovigo Travel",
+  "message": "Test delivery from Triptel. Respond with any 2xx status.", "sent_at": "2026-09-13T10:00:00+00:00" }
 ```
 
 **Delivery:** one attempt when the order settles. If it fails (non-2xx, timeout after 10 seconds, connection error), a sweep every 5 minutes retries it, up to **3 attempts in total** within 24 hours. This applies to both `COMPLETED` and `FAILED` orders.
@@ -341,4 +351,4 @@ Branch on the status code, not the `detail` text.
 
 ## 7. Access, rotation and support
 
-API keys are issued and revoked by a Triptel Super Admin; there is no self-service key management. If a key may have leaked, ask for immediate revocation: tokens issued from it stop working on their next call. Quote the `order_no` when contacting support about an order.
+API keys are issued and revoked by a Triptel Super Admin; there is no self-service key management. Your Partner Dashboard (<https://triptel.co/reseller>) shows your key's prefix and when it was last used, all your orders (web and API) with their eSIM details, webhook delivery history, your balances, and lets you move earned commission into your main wallet. If a key may have leaked, ask for immediate revocation: tokens issued from it stop working on their next call. Quote the `order_no` when contacting support about an order.

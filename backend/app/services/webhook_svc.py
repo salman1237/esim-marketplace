@@ -84,7 +84,11 @@ async def deliver_webhook(db: AsyncSession, merchant: MerchantProfile, order: Or
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
                 merchant.webhook_url, content=body,
-                headers={"Content-Type": "application/json", "X-Webhook-Signature": signature}
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Webhook-Signature": signature,
+                    "X-Webhook-Event": "order.updated",
+                }
             )
             status_code = resp.status_code
             success = 200 <= resp.status_code < 300
@@ -96,6 +100,32 @@ async def deliver_webhook(db: AsyncSession, merchant: MerchantProfile, order: Or
         payload=body.decode(), response_status=status_code, attempt=attempt, success=success
     ))
     await db.commit()
+
+
+async def send_test_webhook(merchant: MerchantProfile) -> dict:
+    """A signed ping so a merchant can check their receiver - reachable,
+    signature verification wired up - without waiting for a real order.
+    Not written to WebhookDeliveryLog: that table tracks order deliveries
+    for the retry sweep, and a test must never be retried."""
+    payload = {
+        "event": "webhook.test",
+        "business_name": merchant.business_name,
+        "message": "Test delivery from Triptel. Respond with any 2xx status.",
+        "sent_at": datetime.now(timezone.utc).isoformat(),
+    }
+    body = json.dumps(payload).encode()
+    headers = {
+        "Content-Type": "application/json",
+        "X-Webhook-Signature": _sign(body, merchant.webhook_secret),
+        "X-Webhook-Event": "webhook.test",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(merchant.webhook_url, content=body, headers=headers)
+        return {"delivered": 200 <= resp.status_code < 300, "status_code": resp.status_code, "error": None}
+    except Exception as e:
+        logger.info("webhook_test_failed", merchant_id=merchant.id, error=str(e))
+        return {"delivered": False, "status_code": None, "error": f"Could not reach the webhook URL ({type(e).__name__})"}
 
 
 async def retry_failed_webhooks(db: AsyncSession) -> dict:

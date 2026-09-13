@@ -338,7 +338,16 @@ curl -s https://triptel.co/api/v1/partner/me \\
             <li>Verify the signature on the raw body (below) and reject mismatches with <IC>401</IC>.</li>
             <li>Be idempotent: the same order can arrive more than once, or race your own polling &mdash; key on <IC>order_id</IC>.</li>
             <li>Respond <IC>2xx</IC> quickly and do slow work afterwards.</li>
+            <li>
+              Check the <IC>X-Webhook-Event</IC> header: <IC>order.updated</IC> for orders, <IC>webhook.test</IC> for a
+              signed test ping sent from your Partner Dashboard (body <IC>{`{"event": "webhook.test", ...}`}</IC>) &mdash;
+              verify it and return <IC>2xx</IC> without processing.
+            </li>
           </ul>
+          <p>
+            You can set, rotate, remove and test your webhook, and see every delivery attempt, from your{" "}
+            <Link href="/reseller#api" className="font-semibold text-brand-600 hover:text-brand-700">Partner Dashboard</Link>.
+          </p>
 
           <h3 className="text-sm font-bold text-slate-900 pt-4">Signature verification</h3>
           <p>

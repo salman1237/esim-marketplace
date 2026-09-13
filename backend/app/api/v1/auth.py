@@ -167,6 +167,7 @@ async def get_me(current_user: User = Depends(get_current_user), db: AsyncSessio
         "merchant_profile": {
             "business_name": merchant.business_name,
             "status": merchant.status.value,
+            "rejection_reason": merchant.rejection_reason,
             "commission_rate_pct": float(merchant.commission_rate_pct)
         } if merchant else None
     }

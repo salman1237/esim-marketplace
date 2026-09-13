@@ -21,6 +21,8 @@ class LedgerRefType(str, enum.Enum):
     COMMISSION_EARNED = "COMMISSION_EARNED"
     ADMIN_ADJUSTMENT = "ADMIN_ADJUSTMENT"
     REFUND = "REFUND"
+    # A merchant moving earned commission into their main wallet (both legs).
+    COMMISSION_TRANSFER = "COMMISSION_TRANSFER"
 
 class Wallet(Base):
     __tablename__ = "wallets"

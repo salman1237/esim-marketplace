@@ -68,6 +68,21 @@ export const api = {
   getOrder: (token: string, orderId: string) => fetchApi(`/api/v1/orders/${orderId}`, { headers: { Authorization: `Bearer ${token}` } }),
   getResellerOrders: (token: string) => fetchApi("/api/v1/orders/reseller-orders", { headers: { Authorization: `Bearer ${token}` } }),
 
+  // Merchant dashboard (approved merchants only)
+  getMerchantOverview: (token: string) => fetchApi("/api/v1/merchant/overview", { headers: { Authorization: `Bearer ${token}` } }),
+  getMerchantOrders: (token: string, params: { status?: string; source?: string; q?: string; limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") qs.append(key, String(value));
+    });
+    return fetchApi(`/api/v1/merchant/orders?${qs.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
+  },
+  getMerchantOrder: (token: string, orderId: string) => fetchApi(`/api/v1/merchant/orders/${orderId}`, { headers: { Authorization: `Bearer ${token}` } }),
+  transferCommission: (token: string, amount?: string) => fetchApi("/api/v1/merchant/commission/transfer", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(amount ? { amount } : {}) }),
+  getMerchantApiAccess: (token: string) => fetchApi("/api/v1/merchant/api-access", { headers: { Authorization: `Bearer ${token}` } }),
+  setMerchantWebhook: (token: string, webhookUrl: string | null) => fetchApi("/api/v1/merchant/webhook-config", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ webhook_url: webhookUrl }) }),
+  sendMerchantTestWebhook: (token: string) => fetchApi("/api/v1/merchant/webhook-test", { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+
   // Admin
   getAdminStats: (token: string) => fetchApi("/api/v1/admin/stats", { headers: { Authorization: `Bearer ${token}` } }),
   syncCatalog: (token: string) => fetchApi("/api/v1/admin/catalog/sync", { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
