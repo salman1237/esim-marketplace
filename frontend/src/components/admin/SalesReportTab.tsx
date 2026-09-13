@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
 import { api, SalesReportParams } from "@/lib/api";
 
 const PAGE_SIZE = 50;
@@ -31,6 +31,16 @@ const STATUS_OPTIONS = [
 
 const CHANNEL_LABELS: Record<string, string> = { web: "Web", api: "Partner API", admin: "Admin" };
 
+type View = "transactions" | "daily" | "bundle" | "country";
+const VIEWS: { id: View; label: string }[] = [
+  { id: "transactions", label: "Transactions" },
+  { id: "daily", label: "Day by day" },
+  { id: "bundle", label: "By bundle" },
+  { id: "country", label: "By country" },
+];
+
+const selectCls = "bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900";
+
 function Total({ label, value, tone = "text-slate-900" }: { label: string; value: string; tone?: string }) {
   return (
     <div className="glass-panel rounded-2xl p-4 border border-gray-200">
@@ -40,22 +50,99 @@ function Total({ label, value, tone = "text-slate-900" }: { label: string; value
   );
 }
 
+function SortHeader({ label, column, sort, direction, onSort, align = "end" }: {
+  label: string; column: string; sort: string; direction: "asc" | "desc"; onSort: (column: string) => void; align?: "start" | "end";
+}) {
+  const active = sort === column;
+  const Icon = !active ? ArrowUpDown : direction === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <th className={`py-2 pe-3 text-${align}`}>
+      <button type="button" onClick={() => onSort(column)} className={`inline-flex items-center gap-1 hover:text-slate-900 ${active ? "text-slate-900" : ""}`}>
+        {label} <Icon className={`w-3 h-3 ${active ? "" : "opacity-40"}`} />
+      </button>
+    </th>
+  );
+}
+
+// Grouped view (day / bundle / country) - sorted client-side, the groups are small.
+function GroupTable({ rows, labelKey, labelTitle, renderLabel }: { rows: any[]; labelKey: string; labelTitle: string; renderLabel?: (r: any) => React.ReactNode }) {
+  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: labelKey === "day" ? "day" : "selling_price", dir: "desc" });
+  const sorted = [...rows].sort((a, b) => {
+    const av = a[sort.key], bv = b[sort.key];
+    const cmp = typeof av === "string" && isNaN(Number(av)) ? String(av).localeCompare(String(bv)) : Number(av ?? -Infinity) - Number(bv ?? -Infinity);
+    return sort.dir === "asc" ? cmp : -cmp;
+  });
+  const onSort = (key: string) => setSort((s) => ({ key, dir: s.key === key && s.dir === "desc" ? "asc" : "desc" }));
+  const max = Math.max(1, ...rows.map((r) => Number(r.selling_price)));
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-start text-xs">
+        <thead className="text-slate-500 border-b border-gray-200">
+          <tr>
+            <SortHeader label={labelTitle} column={labelKey} sort={sort.key} direction={sort.dir} onSort={onSort} align="start" />
+            <SortHeader label="Orders" column="orders" sort={sort.key} direction={sort.dir} onSort={onSort} />
+            <SortHeader label="Selling price" column="selling_price" sort={sort.key} direction={sort.dir} onSort={onSort} />
+            <SortHeader label="Base cost" column="cost" sort={sort.key} direction={sort.dir} onSort={onSort} />
+            <SortHeader label="Profit" column="profit" sort={sort.key} direction={sort.dir} onSort={onSort} />
+            <SortHeader label="Commission" column="merchant_commission" sort={sort.key} direction={sort.dir} onSort={onSort} />
+            <SortHeader label="Net profit" column="net_profit" sort={sort.key} direction={sort.dir} onSort={onSort} />
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {sorted.map((r, i) => (
+            <tr key={i}>
+              <td className="py-2.5 pe-3 text-slate-700 min-w-[160px]">
+                <div>{renderLabel ? renderLabel(r) : r[labelKey]}</div>
+                <div className="h-1 mt-1 rounded-full bg-gray-100 overflow-hidden">
+                  <div className="h-full bg-admin-400" style={{ width: `${(Number(r.selling_price) / max) * 100}%` }} />
+                </div>
+              </td>
+              <td className="py-2.5 pe-3 text-end font-mono">{r.orders}</td>
+              <td className="py-2.5 pe-3 text-end font-mono font-bold text-slate-900">{eur(r.selling_price)}</td>
+              <td className="py-2.5 pe-3 text-end font-mono text-slate-600">{eur(r.cost)}</td>
+              <td className="py-2.5 pe-3 text-end font-mono text-emerald-600">
+                {eur(r.profit)}
+                {r.profit_pct && <div className="text-[10px] text-slate-400">{Number(r.profit_pct).toFixed(1)}%</div>}
+              </td>
+              <td className="py-2.5 pe-3 text-end font-mono text-merchant-600">{Number(r.merchant_commission) > 0 ? eur(r.merchant_commission) : "—"}</td>
+              <td className="py-2.5 text-end font-mono font-bold text-emerald-700">{eur(r.net_profit)}</td>
+            </tr>
+          ))}
+          {rows.length === 0 && <tr><td colSpan={7} className="py-10 text-center text-slate-500">No orders match these filters.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function SalesReportTab() {
   const now = new Date();
   const [dateFrom, setDateFrom] = useState(isoDay(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))));
   const [dateTo, setDateTo] = useState(isoDay(now));
   const [status, setStatus] = useState("COMPLETED");
+  const [plan, setPlan] = useState("");
+  const [validity, setValidity] = useState("");
+  const [channel, setChannel] = useState("");
+  const [country, setCountry] = useState("");
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState("date");
+  const [direction, setDirection] = useState<"asc" | "desc">("desc");
+  const [view, setView] = useState<View>("transactions");
   const [offset, setOffset] = useState(0);
   const [report, setReport] = useState<any | null>(null);
+  const [breakdown, setBreakdown] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   const params = useCallback(
-    (): SalesReportParams => ({ date_from: dateFrom || undefined, date_to: dateTo || undefined, status, q: query || undefined }),
-    [dateFrom, dateTo, status, query]
+    (): SalesReportParams => ({
+      date_from: dateFrom || undefined, date_to: dateTo || undefined, status, q: query || undefined,
+      plan: plan || undefined, validity: validity || undefined, channel: channel || undefined, country: country || undefined,
+    }),
+    [dateFrom, dateTo, status, query, plan, validity, channel, country]
   );
 
   const load = useCallback(async () => {
@@ -64,24 +151,44 @@ export default function SalesReportTab() {
     setLoading(true);
     setError(null);
     try {
-      setReport(await api.getSalesReport(token, { ...params(), limit: PAGE_SIZE, offset }));
+      const [r, b] = await Promise.all([
+        api.getSalesReport(token, { ...params(), sort, direction, limit: PAGE_SIZE, offset }),
+        api.getSalesBreakdown(token, params()),
+      ]);
+      setReport(r);
+      setBreakdown(b);
     } catch (err: any) {
       setError(err.message || "Couldn't load the report");
     } finally {
       setLoading(false);
     }
-  }, [params, offset]);
+  }, [params, sort, direction, offset]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // Any filter change goes back to the first page.
+  const withReset = <T,>(setter: (v: T) => void) => (v: T) => {
+    setOffset(0);
+    setter(v);
+  };
+
+  const onSort = (column: string) => {
+    setOffset(0);
+    if (sort === column) setDirection(direction === "desc" ? "asc" : "desc");
+    else {
+      setSort(column);
+      setDirection(column === "product" || column === "country" ? "asc" : "desc");
+    }
+  };
 
   const exportCsv = async () => {
     const token = getToken();
     if (!token) return;
     setExporting(true);
     try {
-      const blob = await api.downloadSalesReportCsv(token, params());
+      const blob = await api.downloadSalesReportCsv(token, { ...params(), sort, direction });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -101,6 +208,7 @@ export default function SalesReportTab() {
   const orderCount = totals?.orders ?? 0;
   const page = Math.floor(offset / PAGE_SIZE) + 1;
   const pages = Math.max(1, Math.ceil(orderCount / PAGE_SIZE));
+  const sortProps = { sort, direction, onSort };
 
   return (
     <div className="space-y-6">
@@ -121,19 +229,47 @@ export default function SalesReportTab() {
         >
           <div>
             <label className="text-[11px] text-slate-600 font-semibold block mb-1">From</label>
-            <input type="date" value={dateFrom} onChange={(e) => { setOffset(0); setDateFrom(e.target.value); }} className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900" />
+            <input type="date" value={dateFrom} onChange={(e) => withReset(setDateFrom)(e.target.value)} className={selectCls} />
           </div>
           <div>
             <label className="text-[11px] text-slate-600 font-semibold block mb-1">To</label>
-            <input type="date" value={dateTo} onChange={(e) => { setOffset(0); setDateTo(e.target.value); }} className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900" />
+            <input type="date" value={dateTo} onChange={(e) => withReset(setDateTo)(e.target.value)} className={selectCls} />
           </div>
           <div>
             <label className="text-[11px] text-slate-600 font-semibold block mb-1">Status</label>
-            <select value={status} onChange={(e) => { setOffset(0); setStatus(e.target.value); }} className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900">
+            <select value={status} onChange={(e) => withReset(setStatus)(e.target.value)} className={selectCls}>
               {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
           </div>
-          <div className="flex-1 min-w-[220px]">
+          <div>
+            <label className="text-[11px] text-slate-600 font-semibold block mb-1">Bundle type</label>
+            <select value={plan} onChange={(e) => withReset(setPlan)(e.target.value)} className={selectCls}>
+              <option value="">All bundles</option>
+              <option value="data">Fixed data (GB)</option>
+              <option value="unlimited">Unlimited</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-[11px] text-slate-600 font-semibold block mb-1">Validity</label>
+            <select value={validity} onChange={(e) => withReset(setValidity)(e.target.value)} className={selectCls}>
+              <option value="">Any</option>
+              {(breakdown?.validity_options || []).map((d: number) => <option key={d} value={String(d)}>{d} days</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[11px] text-slate-600 font-semibold block mb-1">Channel</label>
+            <select value={channel} onChange={(e) => withReset(setChannel)(e.target.value)} className={selectCls}>
+              <option value="">All channels</option>
+              <option value="web">Web</option>
+              <option value="api">Partner API</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-[11px] text-slate-600 font-semibold block mb-1">Country</label>
+            <input value={country} maxLength={10} placeholder="ISO e.g. TH" onChange={(e) => withReset(setCountry)(e.target.value.toUpperCase())} className={`${selectCls} w-24 uppercase`} />
+          </div>
+          <div className="flex-1 min-w-[200px]">
             <label className="text-[11px] text-slate-600 font-semibold block mb-1">Search</label>
             <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-3">
               <Search className="w-3.5 h-3.5 text-slate-400" />
@@ -160,64 +296,98 @@ export default function SalesReportTab() {
       )}
 
       <div className="glass-panel rounded-2xl p-6 border border-gray-200">
-        <div className="overflow-x-auto frozen-col-table">
-          <table className="w-full text-start text-xs">
-            <thead className="text-slate-500 border-b border-gray-200">
-              <tr>
-                <th className="py-2 pe-3">Order</th>
-                <th className="py-2 pe-3">Date</th>
-                <th className="py-2 pe-3">Buyer</th>
-                <th className="py-2 pe-3">Product</th>
-                <th className="py-2 pe-3 text-end">Base cost</th>
-                <th className="py-2 pe-3 text-end">Selling price</th>
-                <th className="py-2 pe-3 text-end">Profit</th>
-                <th className="py-2 pe-3 text-end">Commission</th>
-                <th className="py-2 text-end">Net profit</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {loading && !report && <tr><td colSpan={9} className="py-8 text-center text-slate-400">Loading…</td></tr>}
-              {report?.rows.map((r: any) => (
-                <tr key={r.order_id}>
-                  <td className="py-2.5 pe-3">
-                    <div className="font-mono text-admin-600">{r.order_no}</div>
-                    <div className="text-[10px] text-slate-400">{CHANNEL_LABELS[r.channel] || r.channel} · {r.status}</div>
-                  </td>
-                  <td className="py-2.5 pe-3 text-slate-500 whitespace-nowrap">{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td>
-                  <td className="py-2.5 pe-3 text-slate-700">
-                    <div>{r.buyer.username}</div>
-                    <div className="text-[10px] text-slate-400">{r.buyer.email}</div>
-                  </td>
-                  <td className="py-2.5 pe-3 text-slate-700">{r.product} <span className="text-slate-400">({r.country_iso2})</span></td>
-                  <td className="py-2.5 pe-3 text-end font-mono text-slate-600">{eur(r.cost)}</td>
-                  <td className="py-2.5 pe-3 text-end font-mono font-bold text-slate-900">{eur(r.selling_price)}</td>
-                  <td className="py-2.5 pe-3 text-end font-mono text-emerald-600">
-                    {eur(r.profit)}
-                    {r.profit_pct && <div className="text-[10px] text-slate-400">{Number(r.profit_pct).toFixed(1)}%</div>}
-                  </td>
-                  <td className="py-2.5 pe-3 text-end font-mono text-merchant-600">{Number(r.merchant_commission) > 0 ? eur(r.merchant_commission) : "—"}</td>
-                  <td className="py-2.5 text-end font-mono font-bold text-emerald-700">{eur(r.net_profit)}</td>
-                </tr>
-              ))}
-              {report && report.rows.length === 0 && (
-                <tr><td colSpan={9} className="py-10 text-center text-slate-500">No orders match these filters.</td></tr>
-              )}
-            </tbody>
-          </table>
+        <div className="flex flex-wrap gap-1 mb-4 border-b border-gray-200">
+          {VIEWS.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              onClick={() => setView(v.id)}
+              className={`px-3 py-2 text-xs font-semibold border-b-2 -mb-px ${view === v.id ? "border-admin-600 text-admin-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}
+            >
+              {v.label}
+            </button>
+          ))}
+          {loading && <span className="ms-auto self-center text-[11px] text-slate-400">Loading…</span>}
         </div>
 
-        {orderCount > PAGE_SIZE && (
-          <div className="flex items-center justify-between mt-4 text-xs text-slate-500">
-            <span>{orderCount} orders · page {page} of {pages}</span>
-            <div className="flex gap-2">
-              <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))} className="p-1.5 rounded-lg border border-gray-200 bg-white disabled:opacity-40" aria-label="Previous page">
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button disabled={page >= pages} onClick={() => setOffset(offset + PAGE_SIZE)} className="p-1.5 rounded-lg border border-gray-200 bg-white disabled:opacity-40" aria-label="Next page">
-                <ChevronRight className="w-4 h-4" />
-              </button>
+        {view === "daily" && breakdown && (
+          <GroupTable
+            rows={breakdown.daily}
+            labelKey="day"
+            labelTitle="Day (UTC)"
+            renderLabel={(r) => new Date(`${r.day}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}
+          />
+        )}
+        {view === "bundle" && breakdown && <GroupTable rows={breakdown.by_bundle} labelKey="plan" labelTitle="Bundle" />}
+        {view === "country" && breakdown && (
+          <GroupTable rows={breakdown.by_country} labelKey="country" labelTitle="Country" renderLabel={(r) => <>{r.country} <span className="text-slate-400">({r.country_iso2})</span></>} />
+        )}
+
+        {view === "transactions" && (
+          <>
+            <div className="overflow-x-auto frozen-col-table">
+              <table className="w-full text-start text-xs">
+                <thead className="text-slate-500 border-b border-gray-200">
+                  <tr>
+                    <th className="py-2 pe-3 text-start">Order</th>
+                    <SortHeader label="Date" column="date" align="start" {...sortProps} />
+                    <th className="py-2 pe-3 text-start">Buyer</th>
+                    <SortHeader label="Product" column="product" align="start" {...sortProps} />
+                    <SortHeader label="Base cost" column="cost" {...sortProps} />
+                    <SortHeader label="Selling price" column="price" {...sortProps} />
+                    <SortHeader label="Profit" column="profit" {...sortProps} />
+                    <SortHeader label="Commission" column="commission" {...sortProps} />
+                    <th className="py-2 text-end">Net profit</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {loading && !report && <tr><td colSpan={9} className="py-8 text-center text-slate-400">Loading…</td></tr>}
+                  {report?.rows.map((r: any) => (
+                    <tr key={r.order_id}>
+                      <td className="py-2.5 pe-3">
+                        <div className="font-mono text-admin-600">{r.order_no}</div>
+                        <div className="text-[10px] text-slate-400">{CHANNEL_LABELS[r.channel] || r.channel} · {r.status}</div>
+                      </td>
+                      <td className="py-2.5 pe-3 text-slate-500 whitespace-nowrap">{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td>
+                      <td className="py-2.5 pe-3 text-slate-700">
+                        <div>{r.buyer.username}</div>
+                        <div className="text-[10px] text-slate-400">{r.buyer.email}</div>
+                      </td>
+                      <td className="py-2.5 pe-3 text-slate-700">
+                        {r.product} <span className="text-slate-400">({r.country_iso2})</span>
+                        {r.plan && <div className="text-[10px] text-slate-400">{r.plan}</div>}
+                      </td>
+                      <td className="py-2.5 pe-3 text-end font-mono text-slate-600">{eur(r.cost)}</td>
+                      <td className="py-2.5 pe-3 text-end font-mono font-bold text-slate-900">{eur(r.selling_price)}</td>
+                      <td className="py-2.5 pe-3 text-end font-mono text-emerald-600">
+                        {eur(r.profit)}
+                        {r.profit_pct && <div className="text-[10px] text-slate-400">{Number(r.profit_pct).toFixed(1)}%</div>}
+                      </td>
+                      <td className="py-2.5 pe-3 text-end font-mono text-merchant-600">{Number(r.merchant_commission) > 0 ? eur(r.merchant_commission) : "—"}</td>
+                      <td className="py-2.5 text-end font-mono font-bold text-emerald-700">{eur(r.net_profit)}</td>
+                    </tr>
+                  ))}
+                  {report && report.rows.length === 0 && (
+                    <tr><td colSpan={9} className="py-10 text-center text-slate-500">No orders match these filters.</td></tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-          </div>
+
+            {orderCount > PAGE_SIZE && (
+              <div className="flex items-center justify-between mt-4 text-xs text-slate-500">
+                <span>{orderCount} orders · page {page} of {pages}</span>
+                <div className="flex gap-2">
+                  <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))} className="p-1.5 rounded-lg border border-gray-200 bg-white disabled:opacity-40" aria-label="Previous page">
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button disabled={page >= pages} onClick={() => setOffset(offset + PAGE_SIZE)} className="p-1.5 rounded-lg border border-gray-200 bg-white disabled:opacity-40" aria-label="Next page">
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

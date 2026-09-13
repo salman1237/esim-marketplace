@@ -1152,8 +1152,28 @@ def _order_channel(order_no: str) -> str:
     return "web"
 
 
-def _sales_filters(date_from: Optional[Date], date_to: Optional[Date], status: str, q: Optional[str]) -> list:
+def _sales_filters(
+    date_from: Optional[Date], date_to: Optional[Date], status: str, q: Optional[str],
+    plan: Optional[str] = None, validity: Optional[int] = None, channel: Optional[str] = None, country: Optional[str] = None,
+) -> list:
     conditions = []
+    if plan:
+        if plan not in ("data", "unlimited"):
+            raise HTTPException(status_code=400, detail="plan must be 'data' or 'unlimited'")
+        conditions.append(Product.is_unlimited == (plan == "unlimited"))
+    if validity:
+        conditions.append(Product.validity_days == validity)
+    if country and country.strip():
+        conditions.append(Country.iso2 == country.strip().upper())
+    if channel:
+        if channel == "api":
+            conditions.append(Order.order_no.like("PTR-%"))
+        elif channel == "admin":
+            conditions.append(Order.order_no.like("ADM-%"))
+        elif channel == "web":
+            conditions.extend([~Order.order_no.like("PTR-%"), ~Order.order_no.like("ADM-%")])
+        else:
+            raise HTTPException(status_code=400, detail="channel must be web, api or admin")
     status = (status or "COMPLETED").upper()
     if status != "ALL":
         if status not in OrderStatus.__members__:
@@ -1180,6 +1200,31 @@ def _sales_joins(stmt):
     )
 
 
+def _plan_label(product: Product) -> str:
+    size = "Unlimited" if product.is_unlimited else f"{Decimal(str(product.data_amount_gb)).normalize():f} GB"
+    return f"{size} · {product.validity_days} days"
+
+
+_SALES_SORTS = {
+    "date": lambda: Order.created_at,
+    "price": lambda: Order.total_amount,
+    "cost": lambda: Order.cost_amount,
+    "profit": lambda: Order.total_amount - Order.cost_amount,
+    "commission": lambda: Order.reseller_commission_amount,
+    "product": lambda: Product.title_en,
+    "country": lambda: Country.iso2,
+}
+
+
+def _sales_order_by(sort: str, direction: str) -> list:
+    if sort not in _SALES_SORTS:
+        raise HTTPException(status_code=400, detail=f"sort must be one of: {', '.join(_SALES_SORTS)}")
+    column = _SALES_SORTS[sort]()
+    ordered = column.asc() if direction == "asc" else column.desc()
+    # Orders without a cost snapshot sort last either way; newest breaks ties.
+    return [ordered.nulls_last(), Order.created_at.desc()]
+
+
 def _sales_row(order: Order, product: Product, country_iso2: str, buyer: User) -> dict:
     selling = Decimal(str(order.total_amount))
     cost = Decimal(str(order.cost_amount)) if order.cost_amount is not None else None
@@ -1194,6 +1239,9 @@ def _sales_row(order: Order, product: Product, country_iso2: str, buyer: User) -
         "payment_method": order.payment_method.value,
         "buyer": {"username": buyer.username, "email": buyer.email},
         "product": product.title_en,
+        "plan": _plan_label(product),
+        "is_unlimited": bool(product.is_unlimited),
+        "validity_days": product.validity_days,
         "country_iso2": country_iso2,
         "currency": order.currency,
         "cost": _cents(cost),
@@ -1212,13 +1260,20 @@ async def sales_report(
     date_to: Optional[Date] = None,
     status: str = "COMPLETED",
     q: Optional[str] = None,
+    plan: Optional[str] = None,
+    validity: Optional[int] = None,
+    channel: Optional[str] = None,
+    country: Optional[str] = None,
+    sort: str = "date",
+    direction: str = Query("desc", pattern="^(asc|desc)$"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db)
 ):
     """Per-transaction base cost, selling price, profit, merchant commission
     and Triptel's net profit, with totals for the filtered range."""
-    conditions = _sales_filters(date_from, date_to, status, q)
+    conditions = _sales_filters(date_from, date_to, status, q, plan, validity, channel, country)
+    order_by = _sales_order_by(sort, direction)
     has_cost = Order.cost_amount.isnot(None)
 
     count, selling_total, selling_with_cost, cost_total, commission_total = (await db.execute(
@@ -1233,7 +1288,7 @@ async def sales_report(
 
     rows = (await db.execute(
         _sales_joins(select(Order, Product, Country.iso2, User).select_from(Order))
-        .where(*conditions).order_by(Order.created_at.desc()).limit(limit).offset(offset)
+        .where(*conditions).order_by(*order_by).limit(limit).offset(offset)
     )).all()
 
     cost_total = Decimal(str(cost_total))
@@ -1256,25 +1311,105 @@ async def sales_report(
     }
 
 
+def _money_group(n, selling, selling_with_cost, cost, commission) -> dict:
+    profit = Decimal(str(selling_with_cost)) - Decimal(str(cost))
+    cost = Decimal(str(cost))
+    return {
+        "orders": n,
+        "selling_price": _cents(selling),
+        "cost": _cents(cost),
+        "profit": _cents(profit),
+        "profit_pct": _cents(profit / cost * 100) if cost else None,
+        "merchant_commission": _cents(commission),
+        "net_profit": _cents(profit - Decimal(str(commission))),
+    }
+
+
+@router.get("/reports/sales/breakdown", dependencies=[Depends(require_admin)])
+async def sales_breakdown(
+    date_from: Optional[Date] = None,
+    date_to: Optional[Date] = None,
+    status: str = "COMPLETED",
+    q: Optional[str] = None,
+    plan: Optional[str] = None,
+    validity: Optional[int] = None,
+    channel: Optional[str] = None,
+    country: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """The same filtered sales grouped by UTC day, by bundle (data size +
+    validity) and by country - for spotting which days and packages earn."""
+    conditions = _sales_filters(date_from, date_to, status, q, plan, validity, channel, country)
+    money = (
+        func.count(Order.id),
+        func.coalesce(func.sum(Order.total_amount), 0),
+        func.coalesce(func.sum(Order.total_amount).filter(Order.cost_amount.isnot(None)), 0),
+        func.coalesce(func.sum(Order.cost_amount), 0),
+        func.coalesce(func.sum(Order.reseller_commission_amount), 0),
+    )
+
+    day = func.date(func.timezone("UTC", Order.created_at))
+    daily = (await db.execute(
+        _sales_joins(select(day, *money).select_from(Order)).where(*conditions).group_by(day).order_by(day.desc())
+    )).all()
+
+    bundles = (await db.execute(
+        _sales_joins(select(Product.is_unlimited, Product.data_amount_gb, Product.validity_days, *money).select_from(Order))
+        .where(*conditions)
+        .group_by(Product.is_unlimited, Product.data_amount_gb, Product.validity_days)
+    )).all()
+
+    countries = (await db.execute(
+        _sales_joins(select(Country.iso2, Country.name_en, *money).select_from(Order))
+        .where(*conditions).group_by(Country.iso2, Country.name_en)
+        .order_by(func.sum(Order.total_amount).desc()).limit(50)
+    )).all()
+
+    validity_options = (await db.execute(
+        select(Product.validity_days).where(Product.is_active == True).distinct().order_by(Product.validity_days)
+    )).scalars().all()
+
+    by_bundle = []
+    for is_unlimited, gb, days, *m in bundles:
+        size = "Unlimited" if is_unlimited else f"{Decimal(str(gb)).normalize():f} GB"
+        by_bundle.append({"plan": f"{size} · {days} days", "is_unlimited": bool(is_unlimited),
+                          "data_gb": None if is_unlimited else str(gb), "validity_days": days, **_money_group(*m)})
+    by_bundle.sort(key=lambda b: Decimal(b["selling_price"]), reverse=True)
+
+    return {
+        "currency": settings.BASE_CURRENCY,
+        "daily": [{"day": d.isoformat(), **_money_group(*m)} for d, *m in daily],
+        "by_bundle": by_bundle,
+        "by_country": [{"country_iso2": iso2, "country": name, **_money_group(*m)} for iso2, name, *m in countries],
+        "validity_options": validity_options,
+    }
+
+
 @router.get("/reports/sales.csv", dependencies=[Depends(require_admin)])
 async def sales_report_csv(
     date_from: Optional[Date] = None,
     date_to: Optional[Date] = None,
     status: str = "COMPLETED",
     q: Optional[str] = None,
+    plan: Optional[str] = None,
+    validity: Optional[int] = None,
+    channel: Optional[str] = None,
+    country: Optional[str] = None,
+    sort: str = "date",
+    direction: str = Query("desc", pattern="^(asc|desc)$"),
     db: AsyncSession = Depends(get_db)
 ):
-    conditions = _sales_filters(date_from, date_to, status, q)
+    conditions = _sales_filters(date_from, date_to, status, q, plan, validity, channel, country)
     rows = (await db.execute(
         _sales_joins(select(Order, Product, Country.iso2, User).select_from(Order))
-        .where(*conditions).order_by(Order.created_at.desc()).limit(50000)
+        .where(*conditions).order_by(*_sales_order_by(sort, direction)).limit(50000)
     )).all()
 
     currency = settings.BASE_CURRENCY
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow([
-        "Order no", "Date (UTC)", "Status", "Channel", "Payment", "Buyer", "Buyer email", "Product", "Country",
+        "Order no", "Date (UTC)", "Status", "Channel", "Payment", "Buyer", "Buyer email", "Product", "Plan", "Country",
         f"Base cost ({currency})", f"Selling price ({currency})", f"Profit ({currency})", "Profit %",
         f"Merchant commission ({currency})", f"Net profit ({currency})",
     ])
@@ -1282,7 +1417,7 @@ async def sales_report_csv(
         r = _sales_row(*row)
         writer.writerow([
             r["order_no"], r["created_at"], r["status"], r["channel"], r["payment_method"],
-            r["buyer"]["username"], r["buyer"]["email"], r["product"], r["country_iso2"],
+            r["buyer"]["username"], r["buyer"]["email"], r["product"], r["plan"], r["country_iso2"],
             r["cost"], r["selling_price"], r["profit"], r["profit_pct"], r["merchant_commission"], r["net_profit"],
         ])
 

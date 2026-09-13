@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { Check, Copy } from "lucide-react";
 
-export type MerchantTab = "overview" | "provision" | "orders" | "commission" | "api";
+export type MerchantTab = "overview" | "provision" | "orders" | "commission" | "statement" | "api";
 
 const STATUS_STYLES: Record<string, string> = {
   COMPLETED: "bg-emerald-50 text-emerald-700 border-emerald-200",

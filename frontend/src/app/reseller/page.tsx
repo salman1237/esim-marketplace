@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Briefcase, CheckCircle2, Clock, Code2, Coins, LayoutDashboard, List, Send, XCircle } from "lucide-react";
+import { Briefcase, CheckCircle2, Clock, Code2, Coins, FileText, LayoutDashboard, List, Send, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 import { MerchantTab } from "@/components/merchant/shared";
@@ -10,12 +10,14 @@ import ProvisionTab from "@/components/merchant/ProvisionTab";
 import OrdersTab from "@/components/merchant/OrdersTab";
 import CommissionTab from "@/components/merchant/CommissionTab";
 import ApiAccessTab from "@/components/merchant/ApiAccessTab";
+import StatementTab from "@/components/merchant/StatementTab";
 
 const MERCHANT_TABS: { id: MerchantTab; label: string; icon: any }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "provision", label: "Buy for customer", icon: Send },
   { id: "orders", label: "Orders", icon: List },
   { id: "commission", label: "Commission", icon: Coins },
+  { id: "statement", label: "Statements", icon: FileText },
   { id: "api", label: "API & Webhooks", icon: Code2 },
 ];
 
@@ -251,6 +253,7 @@ export default function ResellerPortalPage() {
       )}
       {currentTab === "orders" && <OrdersTab formatPrice={formatPrice} />}
       {currentTab === "commission" && <CommissionTab overview={overview} formatPrice={formatPrice} onChanged={refreshOverview} />}
+      {currentTab === "statement" && <StatementTab />}
       {currentTab === "api" && <ApiAccessTab />}
     </div>
   );

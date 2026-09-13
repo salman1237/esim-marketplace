@@ -16,6 +16,7 @@ from typing import Optional
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +35,7 @@ from app.models.wallet import LedgerRefType, Wallet, WalletType
 from app.services.audit_svc import AuditService
 from app.services.checkout_svc import get_effective_commission_rate
 from app.services.esim_links import esim_install_links
+from app.services import finance_svc
 from app.services.ledger_svc import LedgerService
 from app.services.webhook_svc import send_test_webhook
 
@@ -340,6 +342,40 @@ async def transfer_commission(
         "commission_balance": _money(commission_wallet.balance),
         "wallet_balance": _money(default_wallet.balance),
     }
+
+
+def _statement_month(month: Optional[str]):
+    try:
+        return finance_svc.month_bounds(month or datetime.now(timezone.utc).strftime("%Y-%m"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/statement")
+async def my_monthly_statement(
+    month: Optional[str] = None,
+    ctx: MerchantContext = Depends(get_current_merchant),
+    db: AsyncSession = Depends(get_db),
+):
+    """The same statement the admin sees for this merchant - both sides
+    reconcile against one set of numbers."""
+    start, end = _statement_month(month)
+    return await finance_svc.merchant_statement(db, ctx.user.id, start, end)
+
+
+@router.get("/statement.csv")
+async def my_monthly_statement_csv(
+    month: Optional[str] = None,
+    ctx: MerchantContext = Depends(get_current_merchant),
+    db: AsyncSession = Depends(get_db),
+):
+    start, end = _statement_month(month)
+    statement = await finance_svc.merchant_statement(db, ctx.user.id, start, end)
+    return Response(
+        content=finance_svc.statement_csv(statement),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="statement-{statement["period"]["month"]}.csv"'},
+    )
 
 
 @router.get("/api-access")

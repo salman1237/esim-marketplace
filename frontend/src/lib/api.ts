@@ -16,6 +16,12 @@ export type SalesReportParams = {
   date_to?: string;
   status?: string;
   q?: string;
+  plan?: string;
+  validity?: string;
+  channel?: string;
+  country?: string;
+  sort?: string;
+  direction?: "asc" | "desc";
   limit?: number;
   offset?: number;
 };
@@ -156,10 +162,24 @@ export const api = {
   updateAdminCatalogProduct: (token: string, id: string, data: any) => fetchApi(`/api/v1/admin/catalog/${id}`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
   getAdminPaymentMethods: (token: string) => fetchApi("/api/v1/admin/payment-methods", { headers: { Authorization: `Bearer ${token}` } }),
   updateAdminPaymentMethods: (token: string, methods: any[]) => fetchApi("/api/v1/admin/payment-methods", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ methods }) }),
+  getFinanceSummary: (token: string, params: { date_from?: string; date_to?: string }) => fetchApi(`/api/v1/admin/finance/summary?${salesReportQuery(params)}`, { headers: { Authorization: `Bearer ${token}` } }),
+  getVivapeReconciliation: (token: string, params: { date_from?: string; date_to?: string }) => fetchApi(`/api/v1/admin/finance/vivape?${salesReportQuery(params)}`, { headers: { Authorization: `Bearer ${token}` } }),
+  getAdminMerchantStatement: (token: string, userId: string, month: string) => fetchApi(`/api/v1/admin/finance/merchant-statement?user_id=${encodeURIComponent(userId)}&month=${month}`, { headers: { Authorization: `Bearer ${token}` } }),
+  getMyStatement: (token: string, month: string) => fetchApi(`/api/v1/merchant/statement?month=${month}`, { headers: { Authorization: `Bearer ${token}` } }),
+  // Authenticated file download (CSV exports) - returns a Blob to save.
+  downloadAuthed: async (token: string, path: string): Promise<Blob> => {
+    const res = await fetch(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || `Download failed with status ${res.status}`);
+    }
+    return res.blob();
+  },
   getAdminLegalDocuments: (token: string) => fetchApi("/api/v1/admin/legal", { headers: { Authorization: `Bearer ${token}` } }),
   updateAdminLegalDocument: (token: string, slug: string, body: string) => fetchApi(`/api/v1/admin/legal/${slug}`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ body }) }),
   getAdminPricing: (token: string) => fetchApi("/api/v1/admin/pricing", { headers: { Authorization: `Bearer ${token}` } }),
   updateAdminPricing: (token: string, sellingProfitPct: string) => fetchApi("/api/v1/admin/pricing", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ selling_profit_pct: sellingProfitPct }) }),
+  getSalesBreakdown: (token: string, params: SalesReportParams) => fetchApi(`/api/v1/admin/reports/sales/breakdown?${salesReportQuery(params)}`, { headers: { Authorization: `Bearer ${token}` } }),
   getSalesReport: (token: string, params: SalesReportParams) => fetchApi(`/api/v1/admin/reports/sales?${salesReportQuery(params)}`, { headers: { Authorization: `Bearer ${token}` } }),
   downloadSalesReportCsv: async (token: string, params: SalesReportParams): Promise<Blob> => {
     const res = await fetch(`${API_BASE}/api/v1/admin/reports/sales.csv?${salesReportQuery(params)}`, { headers: { Authorization: `Bearer ${token}` } });

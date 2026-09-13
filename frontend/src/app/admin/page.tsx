@@ -9,10 +9,11 @@ import PricingCard from "@/components/admin/PricingCard";
 import PaymentMethodsCard from "@/components/admin/PaymentMethodsCard";
 import LegalContentCard from "@/components/admin/LegalContentCard";
 import SalesReportTab from "@/components/admin/SalesReportTab";
+import FinanceTab from "@/components/admin/FinanceTab";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { Trash2 } from "lucide-react";
 
-type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales";
+type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales" | "finance";
 
 export default function AdminConsolePage() {
   const { formatPrice, languages: appLanguages } = useAppSettings();
@@ -563,6 +564,7 @@ export default function AdminConsolePage() {
           { id: "orders", label: "Orders" },
           { id: "catalog", label: "Catalog" },
           { id: "sales", label: "Sales & Profit" },
+          { id: "finance", label: "Finance & Reconciliation" },
           { id: "customer-wallet", label: "Customer Wallet" },
           ...(isSuperAdmin ? [{ id: "users", label: "Staff & Users" }] : []),
           ...(isSuperAdmin ? [{ id: "branding", label: "Dynamic Branding & Rates" }] : []),
@@ -1060,6 +1062,7 @@ export default function AdminConsolePage() {
 
       {/* Tab: Sales & Profit report */}
       {activeTab === "sales" && <SalesReportTab />}
+      {activeTab === "finance" && <FinanceTab />}
 
       {/* Tab: Catalog - selling profit % sets every price */}
       {activeTab === "catalog" && (
