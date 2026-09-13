@@ -9,7 +9,7 @@ import { useAppSettings } from "@/lib/AppSettingsContext";
 const CURRENCIES = ["USD", "BDT", "EUR", "GBP", "AED", "SAR"];
 
 export default function Header() {
-  const { lang, setLang, currency, setCurrency, languages, t, publicSettings } = useAppSettings();
+  const { lang, setLang, currency, setCurrency, languages, t, publicSettings, formatPrice } = useAppSettings();
   const settings = publicSettings || {};
   const [token, setToken] = useState<string | null>(null);
   const [userData, setUserData] = useState<any>(null);
@@ -118,7 +118,9 @@ export default function Header() {
               <User className="w-3.5 h-3.5 text-brand-600" />
               <span>{userData.username}</span>
               <span className="text-emerald-600 font-mono">
-                ${userData.wallets?.[0]?.balance?.toFixed(2) || "0.00"}
+                {/* The spendable DEFAULT wallet - not wallets[0], which can be
+                    the COMMISSION wallet. */}
+                {formatPrice(Number(userData.wallets?.find((w: any) => (w.wallet_type ?? w.type) === "DEFAULT")?.balance ?? 0))}
               </span>
             </Link>
           ) : (

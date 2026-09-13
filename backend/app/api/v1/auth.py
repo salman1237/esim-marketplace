@@ -14,7 +14,7 @@ from app.core.deps import get_current_user
 from app.core.logging import get_logger
 from app.models.user import User, UserRole, UserStatus
 from app.models.merchant import MerchantProfile, MerchantStatus
-from app.models.wallet import Wallet
+from app.models.wallet import Wallet, WalletType
 from app.models.password_reset import PasswordResetToken
 from app.schemas.auth import (
     UserRegister, UserLogin, Token, UserResponse, MerchantApplicationRequest,
@@ -141,7 +141,10 @@ async def reset_password(request: Request, req: ResetPasswordRequest, db: AsyncS
 @router.get("/me")
 async def get_me(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     wallets_res = await db.execute(select(Wallet).where(Wallet.user_id == current_user.id))
-    wallets = wallets_res.scalars().all()
+    # Unordered from the DB, so the spendable DEFAULT wallet wasn't reliably
+    # first - the header showed wallets[0] and read $0.00 whenever the
+    # COMMISSION wallet happened to come back ahead of it.
+    wallets = sorted(wallets_res.scalars().all(), key=lambda w: w.wallet_type != WalletType.DEFAULT)
     
     merchant_res = await db.execute(select(MerchantProfile).where(MerchantProfile.user_id == current_user.id))
     merchant = merchant_res.scalar_one_or_none()
@@ -155,7 +158,12 @@ async def get_me(current_user: User = Depends(get_current_user), db: AsyncSessio
         "phone": current_user.phone,
         "full_name": current_user.full_name,
         "is_kyc_verified": current_user.is_kyc_verified,
-        "wallets": [{"type": w.wallet_type.value, "balance": float(w.balance), "currency": w.currency} for w in wallets],
+        # wallet_type matches /wallets/my-wallets; the reseller portal reads
+        # that key. "type" is kept for existing clients.
+        "wallets": [
+            {"type": w.wallet_type.value, "wallet_type": w.wallet_type.value, "balance": float(w.balance), "currency": w.currency}
+            for w in wallets
+        ],
         "merchant_profile": {
             "business_name": merchant.business_name,
             "status": merchant.status.value,
