@@ -55,7 +55,7 @@ export default function AdminConsolePage() {
   const [purchasingEsim, setPurchasingEsim] = useState(false);
   const [purchaseResult, setPurchaseResult] = useState<{ ok: boolean; message: string } | null>(null);
 
-  const [branding, setBranding] = useState({ platform_name: "eSIM Global", support_email: "support@esim.local", support_phone: "+880 1700-000000", maintenance_mode: false, default_currency: "USD", seo_title: "", seo_description: "" });
+  const [branding, setBranding] = useState({ platform_name: "", support_email: "", support_phone: "", maintenance_mode: false, default_currency: "USD", seo_title: "", seo_description: "" });
   const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
   const [brandingAssets, setBrandingAssets] = useState<{ logo_light?: string; logo_dark?: string; favicon?: string; og_image?: string; bangla_qr_image?: string }>({});
   const [uploadingKind, setUploadingKind] = useState<string | null>(null);
@@ -795,7 +795,7 @@ export default function AdminConsolePage() {
                 <label className="text-xs text-slate-700 font-semibold block mb-1">SEO Title</label>
                 <input
                   type="text"
-                  placeholder={branding.platform_name || "eSIM Global"}
+                  placeholder={branding.platform_name || "Your brand name"}
                   value={branding.seo_title}
                   onChange={(e) => setBranding({ ...branding, seo_title: e.target.value })}
                   className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"

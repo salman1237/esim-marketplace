@@ -25,6 +25,9 @@ interface AppSettingsContextValue {
   formatPrice: (amountUsd: number) => string;
   maintenanceMode: boolean;
   platformName: string;
+  // GET /settings/public. Server-rendered into the first paint by the root
+  // layout, then refreshed client-side. null only if both fetches failed.
+  publicSettings: any | null;
 }
 
 const AppSettingsContext = createContext<AppSettingsContextValue | null>(null);
@@ -37,14 +40,18 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
 
 const ZERO_DECIMAL_CURRENCIES = new Set(["JPY"]);
 
-export function AppSettingsProvider({ children }: { children: React.ReactNode }) {
+export function AppSettingsProvider({ children, initialSettings }: { children: React.ReactNode; initialSettings?: any | null }) {
   const [lang, setLangState] = useState("en");
   const [currency, setCurrencyState] = useState("USD");
   const [languages, setLanguages] = useState<LanguageMeta[]>([]);
   const [translations, setTranslations] = useState<Record<string, Record<string, string>>>({});
   const [rates, setRates] = useState<Record<string, number>>({ USD: 1 });
-  const [maintenanceMode, setMaintenanceMode] = useState(false);
-  const [platformName, setPlatformName] = useState("eSIM Global");
+  // Seeded from the server so the real brand is in the first paint - a
+  // hardcoded placeholder name here flashed on every page load until the
+  // client-side fetch replaced it.
+  const [publicSettings, setPublicSettings] = useState<any | null>(initialSettings ?? null);
+  const maintenanceMode = !!publicSettings?.maintenance_mode;
+  const platformName: string = publicSettings?.platform_name || "";
 
   useEffect(() => {
     try {
@@ -63,8 +70,7 @@ export function AppSettingsProvider({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     api.getPublicSettings().then((s: any) => {
-      setMaintenanceMode(!!s.maintenance_mode);
-      if (s.platform_name) setPlatformName(s.platform_name);
+      setPublicSettings(s);
       if (s.favicon) {
         let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
         if (!link) {
@@ -126,7 +132,7 @@ export function AppSettingsProvider({ children }: { children: React.ReactNode })
   }, [lang, isRTL]);
 
   return (
-    <AppSettingsContext.Provider value={{ lang, setLang, currency, setCurrency, isRTL, languages, t, convert, convertTo, formatPrice, maintenanceMode, platformName }}>
+    <AppSettingsContext.Provider value={{ lang, setLang, currency, setCurrency, isRTL, languages, t, convert, convertTo, formatPrice, maintenanceMode, platformName, publicSettings }}>
       {children}
     </AppSettingsContext.Provider>
   );

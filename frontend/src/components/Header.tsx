@@ -9,8 +9,8 @@ import { useAppSettings } from "@/lib/AppSettingsContext";
 const CURRENCIES = ["USD", "BDT", "EUR", "GBP", "AED", "SAR"];
 
 export default function Header() {
-  const { lang, setLang, currency, setCurrency, languages, t } = useAppSettings();
-  const [settings, setSettings] = useState<any>({ platform_name: "eSIM Global" });
+  const { lang, setLang, currency, setCurrency, languages, t, publicSettings } = useAppSettings();
+  const settings = publicSettings || {};
   const [token, setToken] = useState<string | null>(null);
   const [userData, setUserData] = useState<any>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -19,7 +19,6 @@ export default function Header() {
     const savedToken = localStorage.getItem("esim_token");
     setToken(savedToken);
 
-    api.getPublicSettings().then(setSettings).catch(console.error);
     if (savedToken) {
       api.getMe(savedToken).then(setUserData).catch(() => {
         localStorage.removeItem("esim_token");
@@ -42,18 +41,22 @@ export default function Header() {
           {settings.logo_light ? (
             <img
               src={settings.logo_light.startsWith("http") ? settings.logo_light : `${API_BASE}${settings.logo_light}`}
-              alt={settings.platform_name || "eSIM Global"}
+              alt={settings.platform_name || "Home"}
               className="h-10 max-w-[180px] w-auto object-contain group-hover:scale-105 transition-transform"
             />
-          ) : (
+          ) : settings.platform_name ? (
             <>
               <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-accent-500 flex items-center justify-center shadow-md shadow-brand-600/20 group-hover:scale-105 transition-transform">
                 <Wifi className="w-5 h-5 text-white" />
               </div>
               <span className="text-xl font-bold tracking-tight text-slate-900 group-hover:text-brand-600 transition-colors">
-                {settings.platform_name || "eSIM Global"}
+                {settings.platform_name}
               </span>
             </>
+          ) : (
+            // Branding unknown (settings API unreachable): hold the space
+            // rather than show a brand name that isn't this site's.
+            <span className="block h-10 w-[140px]" aria-label="Home" />
           )}
         </Link>
 
