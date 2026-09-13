@@ -11,13 +11,15 @@ import re
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
+from app.services.pricing_svc import DEFAULT_SELLING_PROFIT_PCT, retail_price_for
+
 ESIM_REFERENCES = ("esimgo_bundle", "worldmove_esim")
 
 _GB_RE = re.compile(r"(\d+(\.\d+)?)\s*GB", re.IGNORECASE)
 _DAYS_RE = re.compile(r"(\d+)\s*Days?", re.IGNORECASE)
 
 
-def parse_vivape_product(p: dict) -> Optional[dict]:
+def parse_vivape_product(p: dict, profit_pct: Decimal = DEFAULT_SELLING_PROFIT_PCT) -> Optional[dict]:
     """Returns None unless `p`'s `reference` is one of the two eSIM
     supplier types we can provision, else a dict of fields ready to build
     a Product row.
@@ -33,7 +35,8 @@ def parse_vivape_product(p: dict) -> Optional[dict]:
         return None
 
     cost = Decimal(str(p.get("price") or p.get("amount") or 5.0))
-    retail = (cost * Decimal("1.25")).quantize(Decimal("0.0001"))
+    # Selling price follows the admin's global selling profit % (pricing_svc).
+    retail = retail_price_for(cost, profit_pct)
 
     # "Unlimited" plans have no GB figure in the title at all (confirmed
     # against the live catalog: e.g. "eSIM, Unlimited, 3 Days, Thailand,

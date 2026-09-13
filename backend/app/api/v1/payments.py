@@ -93,6 +93,7 @@ async def initiate_order_via_shurjopay(
         beneficiary_id=beneficiary_id,
         product_id=product.id,
         total_amount=total_cost,
+        cost_amount=product.cost_price,
         currency=product.currency,
         payment_method=PaymentMethod.SHURJOPAY,
         status=OrderStatus.PENDING,

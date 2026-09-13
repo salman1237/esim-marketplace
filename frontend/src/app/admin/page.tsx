@@ -5,8 +5,10 @@ import { Shield, Users, ShoppingCart, DollarSign, Wifi, RefreshCw, Check, X, Sli
 import { api, API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 import TranslationsManager from "@/components/TranslationsManager";
+import PricingCard from "@/components/admin/PricingCard";
+import SalesReportTab from "@/components/admin/SalesReportTab";
 
-type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet";
+type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales";
 
 export default function AdminConsolePage() {
   const { formatPrice, languages: appLanguages } = useAppSettings();
@@ -221,23 +223,6 @@ export default function AdminConsolePage() {
     const token = localStorage.getItem("esim_token");
     if (!token) return;
     await loadCatalog(token, catalogFilterArgs(nextPage * catalogPageSize));
-  };
-
-  const handleUpdateProductPrice = async (productId: string, priceStr: string) => {
-    const token = localStorage.getItem("esim_token");
-    if (!token) return;
-    const price = parseFloat(priceStr);
-    if (Number.isNaN(price) || price < 0) {
-      setCatalogNotice("Retail price must be a non-negative number.");
-      return;
-    }
-    try {
-      await api.updateAdminCatalogProduct(token, productId, { retail_price: price });
-      setCatalog(catalog.map(p => p.id === productId ? { ...p, retail_price: price } : p));
-      setCatalogNotice("Price updated.");
-    } catch (err: any) {
-      setCatalogNotice("Failed to update price: " + err.message);
-    }
   };
 
   const handleToggleProduct = async (productId: string, isActive: boolean) => {
@@ -562,6 +547,7 @@ export default function AdminConsolePage() {
           { id: "payments", label: `Manual Deposits (${payments.filter(p => p.status === "PENDING").length})` },
           { id: "orders", label: "Orders" },
           { id: "catalog", label: "Catalog" },
+          { id: "sales", label: "Sales & Profit" },
           { id: "customer-wallet", label: "Customer Wallet" },
           ...(isSuperAdmin ? [{ id: "users", label: "Staff & Users" }] : []),
           ...(isSuperAdmin ? [{ id: "branding", label: "Dynamic Branding & Rates" }] : []),
@@ -1008,10 +994,29 @@ export default function AdminConsolePage() {
         </div>
       )}
 
-      {/* Tab: Catalog Editor */}
+      {/* Tab: Sales & Profit report */}
+      {activeTab === "sales" && <SalesReportTab />}
+
+      {/* Tab: Catalog - selling profit % sets every price */}
+      {activeTab === "catalog" && (
+        <div className="mb-6">
+          <PricingCard
+            isSuperAdmin={isSuperAdmin}
+            onRepriced={() => {
+              const token = localStorage.getItem("esim_token");
+              if (!token) return;
+              loadCatalog(token, {
+                q: catalogQuery.trim() || undefined,
+                is_active: catalogActiveFilter === "all" ? undefined : catalogActiveFilter === "active",
+                offset: catalogPage * catalogPageSize,
+              });
+            }}
+          />
+        </div>
+      )}
       {activeTab === "catalog" && (
         <div className="glass-panel rounded-2xl p-6 border border-gray-200">
-          <h3 className="text-base font-bold text-slate-900 mb-1">Product Catalog & Pricing Editor</h3>
+          <h3 className="text-base font-bold text-slate-900 mb-1">Product Catalog</h3>
           <p className="text-xs text-slate-500 mb-4">
             {catalogLoading ? "Loading…" : `${catalogTotal} product${catalogTotal === 1 ? "" : "s"} match`}
           </p>
@@ -1052,7 +1057,7 @@ export default function AdminConsolePage() {
                   <th className="py-2">Product</th>
                   <th className="py-2">Data / Validity</th>
                   <th className="py-2">Base Cost</th>
-                  <th className="py-2">Retail Price</th>
+                  <th className="py-2">Selling Price</th>
                   <th className="py-2">Status</th>
                   <th className="py-2">Action</th>
                 </tr>
@@ -1064,15 +1069,7 @@ export default function AdminConsolePage() {
                     <td className="py-2.5 text-slate-700">{p.title}</td>
                     <td className="py-2.5 text-slate-500">{p.is_unlimited ? "Unlimited" : `${p.data_gb} GB`} / {p.validity_days} Days</td>
                     <td className="py-2.5 text-slate-500">{formatPrice(p.cost_price)}</td>
-                    <td className="py-2.5">
-                      <input 
-                        type="number" 
-                        step="0.01" 
-                        defaultValue={p.retail_price}
-                        onBlur={(e) => handleUpdateProductPrice(p.id, e.target.value)}
-                        className="bg-gray-50 border border-gray-300 rounded px-2 py-1 w-20 text-slate-900"
-                      />
-                    </td>
+                    <td className="py-2.5 font-semibold text-slate-900">{formatPrice(p.retail_price)}</td>
                     <td className="py-2.5">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                         p.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'

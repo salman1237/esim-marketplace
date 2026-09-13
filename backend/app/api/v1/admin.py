@@ -1,4 +1,6 @@
 import asyncio
+import csv
+import io
 import uuid
 import secrets
 import hashlib
@@ -6,9 +8,9 @@ from decimal import Decimal
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Form
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from app.core.config import settings
 from app.core.database import get_db, AsyncSessionLocal
 from app.core.deps import require_admin, require_super_admin
@@ -24,13 +26,14 @@ from app.models.audit import AuditLog, SupplierTransactionLog
 from app.models.kyc import KYCSubmission, KYCStatus
 from app.models.commission_tier import CommissionTier
 from app.models.partner_api import ApiKey
-from datetime import datetime, timezone
+from datetime import date as Date, datetime, timedelta, timezone
 from app.core.seed_translations import EN_TRANSLATIONS, flatten
 from app.schemas.settings import (
     UpdateBrandingRequest, CurrencyOverrideRequest, LanguageToggleRequest,
     LanguageCreateRequest, TranslationUpsertRequest,
 )
 from app.services.ledger_svc import LedgerService
+from app.services.pricing_svc import MAX_SELLING_PROFIT_PCT, get_selling_profit_pct, retail_price_for, set_selling_profit_pct
 from app.services.audit_svc import AuditService
 from app.services.catalog_sync_svc import sync_vivape_catalog
 from app.services.currency_svc import CurrencyService
@@ -563,6 +566,7 @@ async def admin_purchase_esim_for_customer(
         beneficiary_id=target.id,
         product_id=product.id,
         total_amount=total_cost,
+        cost_amount=product.cost_price,
         currency=product.currency,
         payment_method=PaymentMethod.WALLET,
         status=OrderStatus.PROCESSING,
@@ -1022,6 +1026,214 @@ async def update_product(
     )
     await db.commit()
     return {"status": "success", "product_id": p.id}
+
+# --- Pricing: global selling profit % ---
+
+class SellingProfitUpdateRequest(BaseModel):
+    selling_profit_pct: Decimal
+
+
+@router.get("/pricing", dependencies=[Depends(require_admin)])
+async def get_pricing(db: AsyncSession = Depends(get_db)):
+    pct = await get_selling_profit_pct(db)
+    product_count = (await db.execute(select(func.count(Product.id)))).scalar_one()
+    return {
+        "selling_profit_pct": str(pct),
+        "currency": settings.BASE_CURRENCY,
+        "product_count": product_count,
+        "example": {"cost": "1.00", "selling_price": str(retail_price_for(Decimal("1"), pct))},
+    }
+
+
+@router.put("/pricing", dependencies=[Depends(require_super_admin)])
+async def update_pricing(
+    req: SellingProfitUpdateRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Sets the global selling profit % and immediately reprices every
+    product: selling price = supplier cost x (1 + profit / 100)."""
+    pct = req.selling_profit_pct.quantize(Decimal("0.01"))
+    if pct < 0 or pct > MAX_SELLING_PROFIT_PCT:
+        raise HTTPException(status_code=400, detail=f"Selling profit must be between 0 and {MAX_SELLING_PROFIT_PCT}%")
+
+    before = await get_selling_profit_pct(db)
+    repriced = await set_selling_profit_pct(db, pct, admin_user.id)
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_SELLING_PROFIT",
+        before_state={"selling_profit_pct": str(before)},
+        after_state={"selling_profit_pct": str(pct), "products_repriced": repriced},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {
+        "selling_profit_pct": str(pct),
+        "products_repriced": repriced,
+        "example": {"cost": "1.00", "selling_price": str(retail_price_for(Decimal("1"), pct))},
+    }
+
+
+# --- Sales & profit report ---
+
+_CENTS = Decimal("0.01")
+
+
+def _cents(value) -> Optional[str]:
+    return None if value is None else str(Decimal(str(value)).quantize(_CENTS))
+
+
+def _order_channel(order_no: str) -> str:
+    if order_no.startswith("PTR-"):
+        return "api"
+    if order_no.startswith("ADM-"):
+        return "admin"
+    return "web"
+
+
+def _sales_filters(date_from: Optional[Date], date_to: Optional[Date], status: str, q: Optional[str]) -> list:
+    conditions = []
+    status = (status or "COMPLETED").upper()
+    if status != "ALL":
+        if status not in OrderStatus.__members__:
+            raise HTTPException(status_code=400, detail="Unknown order status")
+        conditions.append(Order.status == OrderStatus[status])
+    if date_from:
+        conditions.append(Order.created_at >= datetime(date_from.year, date_from.month, date_from.day, tzinfo=timezone.utc))
+    if date_to:
+        end = date_to + timedelta(days=1)
+        conditions.append(Order.created_at < datetime(end.year, end.month, end.day, tzinfo=timezone.utc))
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        conditions.append(or_(
+            Order.order_no.ilike(like), User.email.ilike(like), User.username.ilike(like), Product.title_en.ilike(like),
+        ))
+    return conditions
+
+
+def _sales_joins(stmt):
+    return (
+        stmt.join(Product, Order.product_id == Product.id)
+        .join(Country, Product.country_id == Country.id)
+        .join(User, Order.buyer_id == User.id)
+    )
+
+
+def _sales_row(order: Order, product: Product, country_iso2: str, buyer: User) -> dict:
+    selling = Decimal(str(order.total_amount))
+    cost = Decimal(str(order.cost_amount)) if order.cost_amount is not None else None
+    commission = Decimal(str(order.reseller_commission_amount or 0))
+    profit = selling - cost if cost is not None else None
+    return {
+        "order_id": order.id,
+        "order_no": order.order_no,
+        "created_at": order.created_at.isoformat() if order.created_at else None,
+        "status": order.status.value,
+        "channel": _order_channel(order.order_no),
+        "payment_method": order.payment_method.value,
+        "buyer": {"username": buyer.username, "email": buyer.email},
+        "product": product.title_en,
+        "country_iso2": country_iso2,
+        "currency": order.currency,
+        "cost": _cents(cost),
+        "selling_price": _cents(selling),
+        "profit": _cents(profit),
+        # Markup on cost - the same basis as the selling profit % setting.
+        "profit_pct": _cents(profit / cost * 100) if cost else None,
+        "merchant_commission": _cents(commission),
+        "net_profit": _cents(profit - commission) if profit is not None else None,
+    }
+
+
+@router.get("/reports/sales", dependencies=[Depends(require_admin)])
+async def sales_report(
+    date_from: Optional[Date] = None,
+    date_to: Optional[Date] = None,
+    status: str = "COMPLETED",
+    q: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db)
+):
+    """Per-transaction base cost, selling price, profit, merchant commission
+    and Triptel's net profit, with totals for the filtered range."""
+    conditions = _sales_filters(date_from, date_to, status, q)
+    has_cost = Order.cost_amount.isnot(None)
+
+    count, selling_total, selling_with_cost, cost_total, commission_total = (await db.execute(
+        _sales_joins(select(
+            func.count(Order.id),
+            func.coalesce(func.sum(Order.total_amount), 0),
+            func.coalesce(func.sum(Order.total_amount).filter(has_cost), 0),
+            func.coalesce(func.sum(Order.cost_amount), 0),
+            func.coalesce(func.sum(Order.reseller_commission_amount), 0),
+        ).select_from(Order)).where(*conditions)
+    )).one()
+
+    rows = (await db.execute(
+        _sales_joins(select(Order, Product, Country.iso2, User).select_from(Order))
+        .where(*conditions).order_by(Order.created_at.desc()).limit(limit).offset(offset)
+    )).all()
+
+    cost_total = Decimal(str(cost_total))
+    profit_total = Decimal(str(selling_with_cost)) - cost_total
+    commission_total = Decimal(str(commission_total))
+    return {
+        "currency": settings.BASE_CURRENCY,
+        "totals": {
+            "orders": count,
+            "selling_price": _cents(selling_total),
+            "cost": _cents(cost_total),
+            "profit": _cents(profit_total),
+            "profit_pct": _cents(profit_total / cost_total * 100) if cost_total else None,
+            "merchant_commission": _cents(commission_total),
+            "net_profit": _cents(profit_total - commission_total),
+        },
+        "rows": [_sales_row(*row) for row in rows],
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@router.get("/reports/sales.csv", dependencies=[Depends(require_admin)])
+async def sales_report_csv(
+    date_from: Optional[Date] = None,
+    date_to: Optional[Date] = None,
+    status: str = "COMPLETED",
+    q: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    conditions = _sales_filters(date_from, date_to, status, q)
+    rows = (await db.execute(
+        _sales_joins(select(Order, Product, Country.iso2, User).select_from(Order))
+        .where(*conditions).order_by(Order.created_at.desc()).limit(50000)
+    )).all()
+
+    currency = settings.BASE_CURRENCY
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "Order no", "Date (UTC)", "Status", "Channel", "Payment", "Buyer", "Buyer email", "Product", "Country",
+        f"Base cost ({currency})", f"Selling price ({currency})", f"Profit ({currency})", "Profit %",
+        f"Merchant commission ({currency})", f"Net profit ({currency})",
+    ])
+    for row in rows:
+        r = _sales_row(*row)
+        writer.writerow([
+            r["order_no"], r["created_at"], r["status"], r["channel"], r["payment_method"],
+            r["buyer"]["username"], r["buyer"]["email"], r["product"], r["country_iso2"],
+            r["cost"], r["selling_price"], r["profit"], r["profit_pct"], r["merchant_commission"], r["net_profit"],
+        ])
+
+    filename = f"triptel-sales-{date_from or 'start'}-to-{date_to or 'now'}.csv"
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
 
 # --- Super Admin: Staff Management ---
 @router.post("/users", dependencies=[Depends(require_super_admin)])

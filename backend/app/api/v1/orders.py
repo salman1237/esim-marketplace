@@ -69,6 +69,7 @@ async def checkout_esim(
         beneficiary_id=beneficiary_id,
         product_id=product.id,
         total_amount=total_cost,
+        cost_amount=product.cost_price,
         currency=product.currency,
         payment_method=PaymentMethod.WALLET,
         status=OrderStatus.PROCESSING,

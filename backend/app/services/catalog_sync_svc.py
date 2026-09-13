@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.catalog import Country, Product
 from app.services.vivape_adapter import VivaPeAdapter
 from app.services.catalog_parsing import parse_vivape_product
+from app.services.pricing_svc import get_selling_profit_pct
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -31,6 +32,7 @@ _PER_COUNTRY_DELAY_SECONDS = 1.1
 
 
 async def sync_vivape_catalog(db: AsyncSession) -> dict:
+    profit_pct = await get_selling_profit_pct(db)
     raw_countries = await VivaPeAdapter.get_countries(db)
     synced_c = 0
     updated_p = 0
@@ -75,7 +77,7 @@ async def sync_vivape_catalog(db: AsyncSession) -> dict:
 
         raw_products = await VivaPeAdapter.get_products(db, c.id)
         for p in raw_products:
-            parsed = parse_vivape_product(p)
+            parsed = parse_vivape_product(p, profit_pct)
             if parsed is None:
                 continue
 
