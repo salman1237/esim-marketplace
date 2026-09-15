@@ -12,7 +12,8 @@ import LegalContentCard from "@/components/admin/LegalContentCard";
 import SalesReportTab from "@/components/admin/SalesReportTab";
 import FinanceTab from "@/components/admin/FinanceTab";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Trash2 } from "lucide-react";
+import { Trash2, Download } from "lucide-react";
+import { saveBlob } from "@/components/finance/StatementView";
 
 type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales" | "finance";
 
@@ -32,6 +33,26 @@ export default function AdminConsolePage() {
   // server-side rather than dumping a newest-200 slice into the table.
   const catalogPageSize = 100;
   const [catalogTotal, setCatalogTotal] = useState(0);
+  const [catalogExporting, setCatalogExporting] = useState(false);
+
+  // Exports whatever the search/status filters currently match - with the
+  // default filters that's the whole catalog.
+  const handleExportCatalog = async () => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    setCatalogExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (catalogQuery.trim()) params.append("q", catalogQuery.trim());
+      if (catalogActiveFilter !== "all") params.append("is_active", String(catalogActiveFilter === "active"));
+      const blob = await api.downloadAuthed(token, `/api/v1/admin/catalog/export.xlsx?${params.toString()}`);
+      saveBlob(blob, `triptel-catalog-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (err: any) {
+      setCatalogNotice(err.message || "Export failed");
+    } finally {
+      setCatalogExporting(false);
+    }
+  };
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogActiveFilter, setCatalogActiveFilter] = useState<"all" | "active" | "inactive">("all");
   const [catalogPage, setCatalogPage] = useState(0);
@@ -1112,6 +1133,15 @@ export default function AdminConsolePage() {
             </select>
             <button type="submit" disabled={catalogLoading} className="bg-admin-600 hover:bg-admin-500 text-white text-xs font-bold px-4 py-2 rounded-lg">
               {catalogLoading ? "Searching…" : "Search"}
+            </button>
+            <button
+              type="button"
+              onClick={handleExportCatalog}
+              disabled={catalogExporting || catalogTotal === 0}
+              className="flex items-center gap-1.5 bg-white hover:bg-gray-50 border border-gray-300 text-slate-700 text-xs font-bold px-4 py-2 rounded-lg disabled:opacity-60"
+            >
+              <Download className="w-3.5 h-3.5" />
+              {catalogExporting ? "Preparing Excel…" : `Export ${catalogTotal.toLocaleString()} to Excel`}
             </button>
           </form>
 

@@ -36,6 +36,7 @@ from app.services.ledger_svc import LedgerService
 from app.services.payment_methods_svc import get_payment_methods, set_payment_methods
 from app.services.legal_content_svc import LEGAL_TITLES, get_legal_document, save_legal_document
 from app.services import gateway_config_svc
+from app.services.catalog_export_svc import build_catalog_workbook
 from app.services.shurjopay_svc import ShurjoPayService
 from app.services.pricing_svc import MAX_SELLING_PROFIT_PCT, get_selling_profit_pct, retail_price_for, set_selling_profit_pct
 from app.services.audit_svc import AuditService
@@ -1135,6 +1136,24 @@ async def get_admin_catalog(
             for p, c in res.all()
         ],
     }
+
+@router.get("/catalog/export.xlsx", dependencies=[Depends(require_admin)])
+async def export_catalog_xlsx(
+    q: str | None = None,
+    country_iso: str | None = None,
+    is_active: bool | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Every product matching the same filters as the catalog list (all of
+    them by default) as a formatted Excel workbook."""
+    content = await build_catalog_workbook(db, q=q, is_active=is_active, country_iso=country_iso)
+    filename = f"triptel-catalog-{datetime.now(timezone.utc).date()}.xlsx"
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
 
 @router.put("/catalog/{product_id}", dependencies=[Depends(require_admin)])
 async def update_product(
