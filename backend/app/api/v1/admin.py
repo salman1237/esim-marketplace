@@ -35,6 +35,8 @@ from app.schemas.settings import (
 from app.services.ledger_svc import LedgerService
 from app.services.payment_methods_svc import get_payment_methods, set_payment_methods
 from app.services.legal_content_svc import LEGAL_TITLES, get_legal_document, save_legal_document
+from app.services import gateway_config_svc
+from app.services.shurjopay_svc import ShurjoPayService
 from app.services.pricing_svc import MAX_SELLING_PROFIT_PCT, get_selling_profit_pct, retail_price_for, set_selling_profit_pct
 from app.services.audit_svc import AuditService
 from app.services.catalog_sync_svc import sync_vivape_catalog
@@ -647,6 +649,83 @@ async def update_branding(
     )
     await db.commit()
     return {"status": "success", "updated": list(updates.keys())}
+
+class ShurjoPayConfigRequest(BaseModel):
+    mode: str = Field(..., pattern="^(live|sandbox)$")
+    username: str = Field(..., min_length=1, max_length=100)
+    # Blank keeps the saved password - it is never sent back to the browser.
+    password: Optional[str] = Field(default=None, max_length=200)
+    prefix: str = Field(..., min_length=2, max_length=10)
+
+
+@router.get("/payment-gateways/shurjopay", dependencies=[Depends(require_super_admin)])
+async def get_shurjopay_settings(db: AsyncSession = Depends(get_db)):
+    return await gateway_config_svc.describe_shurjopay_config(db)
+
+
+@router.put("/payment-gateways/shurjopay", dependencies=[Depends(require_super_admin)])
+async def update_shurjopay_settings(
+    req: ShurjoPayConfigRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        config = await gateway_config_svc.candidate_config(db, req.mode, req.username, req.password, req.prefix)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    change = await gateway_config_svc.save_shurjopay_config(db, config, admin_user.id)
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_SHURJOPAY_CONFIG", before_state=change["before"], after_state=change["after"],
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    await db.commit()
+    return await gateway_config_svc.describe_shurjopay_config(db)
+
+
+@router.delete("/payment-gateways/shurjopay", dependencies=[Depends(require_super_admin)])
+async def reset_shurjopay_settings(
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Removes the admin-saved credentials; the server's environment settings apply again."""
+    removed = await gateway_config_svc.clear_shurjopay_config(db)
+    if removed:
+        await AuditService.log_action(
+            db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+            action="RESET_SHURJOPAY_CONFIG",
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+    await db.commit()
+    return await gateway_config_svc.describe_shurjopay_config(db)
+
+
+@router.post("/payment-gateways/shurjopay/test", dependencies=[Depends(require_super_admin)])
+async def test_shurjopay_settings(req: Optional[ShurjoPayConfigRequest] = None, db: AsyncSession = Depends(get_db)):
+    """Logs in to ShurjoPay with the form's values (or the active settings)
+    to confirm they work before customers depend on them. The token is
+    never returned."""
+    try:
+        config = (
+            await gateway_config_svc.candidate_config(db, req.mode, req.username, req.password, req.prefix)
+            if req else await gateway_config_svc.get_shurjopay_config(db)
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        data = await ShurjoPayService.authenticate(db, config)
+    except Exception as e:
+        logger.warning("shurjopay_test_connection_failed", error=str(e))
+        return {"ok": False, "mode": config.mode, "message": "Couldn't reach ShurjoPay - try again in a moment"}
+    if isinstance(data, dict) and data.get("token"):
+        return {"ok": True, "mode": config.mode, "store_id": data.get("store_id"), "message": "Connected - ShurjoPay accepted these credentials"}
+    message = (data.get("message") or data.get("sp_message")) if isinstance(data, dict) else None
+    return {"ok": False, "mode": config.mode, "message": message or "ShurjoPay rejected these credentials"}
+
 
 @router.get("/payment-methods", dependencies=[Depends(require_admin)])
 async def list_payment_methods(db: AsyncSession = Depends(get_db)):

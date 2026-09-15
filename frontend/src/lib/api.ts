@@ -160,6 +160,10 @@ export const api = {
     return fetchApi(`/api/v1/admin/catalog?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
   },
   updateAdminCatalogProduct: (token: string, id: string, data: any) => fetchApi(`/api/v1/admin/catalog/${id}`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  getShurjoPayConfig: (token: string) => fetchApi("/api/v1/admin/payment-gateways/shurjopay", { headers: { Authorization: `Bearer ${token}` } }),
+  updateShurjoPayConfig: (token: string, data: { mode: string; username: string; password?: string; prefix: string }) => fetchApi("/api/v1/admin/payment-gateways/shurjopay", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  resetShurjoPayConfig: (token: string) => fetchApi("/api/v1/admin/payment-gateways/shurjopay", { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }),
+  testShurjoPayConfig: (token: string, data?: { mode: string; username: string; password?: string; prefix: string }) => fetchApi("/api/v1/admin/payment-gateways/shurjopay/test", { method: "POST", headers: { Authorization: `Bearer ${token}` }, ...(data ? { body: JSON.stringify(data) } : {}) }),
   getAdminPaymentMethods: (token: string) => fetchApi("/api/v1/admin/payment-methods", { headers: { Authorization: `Bearer ${token}` } }),
   updateAdminPaymentMethods: (token: string, methods: any[]) => fetchApi("/api/v1/admin/payment-methods", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ methods }) }),
   getFinanceSummary: (token: string, params: { date_from?: string; date_to?: string }) => fetchApi(`/api/v1/admin/finance/summary?${salesReportQuery(params)}`, { headers: { Authorization: `Bearer ${token}` } }),

@@ -7,6 +7,7 @@ import { useAppSettings } from "@/lib/AppSettingsContext";
 import TranslationsManager from "@/components/TranslationsManager";
 import PricingCard from "@/components/admin/PricingCard";
 import PaymentMethodsCard from "@/components/admin/PaymentMethodsCard";
+import ShurjoPayCard from "@/components/admin/ShurjoPayCard";
 import LegalContentCard from "@/components/admin/LegalContentCard";
 import SalesReportTab from "@/components/admin/SalesReportTab";
 import FinanceTab from "@/components/admin/FinanceTab";
@@ -977,6 +978,10 @@ export default function AdminConsolePage() {
                 Save Rate Override
               </button>
             </form>
+          </div>
+
+          <div className="md:col-span-2">
+            <ShurjoPayCard />
           </div>
 
           <div className="md:col-span-2">

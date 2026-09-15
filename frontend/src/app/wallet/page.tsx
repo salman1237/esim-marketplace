@@ -60,7 +60,7 @@ export default function WalletPage() {
   const [submittingSlip, setSubmittingSlip] = useState(false);
   const [slipSuccess, setSlipSuccess] = useState(false);
   const [payingViaGateway, setPayingViaGateway] = useState(false);
-  const [topupBanner, setTopupBanner] = useState<{ kind: "success" | "failed"; reason?: string } | null>(null);
+  const [topupBanner, setTopupBanner] = useState<{ kind: "success" | "failed" | "cancelled"; reason?: string } | null>(null);
   const [settings, setSettings] = useState<{ bangla_qr_image?: string; payment_methods?: DepositMethod[] }>({});
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const depositMethods = settings.payment_methods || [];
@@ -77,7 +77,8 @@ export default function WalletPage() {
     // GET /api/v1/payments/shurjopay/callback.
     const params = new URLSearchParams(window.location.search);
     const topup = params.get("topup");
-    if (topup === "success" || topup === "failed") {
+    // "cancelled" is ShurjoPay's cancel_url - the customer backed out on the gateway page.
+    if (topup === "success" || topup === "failed" || topup === "cancelled") {
       setTopupBanner({ kind: topup, reason: params.get("reason") || undefined });
       window.history.replaceState({}, "", window.location.pathname);
     }
@@ -158,6 +159,8 @@ export default function WalletPage() {
           <span>
             {topupBanner.kind === "success"
               ? "Top up successful — your wallet has been credited."
+              : topupBanner.kind === "cancelled"
+              ? "Payment cancelled. No amount was charged."
               : `Top up was not completed${topupBanner.reason ? ` (${topupBanner.reason.replace(/_/g, " ")})` : ""}. No amount was charged.`}
           </span>
           <button onClick={() => setTopupBanner(null)} className="text-xs underline opacity-75 hover:opacity-100">Dismiss</button>

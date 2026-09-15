@@ -1,7 +1,7 @@
 import uuid
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.config import settings
@@ -219,6 +219,38 @@ async def shurjopay_callback(
     return RedirectResponse(f"{settings.FRONTEND_BASE_URL}/wallet?topup=success", status_code=302)
 
 
+@router.api_route("/shurjopay/ipn", methods=["GET", "POST"])
+async def shurjopay_ipn(request: Request, db: AsyncSession = Depends(get_db)):
+    """ShurjoPay's server-to-server payment notification (IPN). Covers the
+    customer who pays and then closes the tab before the browser return
+    reaches /callback - without it that payment would never be credited.
+
+    The notification body is never trusted: only the sp order_id is read
+    from it, and the payment is re-verified with ShurjoPay's API through
+    exactly the same path as the browser return. That path is idempotent
+    (ledger idempotency key for top-ups, PENDING check under a row lock for
+    eSIM orders), so whichever of the two arrives first does the work and
+    the other is a no-op."""
+    order_id = request.query_params.get("order_id")
+    if not order_id:
+        try:
+            if "json" in request.headers.get("content-type", ""):
+                body = await request.json()
+                order_id = body.get("order_id") if isinstance(body, dict) else None
+            else:
+                order_id = (await request.form()).get("order_id")
+        except Exception:
+            order_id = None
+    if not order_id or not isinstance(order_id, str):
+        return JSONResponse({"status": "error", "detail": "order_id is required"}, status_code=400)
+
+    result = await shurjopay_callback(order_id=order_id.strip(), db=db)
+    location = result.headers.get("location", "")
+    confirmed = "=failed" not in location
+    logger.info("shurjopay_ipn_processed", sp_order_id=order_id, confirmed=confirmed)
+    return {"status": "received", "order_id": order_id, "payment": "confirmed" if confirmed else "not_confirmed"}
+
+
 async def _complete_gateway_order(db: AsyncSession, customer_order_id: str, _fail) -> RedirectResponse:
     """Completes a direct-gateway eSIM purchase (POST
     /payments/shurjopay/order-initiate) once ShurjoPay confirms payment.
@@ -227,7 +259,10 @@ async def _complete_gateway_order(db: AsyncSession, customer_order_id: str, _fai
     between the two payment methods."""
     db_order_id = customer_order_id[len("ORDERPAY-"):]
 
-    res = await db.execute(select(Order).where(Order.id == db_order_id))
+    # Row lock: the browser return and the IPN can arrive together for the
+    # same payment. Without it both could read PENDING and start fulfilment
+    # twice - two VivaPe purchases for one payment.
+    res = await db.execute(select(Order).where(Order.id == db_order_id).with_for_update())
     order = res.scalar_one_or_none()
     if not order:
         await db.commit()

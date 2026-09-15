@@ -1,28 +1,35 @@
 import time
 import httpx
 from decimal import Decimal
+from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.payment import PaymentLog
 from app.core.config import settings
+from app.services.gateway_config_svc import ShurjoPayConfig, get_shurjopay_config
 
 class ShurjoPayService:
+    # Credentials come from the admin console when a Super Admin has saved
+    # them, otherwise from the SHURJOPAY_* environment settings - see
+    # gateway_config_svc. Resolved per call so a change applies immediately.
+
     @staticmethod
-    async def authenticate(db: AsyncSession) -> dict:
-        url = f"{settings.SHURJOPAY_BASE_URL}/api/get_token"
+    async def authenticate(db: AsyncSession, config: Optional[ShurjoPayConfig] = None) -> dict:
+        config = config or await get_shurjopay_config(db)
+        url = f"{config.base_url}/api/get_token"
         payload = {
-            "username": settings.SHURJOPAY_USERNAME,
-            "password": settings.SHURJOPAY_PASSWORD
+            "username": config.username,
+            "password": config.password
         }
         async with httpx.AsyncClient(verify=True, timeout=15.0) as client:
             resp = await client.post(url, json=payload)
             data = resp.json()
-            
-            # Log
+
+            # Log - never the password or the bearer token.
             log = PaymentLog(
                 gateway="SHURJOPAY",
                 endpoint="api/get_token",
-                request_payload={"username": settings.SHURJOPAY_USERNAME},
-                response_payload=data,
+                request_payload={"username": config.username, "base_url": config.base_url},
+                response_payload={k: v for k, v in data.items() if k != "token"} if isinstance(data, dict) else data,
                 status_code=resp.status_code
             )
             db.add(log)
@@ -41,17 +48,18 @@ class ShurjoPayService:
         customer_post_code: str = "1212",
         client_ip: str = "127.0.0.1"
     ) -> dict:
-        auth_data = await ShurjoPayService.authenticate(db)
+        config = await get_shurjopay_config(db)
+        auth_data = await ShurjoPayService.authenticate(db, config)
         token = auth_data.get("token")
         store_id = auth_data.get("store_id")
 
         if not token:
             raise Exception("Failed to get ShurjoPay authorization token")
 
-        url = f"{settings.SHURJOPAY_BASE_URL}/api/secret-pay"
+        url = f"{config.base_url}/api/secret-pay"
         headers = {"Authorization": f"Bearer {token}"}
         payload = {
-            "prefix": settings.SHURJOPAY_PREFIX,
+            "prefix": config.prefix,
             "token": token,
             "return_url": settings.SHURJOPAY_RETURN_URL,
             "cancel_url": settings.SHURJOPAY_CANCEL_URL,
@@ -76,7 +84,7 @@ class ShurjoPayService:
                 gateway="SHURJOPAY",
                 order_id=order_id,
                 endpoint="api/secret-pay",
-                request_payload=payload,
+                request_payload={k: v for k, v in payload.items() if k != "token"},
                 response_payload=data,
                 status_code=resp.status_code
             )
@@ -86,11 +94,12 @@ class ShurjoPayService:
 
     @staticmethod
     async def verify_payment(db: AsyncSession, order_id: str) -> dict:
-        auth_data = await ShurjoPayService.authenticate(db)
+        config = await get_shurjopay_config(db)
+        auth_data = await ShurjoPayService.authenticate(db, config)
         token = auth_data.get("token")
-        url = f"{settings.SHURJOPAY_BASE_URL}/api/verification"
+        url = f"{config.base_url}/api/verification"
         headers = {"Authorization": f"Bearer {token}"}
-        
+
         async with httpx.AsyncClient(verify=True, timeout=15.0) as client:
             resp = await client.post(url, headers=headers, json={"order_id": order_id})
             data = resp.json()
