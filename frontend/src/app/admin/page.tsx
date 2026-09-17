@@ -1070,9 +1070,6 @@ export default function AdminConsolePage() {
         </div>
       )}
 
-      </div>
-      </div>
-
       <ConfirmDialog
         open={pendingTierDelete !== null}
         title="Remove this commission tier?"
@@ -1667,6 +1664,9 @@ export default function AdminConsolePage() {
           <p>Exchange rates synchronized keylessly from open.er-api.com with manual admin override support.</p>
         </div>
       )}
+
+      </div>
+      </div>
 
     </div>
     </div>
