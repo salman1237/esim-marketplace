@@ -29,6 +29,38 @@ export default function ShurjoPayCard() {
   const [resetOpen, setResetOpen] = useState(false);
   const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
   const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const [limits, setLimits] = useState<any | null>(null);
+  const [minTopup, setMinTopup] = useState("");
+  const [maxTopup, setMaxTopup] = useState("");
+  const [savingLimits, setSavingLimits] = useState(false);
+  const [limitsNotice, setLimitsNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+
+  const applyLimits = (l: any) => {
+    setLimits(l);
+    setMinTopup(String(Number(l.min)));
+    setMaxTopup(String(Number(l.max)));
+  };
+
+  useEffect(() => {
+    const token = getToken();
+    if (!token) return;
+    api.getTopupLimits(token).then(applyLimits).catch(() => {});
+  }, []);
+
+  const saveLimits = async () => {
+    const token = getToken();
+    if (!token) return;
+    setSavingLimits(true);
+    setLimitsNotice(null);
+    try {
+      applyLimits(await api.updateTopupLimits(token, { min: minTopup.trim(), max: maxTopup.trim() }));
+      setLimitsNotice({ kind: "ok", text: "Saved — the wallet page and the API use these straight away." });
+    } catch (err: any) {
+      setLimitsNotice({ kind: "error", text: err.message || "Couldn't save the limits" });
+    } finally {
+      setSavingLimits(false);
+    }
+  };
 
   const apply = (c: any) => {
     setConfig(c);
@@ -184,6 +216,37 @@ export default function ShurjoPayCard() {
         </p>
       )}
       {notice && <p className={`text-xs font-medium mt-3 ${notice.kind === "ok" ? "text-emerald-600" : "text-rose-600"}`}>{notice.text}</p>}
+
+      <div className="mt-5 rounded-xl border border-gray-200 p-3">
+        <div className="text-[11px] font-semibold text-slate-600 mb-1">Wallet top-up limits ({limits?.currency || "EUR"})</div>
+        <p className="text-[11px] text-slate-500 mb-2">
+          Lower the minimum to run a small live test (1 EUR is about 140 BDT), then put it back.
+        </p>
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <label className="text-[11px] text-slate-700 font-semibold block mb-1">Minimum</label>
+            <input className={`${inputCls} w-28 font-mono`} value={minTopup} onChange={(e) => setMinTopup(e.target.value)} inputMode="decimal" />
+          </div>
+          <div>
+            <label className="text-[11px] text-slate-700 font-semibold block mb-1">Maximum</label>
+            <input className={`${inputCls} w-28 font-mono`} value={maxTopup} onChange={(e) => setMaxTopup(e.target.value)} inputMode="decimal" />
+          </div>
+          <button
+            type="button"
+            onClick={saveLimits}
+            disabled={savingLimits || !minTopup.trim() || !maxTopup.trim()}
+            className="bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-bold px-3 py-2 rounded-lg"
+          >
+            {savingLimits ? "Saving…" : "Save limits"}
+          </button>
+          {limits && (
+            <span className="text-[11px] text-slate-500 pb-2">
+              now {Number(limits.min).toFixed(2)} – {Number(limits.max).toFixed(2)}
+            </span>
+          )}
+        </div>
+        {limitsNotice && <p className={`text-[11px] mt-2 ${limitsNotice.kind === "ok" ? "text-emerald-600" : "text-rose-600"}`}>{limitsNotice.text}</p>}
+      </div>
 
       {config && (
         <div className="mt-5 rounded-xl bg-gray-50 border border-gray-200 p-3 space-y-1.5">

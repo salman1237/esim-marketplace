@@ -1,0 +1,315 @@
+"use client";
+
+import React, { useMemo, useState } from "react";
+import { ArrowRight, CheckCircle2, X } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
+import { api } from "@/lib/api";
+import { useAppSettings } from "@/lib/AppSettingsContext";
+import { esimInstallLinks } from "@/lib/esimInstall";
+import { waitForOrder } from "@/lib/waitForOrder";
+
+type Product = {
+  id: string;
+  title_en: string;
+  data_amount_gb: string | number;
+  validity_days: number;
+  retail_price: string | number;
+  is_unlimited: boolean;
+  currency?: string;
+};
+
+// The filter chips customers asked for. A value only appears if this
+// destination actually sells something matching it.
+const DAY_CHOICES = [1, 3, 5, 7, 10, 15, 30];
+const GB_CHOICES = [1, 2, 3, 5, 10, 15, 20, 30];
+
+const WORKING_STEPS = ["Payment confirmed", "Reserving your eSIM with the carrier", "Preparing your QR code"];
+
+export default function PackageBrowser({ country, products }: { country: any; products: Product[] }) {
+  const { formatPrice } = useAppSettings();
+  const [days, setDays] = useState<number | null>(null);
+  const [gb, setGb] = useState<number | "unlimited" | null>(null);
+  const [flow, setFlow] = useState<any>(null);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [workingStep, setWorkingStep] = useState(0);
+
+  const availableDays = useMemo(
+    () => DAY_CHOICES.filter((d) => products.some((p) => p.validity_days === d)),
+    [products]
+  );
+  const availableGb = useMemo(
+    () => GB_CHOICES.filter((g) => products.some((p) => !p.is_unlimited && Number(p.data_amount_gb) === g)),
+    [products]
+  );
+  const hasUnlimited = useMemo(() => products.some((p) => p.is_unlimited), [products]);
+
+  const filtered = useMemo(
+    () =>
+      products.filter((p) => {
+        if (days !== null && p.validity_days !== days) return false;
+        if (gb === "unlimited") return p.is_unlimited;
+        if (gb !== null) return !p.is_unlimited && Number(p.data_amount_gb) === gb;
+        return true;
+      }),
+    [products, days, gb]
+  );
+
+  React.useEffect(() => {
+    if (flow?.stage !== "working") {
+      setWorkingStep(0);
+      return;
+    }
+    const timers = [setTimeout(() => setWorkingStep(1), 1200), setTimeout(() => setWorkingStep(2), 7000)];
+    return () => timers.forEach(clearTimeout);
+  }, [flow?.stage]);
+
+  const openPurchase = async (product: Product, method: "wallet" | "gateway") => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) {
+      // Come back to this page after signing in.
+      window.location.href = `/auth/login?next=${encodeURIComponent(window.location.pathname)}`;
+      return;
+    }
+    setFlow({ stage: "confirm", product, method });
+    try {
+      const wallets = await api.getMyWallets(token);
+      const def = (wallets || []).find((w: any) => w.wallet_type === "DEFAULT");
+      setWalletBalance(def ? parseFloat(def.balance) : null);
+    } catch {
+      setWalletBalance(null);
+    }
+  };
+
+  const confirmPurchase = async () => {
+    const token = localStorage.getItem("esim_token");
+    if (!token || !flow) return;
+    const { product, method } = flow;
+
+    if (method === "gateway") {
+      setFlow({ stage: "working", product, method });
+      try {
+        const res = await api.initiateOrderPayment(token, product.id);
+        const checkoutUrl = res.checkout_url || res.checkoutUrl;
+        if (checkoutUrl) {
+          window.location.href = checkoutUrl;
+          return;
+        }
+        setFlow({ stage: "error", product, method, message: "The payment gateway didn't return a checkout link. Please try again, or pay from your wallet." });
+      } catch (err: any) {
+        setFlow({ stage: "error", product, method, message: err.message || "Couldn't start checkout." });
+      }
+      return;
+    }
+
+    setFlow({ stage: "working", product, method });
+    try {
+      const accepted = await api.checkout(token, { product_id: product.id, payment_method: "WALLET", is_buy_for_user: false });
+      let order;
+      try {
+        order = await waitForOrder(token, accepted.id);
+      } catch {
+        setFlow({
+          stage: "error", product, method,
+          message: "This is taking longer than usual. Your order is still being set up and will appear in My eSIMs shortly — you'll also get it by email.",
+        });
+        return;
+      }
+      if (order.status === "COMPLETED") setFlow({ stage: "success", product, method, order });
+      else setFlow({ stage: "error", product, method, message: "We couldn't set up this eSIM with the network. The full amount has been refunded to your wallet." });
+    } catch (err: any) {
+      setFlow({ stage: "error", product, method, message: err.message || "Purchase failed. If your wallet was charged, it has been refunded." });
+    }
+  };
+
+  const chip = (active: boolean) =>
+    `px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+      active ? "bg-brand-600 border-brand-600 text-white" : "bg-white border-gray-300 text-slate-700 hover:bg-gray-50"
+    }`;
+
+  return (
+    <>
+      {(availableDays.length > 0 || availableGb.length > 0 || hasUnlimited) && (
+        <div className="glass-panel rounded-2xl border border-gray-200 p-4 sm:p-5 space-y-3">
+          {availableGb.length > 0 || hasUnlimited ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 w-16">Data</span>
+              <button type="button" onClick={() => setGb(null)} className={chip(gb === null)}>All</button>
+              {availableGb.map((g) => (
+                <button key={g} type="button" onClick={() => setGb(gb === g ? null : g)} className={chip(gb === g)}>{g} GB</button>
+              ))}
+              {hasUnlimited && (
+                <button type="button" onClick={() => setGb(gb === "unlimited" ? null : "unlimited")} className={chip(gb === "unlimited")}>Unlimited</button>
+              )}
+            </div>
+          ) : null}
+          {availableDays.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 w-16">Days</span>
+              <button type="button" onClick={() => setDays(null)} className={chip(days === null)}>All</button>
+              {availableDays.map((d) => (
+                <button key={d} type="button" onClick={() => setDays(days === d ? null : d)} className={chip(days === d)}>{d} {d === 1 ? "day" : "days"}</button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-slate-500">
+          {filtered.length} of {products.length} package{products.length === 1 ? "" : "s"}
+        </p>
+        {(days !== null || gb !== null) && (
+          <button type="button" onClick={() => { setDays(null); setGb(null); }} className="text-xs text-brand-600 hover:underline">
+            Clear filters
+          </button>
+        )}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="glass-panel rounded-2xl border border-dashed border-gray-300 p-10 text-center">
+          <p className="text-sm font-semibold text-slate-900">No package matches these filters</p>
+          <p className="text-xs text-slate-500 mt-1">Try a different data size or validity.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map((p) => (
+            <div key={p.id} className="glass-card rounded-2xl p-5 border border-gray-200 flex flex-col">
+              <div className="text-xl font-black text-slate-900">{p.is_unlimited ? "Unlimited" : `${Number(p.data_amount_gb)} GB`}</div>
+              <div className="text-xs text-slate-500 mt-0.5">{p.validity_days} days validity · 4G/5G</div>
+              <div className="text-2xl font-black text-emerald-600 mt-4">{formatPrice(parseFloat(String(p.retail_price)))}</div>
+              <div className="mt-4 space-y-2">
+                <button
+                  onClick={() => openPurchase(p, "wallet")}
+                  disabled={flow?.stage === "working"}
+                  className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white text-xs font-bold py-2.5 rounded-xl"
+                >
+                  {flow?.stage === "working" && flow.product?.id === p.id ? "Processing…" : "Buy with Wallet"}
+                </button>
+                <button
+                  onClick={() => openPurchase(p, "gateway")}
+                  disabled={flow?.stage === "working"}
+                  className="w-full text-[11px] text-slate-500 hover:text-slate-800 disabled:opacity-50 underline underline-offset-2"
+                >
+                  Pay by Card / Mobile Banking
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {flow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="glass-panel rounded-2xl max-w-md w-full p-6 border border-gray-200 shadow-xl">
+            {flow.stage === "confirm" && (
+              <>
+                <h3 className="text-lg font-bold text-slate-900 mb-1">Confirm your purchase</h3>
+                <p className="text-xs text-slate-500 mb-4">
+                  {country.name_en} · {flow.product.is_unlimited ? "Unlimited data" : `${Number(flow.product.data_amount_gb)} GB`} · {flow.product.validity_days} days
+                </p>
+                <div className="rounded-xl border border-gray-200 divide-y divide-gray-100 text-xs mb-4">
+                  <div className="flex items-center justify-between px-3 py-2.5">
+                    <span className="text-slate-500">Price</span>
+                    <span className="font-bold text-slate-900">{formatPrice(parseFloat(String(flow.product.retail_price)))}</span>
+                  </div>
+                  <div className="flex items-center justify-between px-3 py-2.5">
+                    <span className="text-slate-500">Payment</span>
+                    <span className="text-slate-900">{flow.method === "wallet" ? "Wallet balance" : "Card / Mobile Banking"}</span>
+                  </div>
+                  {flow.method === "wallet" && walletBalance !== null && (
+                    <div className="flex items-center justify-between px-3 py-2.5">
+                      <span className="text-slate-500">Balance after</span>
+                      <span className={walletBalance - parseFloat(String(flow.product.retail_price)) < 0 ? "font-bold text-rose-600" : "text-slate-900"}>
+                        {formatPrice(walletBalance - parseFloat(String(flow.product.retail_price)))}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                {flow.method === "wallet" && walletBalance !== null && walletBalance < parseFloat(String(flow.product.retail_price)) && (
+                  <p className="text-xs text-rose-600 mb-3">Your wallet balance is too low for this plan. Top up first, or pay by card.</p>
+                )}
+                <div className="flex gap-3">
+                  <button onClick={() => setFlow(null)} className="flex-1 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-slate-700 text-xs font-semibold">Cancel</button>
+                  <button onClick={confirmPurchase} className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold">
+                    {flow.method === "wallet" ? "Confirm & Pay" : "Continue to payment"}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {flow.stage === "working" && (
+              <div className="text-center py-2">
+                <div className="w-14 h-14 rounded-full border-4 border-brand-100 border-t-brand-600 animate-spin mx-auto mb-5" />
+                <h3 className="text-lg font-bold text-slate-900">Setting up your eSIM</h3>
+                <p className="text-xs text-slate-500 mt-1 mb-5">This usually takes 10–20 seconds. Please keep this window open.</p>
+                <div className="text-start space-y-2">
+                  {WORKING_STEPS.map((label, i) => (
+                    <div key={label} className="flex items-center gap-2 text-xs">
+                      {i < workingStep ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      ) : i === workingStep ? (
+                        <span className="w-4 h-4 rounded-full border-2 border-brand-600 border-t-transparent animate-spin shrink-0" />
+                      ) : (
+                        <span className="w-4 h-4 rounded-full border-2 border-gray-200 shrink-0" />
+                      )}
+                      <span className={i <= workingStep ? "text-slate-900 font-medium" : "text-slate-400"}>{label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {flow.stage === "success" && (
+              <div className="text-center">
+                <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-900">Your eSIM is ready</h3>
+                <p className="text-xs text-slate-500 mt-1 mb-4">Order #{flow.order?.order_no}</p>
+                {flow.order?.esim_profile?.qr_code_data && (
+                  <div className="bg-white border border-gray-200 rounded-xl p-4 inline-block mb-4">
+                    <QRCodeSVG value={flow.order.esim_profile.qr_code_data} size={150} level="M" />
+                  </div>
+                )}
+                {(() => {
+                  const install = esimInstallLinks(flow.order?.esim_profile?.lpa_string);
+                  if (!install.ios && !install.android) return null;
+                  return (
+                    <div className="flex gap-2 mb-3">
+                      {install.ios && <a href={install.ios} className="flex-1 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold">Install on iPhone</a>}
+                      {install.android && <a href={install.android} className="flex-1 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-900 text-xs font-bold">Install on Android</a>}
+                    </div>
+                  );
+                })()}
+                <p className="text-[11px] text-slate-500 mb-4">Tap on the phone that will use the eSIM, or scan the QR code from another device.</p>
+                <div className="flex gap-3">
+                  <button onClick={() => setFlow(null)} className="flex-1 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-slate-700 text-xs font-semibold">Close</button>
+                  <a href="/my-esims" className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold flex items-center justify-center space-x-1">
+                    <span>View &amp; Print</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {flow.stage === "error" && (
+              <div className="text-center">
+                <div className="w-14 h-14 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <X className="w-8 h-8" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900">Purchase didn&apos;t go through</h3>
+                <p className="text-xs text-slate-500 mt-2 mb-5">{flow.message}</p>
+                <div className="flex gap-3">
+                  <button onClick={() => setFlow(null)} className="flex-1 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-slate-700 text-xs font-semibold">Close</button>
+                  <button onClick={() => setFlow({ stage: "confirm", product: flow.product, method: flow.method })} className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold">
+                    Try again
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

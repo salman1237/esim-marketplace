@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.core.seed_translations import EN_TRANSLATIONS
 from app.models.settings import PlatformSetting, CurrencyRate, Language, Translation
 from app.services.payment_methods_svc import PAYMENT_METHODS_KEY, parse_payment_methods
+from app.services.topup_limits_svc import get_topup_limits
 from app.schemas.settings import PublicSettingsResponse, CurrencyRateResponse, LanguageResponse, TranslationsResponse
 
 router = APIRouter(prefix="/settings", tags=["Public Settings"])
@@ -17,6 +18,7 @@ async def get_public_settings(db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(PlatformSetting).where(PlatformSetting.is_public == True))
     settings_rows = res.scalars().all()
     cfg = {s.key: s.value for s in settings_rows}
+    topup_min, topup_max = await get_topup_limits(db)
 
     return PublicSettingsResponse(
         platform_name=cfg.get("platform_name", "eSIM Global"),
@@ -37,6 +39,8 @@ async def get_public_settings(db: AsyncSession = Depends(get_db)):
         og_image=cfg.get("og_image"),
         bangla_qr_image=cfg.get("bangla_qr_image"),
         payment_methods=[m for m in parse_payment_methods(cfg.get(PAYMENT_METHODS_KEY)) if m.is_active],
+        topup_min=topup_min,
+        topup_max=topup_max,
         google_client_id=app_settings.GOOGLE_CLIENT_ID or None,
     )
 

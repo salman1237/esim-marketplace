@@ -39,6 +39,9 @@ class PublicSettingsResponse(BaseModel):
     bangla_qr_image: Optional[str] = None
     # Active manual-deposit methods only; admins edit the full list.
     payment_methods: List[PaymentMethodConfig] = []
+    # Wallet top-up limits in the base currency, enforced by the API.
+    topup_min: Decimal = Decimal("1.00")
+    topup_max: Decimal = Decimal("2000.00")
     # OAuth client ID for the "Sign in with Google" button; None hides it.
     google_client_id: Optional[str] = None
 

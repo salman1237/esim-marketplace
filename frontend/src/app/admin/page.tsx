@@ -578,7 +578,8 @@ export default function AdminConsolePage() {
           Admin+Super-Admin operations; Branding, Users, Translations, and
           the audit-log half of "360° Logs" are Super-Admin-only, matching
           the backend's require_super_admin gate on those endpoints. */}
-      <div className="flex space-x-2 border-b border-gray-200 overflow-x-auto hide-scrollbar">
+      <div className="grid grid-cols-1 lg:grid-cols-[232px_minmax(0,1fr)] gap-6 items-start">
+      <nav className="flex lg:flex-col gap-1 overflow-x-auto hide-scrollbar lg:overflow-visible lg:sticky lg:top-24 glass-panel rounded-2xl border border-gray-200 p-2">
         {[
           { id: "overview", label: "Overview" },
           { id: "merchants", label: `Merchants (${merchants.filter(m => m.status === "PENDING").length})` },
@@ -597,14 +598,16 @@ export default function AdminConsolePage() {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`py-2 px-4 text-xs font-bold border-b-2 transition-colors ${
-              activeTab === tab.id ? "border-admin-500 text-admin-700" : "border-transparent text-slate-500 hover:text-slate-700"
+            className={`text-start whitespace-nowrap lg:whitespace-normal rounded-xl py-2.5 px-3 text-xs font-bold transition-colors ${
+              activeTab === tab.id ? "bg-admin-50 text-admin-700 border border-admin-200" : "text-slate-600 hover:bg-gray-50 border border-transparent"
             }`}
           >
             {tab.label}
           </button>
         ))}
-      </div>
+      </nav>
+
+      <div className="min-w-0 space-y-6">
 
       {/* Tab: Merchants */}
       {activeTab === "merchants" && (
@@ -1066,6 +1069,9 @@ export default function AdminConsolePage() {
           </div>
         </div>
       )}
+
+      </div>
+      </div>
 
       <ConfirmDialog
         open={pendingTierDelete !== null}

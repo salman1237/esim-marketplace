@@ -35,7 +35,7 @@ from app.schemas.settings import (
 from app.services.ledger_svc import LedgerService
 from app.services.payment_methods_svc import get_payment_methods, set_payment_methods
 from app.services.legal_content_svc import LEGAL_TITLES, get_legal_document, save_legal_document
-from app.services import gateway_config_svc
+from app.services import gateway_config_svc, topup_limits_svc
 from app.services.catalog_export_svc import build_catalog_workbook
 from app.services.shurjopay_svc import ShurjoPayService
 from app.services.pricing_svc import MAX_SELLING_PROFIT_PCT, get_selling_profit_pct, retail_price_for, set_selling_profit_pct
@@ -650,6 +650,41 @@ async def update_branding(
     )
     await db.commit()
     return {"status": "success", "updated": list(updates.keys())}
+
+class TopupLimitsRequest(BaseModel):
+    min: Decimal = Field(..., gt=0)
+    max: Decimal = Field(..., gt=0)
+
+
+@router.get("/topup-limits", dependencies=[Depends(require_admin)])
+async def get_topup_limits_settings(db: AsyncSession = Depends(get_db)):
+    minimum, maximum = await topup_limits_svc.get_topup_limits(db)
+    return {"min": str(minimum), "max": str(maximum), "currency": settings.BASE_CURRENCY}
+
+
+@router.put("/topup-limits", dependencies=[Depends(require_super_admin)])
+async def update_topup_limits(
+    req: TopupLimitsRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lets a small live-gateway test through without a redeploy - set the
+    minimum to a token amount, run the test, then put it back."""
+    try:
+        change = await topup_limits_svc.set_topup_limits(db, req.min, req.max, admin_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_TOPUP_LIMITS", before_state=change["before"], after_state=change["after"],
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    await db.commit()
+    minimum, maximum = await topup_limits_svc.get_topup_limits(db)
+    return {"min": str(minimum), "max": str(maximum), "currency": settings.BASE_CURRENCY}
+
 
 class ShurjoPayConfigRequest(BaseModel):
     mode: str = Field(..., pattern="^(live|sandbox)$")

@@ -67,7 +67,7 @@ export default function Footer() {
         <div className="space-y-3">
           <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{t("common", "explore", "Explore")}</h4>
           <ul className="space-y-2 text-xs">
-            <li><Link href="/" className="hover:text-slate-900">Popular Destinations</Link></li>
+            <li><Link href="/destinations" className="hover:text-slate-900">All Destinations</Link></li>
             <li><Link href="/my-esims" className="hover:text-slate-900">{t("common", "my_esims", "My eSIMs")}</Link></li>
             <li><Link href="/wallet" className="hover:text-slate-900">{t("common", "wallet", "Wallet")} & Top Up</Link></li>
             <li><Link href="/reseller" className="hover:text-slate-900">B2B Reseller Program</Link></li>

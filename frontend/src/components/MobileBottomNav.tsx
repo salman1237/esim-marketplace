@@ -11,7 +11,7 @@ export default function MobileBottomNav() {
   const { t } = useAppSettings();
 
   const tabs = [
-    { href: "/", label: t("common", "explore", "Explore"), icon: Compass },
+    { href: "/destinations", label: t("common", "explore", "Explore"), icon: Compass },
     { href: "/my-esims", label: t("common", "my_esims", "My eSIMs"), icon: QrCode },
     { href: "/wallet", label: t("common", "wallet", "Wallet"), icon: Wallet },
     { href: "/profile", label: t("common", "profile", "Profile"), icon: User },

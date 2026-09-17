@@ -62,7 +62,7 @@ export default function Header() {
 
         {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center space-x-6 text-sm font-medium text-slate-600">
-          <Link href="/" className="hover:text-slate-900 transition-colors">{t("nav", "countries", "Destinations")}</Link>
+          <Link href="/destinations" className="hover:text-slate-900 transition-colors">{t("nav", "countries", "Destinations")}</Link>
           <Link href="/my-esims" className="hover:text-slate-900 transition-colors">{t("common", "my_esims", "My eSIMs")}</Link>
           <Link href="/wallet" className="hover:text-slate-900 transition-colors">{t("common", "wallet", "Wallet")}</Link>
           {userData?.role === "SUPER_ADMIN" || userData?.role === "ADMIN" ? (
@@ -163,7 +163,7 @@ export default function Header() {
       {/* Mobile Dropdown */}
       {isMenuOpen && (
         <div className="md:hidden px-4 pt-2 pb-4 space-y-2 bg-white border-b border-gray-200">
-          <Link href="/" onClick={() => setIsMenuOpen(false)} className="block py-2 text-slate-600">{t("nav", "countries", "Destinations")}</Link>
+          <Link href="/destinations" onClick={() => setIsMenuOpen(false)} className="block py-2 text-slate-600">{t("nav", "countries", "Destinations")}</Link>
           <Link href="/my-esims" onClick={() => setIsMenuOpen(false)} className="block py-2 text-slate-600">{t("common", "my_esims", "My eSIMs")}</Link>
           <Link href="/wallet" onClick={() => setIsMenuOpen(false)} className="block py-2 text-slate-600">{t("common", "wallet", "Wallet")}</Link>
           {userData?.role === "SUPER_ADMIN" || userData?.role === "ADMIN" ? (

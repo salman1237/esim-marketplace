@@ -15,6 +15,7 @@ from app.schemas.order import OrderCreateRequest
 from app.services.shurjopay_svc import ShurjoPayService
 from app.services.currency_svc import CurrencyService
 from app.services.ledger_svc import LedgerService
+from app.services.topup_limits_svc import get_topup_limits
 from app.services.checkout_svc import resolve_beneficiary, RESELLER_ROLES
 from app.services.order_fulfilment import start_fulfilment
 from app.core.logging import get_logger
@@ -24,8 +25,8 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/payments", tags=["Payment Gateways"])
 
 
-MIN_TOPUP = Decimal("1.00")
-MAX_TOPUP = Decimal("2000.00")
+# Defaults live in topup_limits_svc; a Super Admin can change them from
+# the admin console (needed to test the live gateway with a small amount).
 
 
 @router.post("/shurjopay/topup")
@@ -35,8 +36,9 @@ async def topup_via_shurjopay(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    if amount < MIN_TOPUP or amount > MAX_TOPUP:
-        raise HTTPException(status_code=400, detail=f"Amount must be between {MIN_TOPUP} and {MAX_TOPUP} {settings.BASE_CURRENCY}")
+    min_topup, max_topup = await get_topup_limits(db)
+    if amount < min_topup or amount > max_topup:
+        raise HTTPException(status_code=400, detail=f"Amount must be between {min_topup} and {max_topup} {settings.BASE_CURRENCY}")
 
     # Convert the base-currency amount to BDT for the gateway
     amount_bdt = await CurrencyService.convert(db, amount, "BDT")

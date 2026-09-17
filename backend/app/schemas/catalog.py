@@ -1,6 +1,7 @@
+import re
 from typing import Optional, List
 from decimal import Decimal
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 class CountryResponse(BaseModel):
     id: int
@@ -12,6 +13,12 @@ class CountryResponse(BaseModel):
     region: Optional[str] = None
     is_popular: bool
     is_active: bool
+
+    @computed_field
+    @property
+    def slug(self) -> str:
+        """Used to build /explore/<slug> links."""
+        return re.sub(r"[^a-z0-9]+", "-", (self.name_en or "").lower()).strip("-")
 
     class Config:
         from_attributes = True
@@ -31,6 +38,10 @@ class ProductResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class DestinationResponse(BaseModel):
+    country: CountryResponse
+    products: List[ProductResponse]
 
 class PriceMarkupRequest(BaseModel):
     product_id: str
