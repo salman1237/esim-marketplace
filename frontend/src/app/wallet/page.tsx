@@ -68,6 +68,10 @@ export default function WalletPage() {
   const topupMax = Number(settings.topup_max ?? 2000);
   const amountNumber = parseFloat(depositAmount);
   const amountValid = Number.isFinite(amountNumber) && amountNumber >= topupMin && amountNumber <= topupMax;
+  // ShurjoPay's own floor, independent of our configured minimum.
+  const GATEWAY_MIN_BDT = 10;
+  const amountBdt = Number.isFinite(amountNumber) ? convertTo(amountNumber, "BDT") : 0;
+  const belowGatewayMin = amountValid && amountBdt < GATEWAY_MIN_BDT;
   const selectedMethod = depositMethods.find((m) => m.name === bankName);
 
   useEffect(() => {
@@ -233,12 +237,17 @@ export default function WalletPage() {
                 {!amountValid && depositAmount.trim() !== "" && (
                   <p className="text-[11px] text-rose-600 mt-1">Enter an amount within these limits.</p>
                 )}
+                {belowGatewayMin && (
+                  <p className="text-[11px] text-rose-600 mt-1">
+                    ShurjoPay won&apos;t accept less than ৳{GATEWAY_MIN_BDT} — enter at least €{(GATEWAY_MIN_BDT / (amountBdt / amountNumber || 1)).toFixed(2)}.
+                  </p>
+                )}
               </div>
             </div>
 
             <button
               onClick={handleGatewayTopup}
-              disabled={payingViaGateway || !amountValid}
+              disabled={payingViaGateway || !amountValid || belowGatewayMin}
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 text-white text-xs font-bold shadow-md shadow-emerald-900/10 hover:opacity-95 disabled:opacity-60"
             >
               {payingViaGateway ? "Redirecting to ShurjoPay..." : `Pay via ShurjoPay (€${depositAmount})`}

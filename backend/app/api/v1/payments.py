@@ -29,6 +29,25 @@ router = APIRouter(prefix="/payments", tags=["Payment Gateways"])
 # the admin console (needed to test the live gateway with a small amount).
 
 
+def _checkout_url(pay_res) -> str | None:
+    if not isinstance(pay_res, dict):
+        return None
+    return pay_res.get("checkout_url") or pay_res.get("checkoutUrl")
+
+
+def _require_checkout_url(pay_res) -> None:
+    """ShurjoPay answers HTTP 200 even when it refuses the payment - e.g.
+    "Transaction amount 1.42 is less than the minimum required amount of
+    10.00" for an amount under their 10 BDT floor - with the reason in
+    sp_message. Passing that straight back means the customer sees why,
+    instead of a blank "no checkout link" while the reason sits in the
+    payment log."""
+    if _checkout_url(pay_res):
+        return
+    message = pay_res.get("sp_message") or pay_res.get("message") if isinstance(pay_res, dict) else None
+    raise HTTPException(status_code=400, detail=message or "The payment gateway did not return a checkout link. Please try again.")
+
+
 @router.post("/shurjopay/topup")
 async def topup_via_shurjopay(
     amount: Decimal,  # in the base currency (EUR)
@@ -53,6 +72,7 @@ async def topup_via_shurjopay(
         client_ip=request.client.host if request.client else "127.0.0.1"
     )
     await db.commit()
+    _require_checkout_url(pay_res)
     return pay_res
 
 
@@ -122,6 +142,11 @@ async def initiate_order_via_shurjopay(
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=502, detail=f"Could not start ShurjoPay checkout: {e}")
+
+    if not _checkout_url(pay_res):
+        # Don't leave behind a PENDING order that can never be paid.
+        await db.rollback()
+        _require_checkout_url(pay_res)
 
     await db.commit()
     return {**pay_res, "order_id": order.id, "order_no": order.order_no}
