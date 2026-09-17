@@ -61,9 +61,13 @@ export default function WalletPage() {
   const [slipSuccess, setSlipSuccess] = useState(false);
   const [payingViaGateway, setPayingViaGateway] = useState(false);
   const [topupBanner, setTopupBanner] = useState<{ kind: "success" | "failed" | "cancelled"; reason?: string } | null>(null);
-  const [settings, setSettings] = useState<{ bangla_qr_image?: string; payment_methods?: DepositMethod[] }>({});
+  const [settings, setSettings] = useState<{ bangla_qr_image?: string; payment_methods?: DepositMethod[]; topup_min?: string; topup_max?: string }>({});
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const depositMethods = settings.payment_methods || [];
+  const topupMin = Number(settings.topup_min ?? 1);
+  const topupMax = Number(settings.topup_max ?? 2000);
+  const amountNumber = parseFloat(depositAmount);
+  const amountValid = Number.isFinite(amountNumber) && amountNumber >= topupMin && amountNumber <= topupMax;
   const selectedMethod = depositMethods.find((m) => m.name === bankName);
 
   useEffect(() => {
@@ -210,11 +214,31 @@ export default function WalletPage() {
                   </button>
                 ))}
               </div>
+              <div className="mt-2">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  min={topupMin}
+                  max={topupMax}
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  placeholder="Or type an amount"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Between €{topupMin.toFixed(2)} and €{topupMax.toFixed(2)}
+                  {amountValid ? <> · about ৳{Math.round(convertTo(amountNumber, "BDT")).toLocaleString()}</> : null}
+                </p>
+                {!amountValid && depositAmount.trim() !== "" && (
+                  <p className="text-[11px] text-rose-600 mt-1">Enter an amount within these limits.</p>
+                )}
+              </div>
             </div>
 
             <button
               onClick={handleGatewayTopup}
-              disabled={payingViaGateway}
+              disabled={payingViaGateway || !amountValid}
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 text-white text-xs font-bold shadow-md shadow-emerald-900/10 hover:opacity-95 disabled:opacity-60"
             >
               {payingViaGateway ? "Redirecting to ShurjoPay..." : `Pay via ShurjoPay (€${depositAmount})`}
