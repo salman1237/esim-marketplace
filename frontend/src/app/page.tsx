@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Search, Sparkles, Zap, ShieldCheck, Globe, ArrowRight } from "lucide-react";
+import { Search, Sparkles, Zap, ShieldCheck, Globe, ArrowRight, Briefcase } from "lucide-react";
 import { api } from "@/lib/api";
 
 // Clicking a country opens its own page (/explore/bangladesh) rather than a
@@ -183,6 +183,36 @@ export default function HomePage() {
               </div>
             </Link>
           ))}
+        </div>
+      </section>
+
+      {/* B2B Partner Program - kept prominent on the homepage for partner acquisition. */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="rounded-3xl bg-gradient-to-br from-merchant-600 via-brand-600 to-indigo-700 text-white p-8 sm:p-10 grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-8 items-center">
+          <div>
+            <span className="inline-flex items-center gap-2 bg-white/15 text-xs font-semibold px-3 py-1.5 rounded-full">
+              <Briefcase className="w-3.5 h-3.5" /> B2B Partner Program
+            </span>
+            <h2 className="mt-4 text-2xl sm:text-3xl font-extrabold leading-tight">Travel agency or reseller? Earn on every eSIM you sell.</h2>
+            <p className="mt-3 text-sm text-white/85 max-w-xl">
+              Issue eSIMs to your customers from a partner dashboard or through our API, and earn commission on each delivery.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link href="/partners" className="inline-flex items-center gap-2 bg-white text-slate-900 hover:bg-white/90 text-sm font-bold px-5 py-3 rounded-xl">
+                Become a partner <ArrowRight className="w-4 h-4" />
+              </Link>
+              <Link href="/api-docs" className="inline-flex items-center gap-2 border border-white/30 hover:bg-white/10 text-sm font-bold px-5 py-3 rounded-xl">
+                API docs
+              </Link>
+            </div>
+          </div>
+          <ul className="space-y-3 text-sm">
+            {["Commission on every delivered eSIM", "Instant QR delivery to your customer", "Dashboard, API and monthly statements", "Pay by wallet, bKash, Nagad or card"].map((point) => (
+              <li key={point} className="flex items-center gap-3 rounded-xl bg-white/10 border border-white/15 px-4 py-3">
+                <ShieldCheck className="w-4 h-4 shrink-0" /> {point}
+              </li>
+            ))}
+          </ul>
         </div>
       </section>
 

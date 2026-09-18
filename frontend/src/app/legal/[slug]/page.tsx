@@ -5,10 +5,12 @@ import { API_BASE } from "@/lib/api";
 import LegalMarkdown from "@/components/LegalMarkdown";
 
 const LEGAL_LINKS = [
-  { slug: "terms", title: "Terms & Conditions" },
   { slug: "privacy", title: "Privacy Policy" },
-  { slug: "data-policy", title: "Data Policy" },
+  { slug: "data-policy", title: "Data Privacy" },
+  { slug: "terms", title: "Terms & Conditions" },
+  { slug: "declaration", title: "Declaration" },
   { slug: "refund-policy", title: "Refund Policy" },
+  { slug: "payment-policy", title: "Payment Policy" },
 ];
 
 type LegalDoc = { slug: string; title: string; body: string; updated_at: string | null };

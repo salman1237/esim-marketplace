@@ -3,7 +3,7 @@ from conftest import register_and_login
 
 pytestmark = pytest.mark.asyncio
 
-SLUGS = ["terms", "privacy", "data-policy", "refund-policy"]
+SLUGS = ["privacy", "data-policy", "terms", "declaration", "refund-policy", "payment-policy"]
 
 
 async def test_public_legal_documents_serve_drafts_with_branding_filled_in(client):

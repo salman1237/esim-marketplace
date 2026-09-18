@@ -2,9 +2,20 @@
 
 import React from "react";
 import Link from "next/link";
-import { Wifi, Phone, Mail, MessageCircle, ShieldCheck, Globe2, Facebook, Instagram, Twitter, Youtube, Linkedin } from "lucide-react";
+import { Wifi, Phone, Mail, MessageCircle, ShieldCheck, Briefcase, ArrowRight, Facebook, Instagram, Twitter, Youtube, Linkedin } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
+
+// Kept in step with LEGAL_TITLES in the backend's legal_content_svc - the
+// pages themselves are edited from the admin console.
+const LEGAL_LINKS = [
+  { href: "/legal/privacy", label: "Privacy Policy" },
+  { href: "/legal/data-policy", label: "Data Privacy" },
+  { href: "/legal/terms", label: "Terms & Conditions" },
+  { href: "/legal/declaration", label: "Declaration" },
+  { href: "/legal/refund-policy", label: "Refund Policy" },
+  { href: "/legal/payment-policy", label: "Payment Policy" },
+];
 
 export default function Footer() {
   const { t, publicSettings } = useAppSettings();
@@ -18,12 +29,34 @@ export default function Footer() {
     facebook: Facebook, instagram: Instagram, twitter: Twitter, youtube: Youtube, linkedin: Linkedin,
   };
 
-  return (
-    <footer className="bg-white border-t border-gray-200 text-slate-500 text-sm mt-20">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 grid grid-cols-1 md:grid-cols-4 gap-8">
+  const heading = "text-xs font-bold text-slate-900 uppercase tracking-wider";
+  const link = "text-slate-500 hover:text-slate-900 transition-colors";
 
-        {/* Col 1: Brand & Tagline */}
-        <div className="space-y-4">
+  return (
+    <footer className="bg-white border-t border-gray-200 text-sm mt-20">
+      {/* Partner call-to-action - the B2B program gets its own band, not a
+          buried link. */}
+      <div className="bg-gradient-to-r from-merchant-600 to-brand-600">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-white">
+          <div className="flex items-center gap-3">
+            <span className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
+              <Briefcase className="w-5 h-5" />
+            </span>
+            <div>
+              <div className="text-sm font-bold">Travel agency or reseller?</div>
+              <div className="text-xs text-white/80">Earn commission on every eSIM you sell — from your dashboard or our API.</div>
+            </div>
+          </div>
+          <Link href="/partners" className="inline-flex items-center justify-center gap-1.5 bg-white text-slate-900 hover:bg-white/90 text-xs font-bold px-4 py-2.5 rounded-xl shrink-0">
+            Become a partner <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 grid grid-cols-2 md:grid-cols-6 gap-8">
+
+        {/* Brand */}
+        <div className="col-span-2 space-y-4">
           <div className="flex items-center space-x-3">
             {/* Logo already carries the brand name - see Header.tsx. */}
             {settings.logo_light ? (
@@ -41,13 +74,9 @@ export default function Footer() {
               </>
             ) : null}
           </div>
-          <p className="text-xs text-slate-500 leading-relaxed">
+          <p className="text-xs text-slate-500 leading-relaxed max-w-xs">
             {settings.tagline_en || "Instant global connectivity across 200+ countries. Zero roaming fees, instant QR delivery, and flexible digital data."}
           </p>
-          <div className="flex items-center space-x-2 text-xs text-emerald-600">
-            <ShieldCheck className="w-4 h-4" />
-            <span>Official VivaPe & ShurjoPay Partner</span>
-          </div>
           {Object.keys(socialLinks).some((k) => socialLinks[k]) && (
             <div className="flex items-center space-x-3 pt-1">
               {Object.entries(socialLinks).filter(([, url]) => url).map(([platform, url]) => {
@@ -63,57 +92,61 @@ export default function Footer() {
           )}
         </div>
 
-        {/* Col 2: Quick Links */}
+        {/* Explore */}
         <div className="space-y-3">
-          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{t("common", "explore", "Explore")}</h4>
+          <h4 className={heading}>{t("common", "explore", "Explore")}</h4>
           <ul className="space-y-2 text-xs">
-            <li><Link href="/destinations" className="hover:text-slate-900">All Destinations</Link></li>
-            <li><Link href="/my-esims" className="hover:text-slate-900">{t("common", "my_esims", "My eSIMs")}</Link></li>
-            <li><Link href="/wallet" className="hover:text-slate-900">{t("common", "wallet", "Wallet")} & Top Up</Link></li>
-            <li><Link href="/reseller" className="hover:text-slate-900">B2B Reseller Program</Link></li>
-            <li><Link href="/api-docs" className="hover:text-slate-900">API Documentation</Link></li>
+            <li><Link href="/destinations" className={link}>All Destinations</Link></li>
+            <li><Link href="/my-esims" className={link}>{t("common", "my_esims", "My eSIMs")}</Link></li>
+            <li><Link href="/wallet" className={link}>{t("common", "wallet", "Wallet")} &amp; Top Up</Link></li>
           </ul>
         </div>
 
-        {/* Col 3: Legal & Support */}
+        {/* For business */}
         <div className="space-y-3">
-          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{t("nav", "support", "Support")}</h4>
+          <h4 className={heading}>For Business</h4>
+          <ul className="space-y-2 text-xs">
+            <li><Link href="/partners" className="font-semibold text-merchant-600 hover:text-merchant-700">B2B Partner Program</Link></li>
+            <li><Link href="/reseller" className={link}>Partner Portal</Link></li>
+            <li><Link href="/api-docs" className={link}>API Documentation</Link></li>
+          </ul>
+        </div>
+
+        {/* Support */}
+        <div className="space-y-3">
+          <h4 className={heading}>{t("nav", "support", "Support")}</h4>
           <ul className="space-y-2 text-xs">
             {settings.support_email && (
-              <li><a href={`mailto:${settings.support_email}`} className="flex items-center space-x-2 hover:text-slate-900"><Mail className="w-3.5 h-3.5" /><span>{settings.support_email}</span></a></li>
+              <li><a href={`mailto:${settings.support_email}`} className={`flex items-center gap-2 ${link}`}><Mail className="w-3.5 h-3.5 shrink-0" /><span className="truncate">{settings.support_email}</span></a></li>
             )}
             {whatsappDigits && (
-              <li><a href={`https://wa.me/${whatsappDigits}`} target="_blank" rel="noreferrer" className="flex items-center space-x-2 hover:text-emerald-700 text-emerald-600"><MessageCircle className="w-3.5 h-3.5" /><span>24/7 WhatsApp Support</span></a></li>
+              <li><a href={`https://wa.me/${whatsappDigits}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-emerald-600 hover:text-emerald-700"><MessageCircle className="w-3.5 h-3.5 shrink-0" /><span>WhatsApp Support</span></a></li>
             )}
             {settings.support_phone && (
-              <li><span className="flex items-center space-x-2 text-slate-500"><Phone className="w-3.5 h-3.5" /><span>{settings.support_phone}</span></span></li>
+              <li><span className="flex items-center gap-2 text-slate-500"><Phone className="w-3.5 h-3.5 shrink-0" /><span>{settings.support_phone}</span></span></li>
             )}
           </ul>
-          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider pt-2">Legal</h4>
+        </div>
+
+        {/* Legal */}
+        <div className="space-y-3">
+          <h4 className={heading}>Legal</h4>
           <ul className="space-y-2 text-xs">
-            <li><Link href="/legal/terms" className="hover:text-slate-900">Terms &amp; Conditions</Link></li>
-            <li><Link href="/legal/privacy" className="hover:text-slate-900">Privacy Policy</Link></li>
-            <li><Link href="/legal/data-policy" className="hover:text-slate-900">Data Policy</Link></li>
-            <li><Link href="/legal/refund-policy" className="hover:text-slate-900">Refund Policy</Link></li>
+            {LEGAL_LINKS.map((l) => (
+              <li key={l.href}><Link href={l.href} className={link}>{l.label}</Link></li>
+            ))}
           </ul>
         </div>
-
-        {/* Col 4: International */}
-        <div className="space-y-3">
-          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Global Reach</h4>
-          <p className="text-xs leading-relaxed text-slate-500">
-            Available in English, বাংলা, العربية, and Español. Prices in EUR, with live conversion to USD, BDT, GBP, AED and SAR.
-          </p>
-          <div className="flex items-center space-x-2 text-xs text-slate-500">
-            <Globe2 className="w-4 h-4 text-brand-600" />
-            <span>200+ Countries Covered</span>
-          </div>
-        </div>
-
       </div>
 
-      <div className="border-t border-gray-100 py-6 text-center text-xs text-slate-500">
-        &copy; {new Date().getFullYear()}{settings.platform_name ? ` ${settings.platform_name}` : ""}. All rights reserved.
+      <div className="border-t border-gray-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
+          <span>&copy; {new Date().getFullYear()}{settings.platform_name ? ` ${settings.platform_name}` : ""}. All rights reserved.</span>
+          <span className="flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+            Secure payments by ShurjoPay · bKash · Nagad · Visa · Mastercard
+          </span>
+        </div>
       </div>
     </footer>
   );

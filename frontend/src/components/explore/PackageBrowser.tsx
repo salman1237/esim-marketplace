@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 import { esimInstallLinks } from "@/lib/esimInstall";
 import { waitForOrder } from "@/lib/waitForOrder";
+import PaymentMethodChooser from "@/components/PaymentMethodChooser";
 
 type Product = {
   id: string;
@@ -18,6 +19,14 @@ type Product = {
   currency?: string;
 };
 
+type Flow =
+  | { stage: "checking"; product: Product }
+  | { stage: "choose"; product: Product; balance: number }
+  | { stage: "working"; product: Product }
+  | { stage: "redirecting"; product: Product }
+  | { stage: "success"; product: Product; order: any }
+  | { stage: "error"; product: Product; message: string };
+
 // The filter chips customers asked for. A value only appears if this
 // destination actually sells something matching it.
 const DAY_CHOICES = [1, 3, 5, 7, 10, 15, 30];
@@ -25,12 +34,14 @@ const GB_CHOICES = [1, 2, 3, 5, 10, 15, 20, 30];
 
 const WORKING_STEPS = ["Payment confirmed", "Reserving your eSIM with the carrier", "Preparing your QR code"];
 
+const priceOf = (p: Product) => parseFloat(String(p.retail_price));
+const dataLabel = (p: Product) => (p.is_unlimited ? "Unlimited" : `${Number(p.data_amount_gb)} GB`);
+
 export default function PackageBrowser({ country, products }: { country: any; products: Product[] }) {
   const { formatPrice } = useAppSettings();
   const [days, setDays] = useState<number | null>(null);
   const [gb, setGb] = useState<number | "unlimited" | null>(null);
-  const [flow, setFlow] = useState<any>(null);
-  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [flow, setFlow] = useState<Flow | null>(null);
   const [workingStep, setWorkingStep] = useState(0);
 
   const availableDays = useMemo(
@@ -63,45 +74,29 @@ export default function PackageBrowser({ country, products }: { country: any; pr
     return () => timers.forEach(clearTimeout);
   }, [flow?.stage]);
 
-  const openPurchase = async (product: Product, method: "wallet" | "gateway") => {
+  const busy = flow?.stage === "checking" || flow?.stage === "working" || flow?.stage === "redirecting";
+
+  const payByGateway = async (product: Product) => {
     const token = localStorage.getItem("esim_token");
-    if (!token) {
-      // Come back to this page after signing in.
-      window.location.href = `/auth/login?next=${encodeURIComponent(window.location.pathname)}`;
-      return;
-    }
-    setFlow({ stage: "confirm", product, method });
+    if (!token) return;
+    setFlow({ stage: "redirecting", product });
     try {
-      const wallets = await api.getMyWallets(token);
-      const def = (wallets || []).find((w: any) => w.wallet_type === "DEFAULT");
-      setWalletBalance(def ? parseFloat(def.balance) : null);
-    } catch {
-      setWalletBalance(null);
+      const res = await api.initiateOrderPayment(token, product.id);
+      const checkoutUrl = res.checkout_url || res.checkoutUrl;
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
+        return;
+      }
+      setFlow({ stage: "error", product, message: "The payment gateway didn't return a checkout link. Please try again." });
+    } catch (err: any) {
+      setFlow({ stage: "error", product, message: err.message || "Couldn't start the secure payment. Please try again." });
     }
   };
 
-  const confirmPurchase = async () => {
+  const payByWallet = async (product: Product) => {
     const token = localStorage.getItem("esim_token");
-    if (!token || !flow) return;
-    const { product, method } = flow;
-
-    if (method === "gateway") {
-      setFlow({ stage: "working", product, method });
-      try {
-        const res = await api.initiateOrderPayment(token, product.id);
-        const checkoutUrl = res.checkout_url || res.checkoutUrl;
-        if (checkoutUrl) {
-          window.location.href = checkoutUrl;
-          return;
-        }
-        setFlow({ stage: "error", product, method, message: "The payment gateway didn't return a checkout link. Please try again, or pay from your wallet." });
-      } catch (err: any) {
-        setFlow({ stage: "error", product, method, message: err.message || "Couldn't start checkout." });
-      }
-      return;
-    }
-
-    setFlow({ stage: "working", product, method });
+    if (!token) return;
+    setFlow({ stage: "working", product });
     try {
       const accepted = await api.checkout(token, { product_id: product.id, payment_method: "WALLET", is_buy_for_user: false });
       let order;
@@ -109,15 +104,40 @@ export default function PackageBrowser({ country, products }: { country: any; pr
         order = await waitForOrder(token, accepted.id);
       } catch {
         setFlow({
-          stage: "error", product, method,
+          stage: "error", product,
           message: "This is taking longer than usual. Your order is still being set up and will appear in My eSIMs shortly — you'll also get it by email.",
         });
         return;
       }
-      if (order.status === "COMPLETED") setFlow({ stage: "success", product, method, order });
-      else setFlow({ stage: "error", product, method, message: "We couldn't set up this eSIM with the network. The full amount has been refunded to your wallet." });
+      if (order.status === "COMPLETED") setFlow({ stage: "success", product, order });
+      else setFlow({ stage: "error", product, message: "We couldn't set up this eSIM with the network. The full amount has been refunded to your wallet." });
     } catch (err: any) {
-      setFlow({ stage: "error", product, method, message: err.message || "Purchase failed. If your wallet was charged, it has been refunded." });
+      setFlow({ stage: "error", product, message: err.message || "Purchase failed. If your wallet was charged, it has been refunded." });
+    }
+  };
+
+  // One Buy Now button. The wallet is offered only when it can cover the
+  // plan; otherwise the customer goes straight to the payment gateway.
+  const buyNow = async (product: Product) => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) {
+      window.location.href = `/auth/login?next=${encodeURIComponent(window.location.pathname)}`;
+      return;
+    }
+    setFlow({ stage: "checking", product });
+    let balance: number | null = null;
+    try {
+      const wallets = await api.getMyWallets(token);
+      const def = (wallets || []).find((w: any) => w.wallet_type === "DEFAULT");
+      balance = def ? parseFloat(def.balance) : 0;
+    } catch {
+      // Balance unknown - don't offer a wallet payment we can't vouch for.
+      balance = null;
+    }
+    if (balance !== null && balance >= priceOf(product)) {
+      setFlow({ stage: "choose", product, balance });
+    } else {
+      await payByGateway(product);
     }
   };
 
@@ -172,69 +192,49 @@ export default function PackageBrowser({ country, products }: { country: any; pr
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((p) => (
-            <div key={p.id} className="glass-card rounded-2xl p-5 border border-gray-200 flex flex-col">
-              <div className="text-xl font-black text-slate-900">{p.is_unlimited ? "Unlimited" : `${Number(p.data_amount_gb)} GB`}</div>
-              <div className="text-xs text-slate-500 mt-0.5">{p.validity_days} days validity · 4G/5G</div>
-              <div className="text-2xl font-black text-emerald-600 mt-4">{formatPrice(parseFloat(String(p.retail_price)))}</div>
-              <div className="mt-4 space-y-2">
+          {filtered.map((p) => {
+            const thisOne = flow?.product?.id === p.id;
+            return (
+              <div key={p.id} className="glass-card rounded-2xl p-5 border border-gray-200 flex flex-col">
+                <div className="text-xl font-black text-slate-900">{dataLabel(p)}</div>
+                <div className="text-xs text-slate-500 mt-0.5">{p.validity_days} days validity · 4G/5G</div>
+                <div className="text-2xl font-black text-emerald-600 mt-4">{formatPrice(priceOf(p))}</div>
                 <button
-                  onClick={() => openPurchase(p, "wallet")}
-                  disabled={flow?.stage === "working"}
-                  className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white text-xs font-bold py-2.5 rounded-xl"
+                  onClick={() => buyNow(p)}
+                  disabled={busy}
+                  className="mt-4 w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-60 text-white text-sm font-bold py-3 rounded-xl"
                 >
-                  {flow?.stage === "working" && flow.product?.id === p.id ? "Processing…" : "Buy with Wallet"}
+                  {thisOne && flow?.stage === "checking" ? "Checking…" : thisOne && flow?.stage === "redirecting" ? "Opening payment…" : "Buy Now"}
                 </button>
-                <button
-                  onClick={() => openPurchase(p, "gateway")}
-                  disabled={flow?.stage === "working"}
-                  className="w-full text-[11px] text-slate-500 hover:text-slate-800 disabled:opacity-50 underline underline-offset-2"
-                >
-                  Pay by Card / Mobile Banking
-                </button>
+                <p className="mt-2 text-center text-[10px] text-slate-400">bKash · Nagad · Card · Wallet</p>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      {flow && (
+      {flow?.stage === "choose" && (
+        <PaymentMethodChooser
+          open
+          summary={<>{country.name_en} · {dataLabel(flow.product)} · {flow.product.validity_days} days</>}
+          priceLabel={formatPrice(priceOf(flow.product))}
+          walletBalanceLabel={formatPrice(flow.balance)}
+          walletAfterLabel={formatPrice(flow.balance - priceOf(flow.product))}
+          onWallet={() => payByWallet(flow.product)}
+          onGateway={() => payByGateway(flow.product)}
+          onCancel={() => setFlow(null)}
+        />
+      )}
+
+      {flow && flow.stage !== "choose" && flow.stage !== "checking" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
           <div className="glass-panel rounded-2xl max-w-md w-full p-6 border border-gray-200 shadow-xl">
-            {flow.stage === "confirm" && (
-              <>
-                <h3 className="text-lg font-bold text-slate-900 mb-1">Confirm your purchase</h3>
-                <p className="text-xs text-slate-500 mb-4">
-                  {country.name_en} · {flow.product.is_unlimited ? "Unlimited data" : `${Number(flow.product.data_amount_gb)} GB`} · {flow.product.validity_days} days
-                </p>
-                <div className="rounded-xl border border-gray-200 divide-y divide-gray-100 text-xs mb-4">
-                  <div className="flex items-center justify-between px-3 py-2.5">
-                    <span className="text-slate-500">Price</span>
-                    <span className="font-bold text-slate-900">{formatPrice(parseFloat(String(flow.product.retail_price)))}</span>
-                  </div>
-                  <div className="flex items-center justify-between px-3 py-2.5">
-                    <span className="text-slate-500">Payment</span>
-                    <span className="text-slate-900">{flow.method === "wallet" ? "Wallet balance" : "Card / Mobile Banking"}</span>
-                  </div>
-                  {flow.method === "wallet" && walletBalance !== null && (
-                    <div className="flex items-center justify-between px-3 py-2.5">
-                      <span className="text-slate-500">Balance after</span>
-                      <span className={walletBalance - parseFloat(String(flow.product.retail_price)) < 0 ? "font-bold text-rose-600" : "text-slate-900"}>
-                        {formatPrice(walletBalance - parseFloat(String(flow.product.retail_price)))}
-                      </span>
-                    </div>
-                  )}
-                </div>
-                {flow.method === "wallet" && walletBalance !== null && walletBalance < parseFloat(String(flow.product.retail_price)) && (
-                  <p className="text-xs text-rose-600 mb-3">Your wallet balance is too low for this plan. Top up first, or pay by card.</p>
-                )}
-                <div className="flex gap-3">
-                  <button onClick={() => setFlow(null)} className="flex-1 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-slate-700 text-xs font-semibold">Cancel</button>
-                  <button onClick={confirmPurchase} className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold">
-                    {flow.method === "wallet" ? "Confirm & Pay" : "Continue to payment"}
-                  </button>
-                </div>
-              </>
+            {flow.stage === "redirecting" && (
+              <div className="text-center py-4">
+                <div className="w-14 h-14 rounded-full border-4 border-emerald-100 border-t-emerald-600 animate-spin mx-auto mb-5" />
+                <h3 className="text-lg font-bold text-slate-900">Taking you to secure payment</h3>
+                <p className="text-xs text-slate-500 mt-1">You&apos;ll pay on ShurjoPay&apos;s page, then come straight back here.</p>
+              </div>
             )}
 
             {flow.stage === "working" && (
@@ -301,7 +301,7 @@ export default function PackageBrowser({ country, products }: { country: any; pr
                 <p className="text-xs text-slate-500 mt-2 mb-5">{flow.message}</p>
                 <div className="flex gap-3">
                   <button onClick={() => setFlow(null)} className="flex-1 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-slate-700 text-xs font-semibold">Close</button>
-                  <button onClick={() => setFlow({ stage: "confirm", product: flow.product, method: flow.method })} className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold">
+                  <button onClick={() => buyNow(flow.product)} className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold">
                     Try again
                   </button>
                 </div>

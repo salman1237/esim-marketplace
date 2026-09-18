@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { CheckCircle2, QrCode, Send, Share2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { waitForOrder } from "@/lib/waitForOrder";
+import PaymentMethodChooser from "@/components/PaymentMethodChooser";
 import { getToken } from "./shared";
 
 type Props = {
@@ -13,6 +14,8 @@ type Props = {
   onOrderSettled: () => void;
 };
 
+const NOT_FOUND = "Beneficiary user account not found";
+
 export default function ProvisionTab({ commissionRatePct, showCommission, formatPrice, onOrderSettled }: Props) {
   const [countries, setCountries] = useState<any[]>([]);
   const [selectedCountry, setSelectedCountry] = useState<string>("");
@@ -20,7 +23,8 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
   const [selectedProduct, setSelectedProduct] = useState<string>("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<null | "checking" | "wallet" | "gateway">(null);
+  const [chooserBalance, setChooserBalance] = useState<number | null>(null);
   const [orderResult, setOrderResult] = useState<any | null>(null);
 
   useEffect(() => {
@@ -36,35 +40,29 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
     }
   }, [selectedCountry]);
 
-  const handleBuyForUser = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const product = products.find((p) => p.id === selectedProduct);
+  const price = product ? parseFloat(product.retail_price) : 0;
+
+  // Same beneficiary rule for both payment methods: issue to the customer's
+  // existing account by email, or create one if there isn't any.
+  const withBeneficiary = async <T,>(send: (extra: Record<string, any>) => Promise<T>): Promise<T> => {
+    try {
+      return await send({ is_buy_for_user: true, beneficiary_email: customerEmail, auto_create_user: false });
+    } catch (err: any) {
+      if (!String(err.message || "").includes(NOT_FOUND)) throw err;
+      return await send({ is_buy_for_user: true, auto_create_user: true });
+    }
+  };
+
+  const payByWallet = async () => {
     const token = getToken();
     if (!token) return;
-
-    setLoading(true);
+    setChooserBalance(null);
+    setLoading("wallet");
     try {
-      let res;
-      try {
-        // First try to find an existing customer account by email.
-        res = await api.checkout(token, {
-          product_id: selectedProduct,
-          payment_method: "WALLET",
-          is_buy_for_user: true,
-          beneficiary_email: customerEmail,
-          auto_create_user: false,
-        });
-      } catch (lookupErr: any) {
-        if (!String(lookupErr.message || "").includes("Beneficiary user account not found")) throw lookupErr;
-        // No existing account for that email — auto-generate a new customer
-        // account and issue the eSIM to it, per the reseller flow.
-        res = await api.checkout(token, {
-          product_id: selectedProduct,
-          payment_method: "WALLET",
-          is_buy_for_user: true,
-          auto_create_user: true,
-        });
-      }
-      // Checkout returns once the wallet is charged; wait for the eSIM.
+      const res: any = await withBeneficiary((extra) =>
+        api.checkout(token, { product_id: selectedProduct, payment_method: "WALLET", ...extra })
+      );
       let settled;
       try {
         settled = await waitForOrder(token, res.id);
@@ -80,9 +78,51 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
       }
       setOrderResult(settled);
     } catch (err: any) {
-      alert(err.message || "B2B Provisioning failed. Please verify merchant wallet balance.");
+      alert(err.message || "Couldn't issue the eSIM. Please check your wallet balance.");
     } finally {
-      setLoading(false);
+      setLoading(null);
+    }
+  };
+
+  const payByGateway = async () => {
+    const token = getToken();
+    if (!token) return;
+    setChooserBalance(null);
+    setLoading("gateway");
+    try {
+      const res: any = await withBeneficiary((extra) => api.initiateOrderPayment(token, selectedProduct, extra));
+      const checkoutUrl = res.checkout_url || res.checkoutUrl;
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
+        return;
+      }
+      alert("The payment gateway didn't return a checkout link. Please try again.");
+    } catch (err: any) {
+      alert(err.message || "Couldn't start the secure payment. Please try again.");
+    }
+    setLoading(null);
+  };
+
+  // One Buy Now button, same rule as the storefront: the wallet is offered
+  // only when it covers the package, otherwise straight to the gateway.
+  const handleBuyNow = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = getToken();
+    if (!token || !product) return;
+    setLoading("checking");
+    let balance: number | null = null;
+    try {
+      const wallets = await api.getMyWallets(token);
+      const def = (wallets || []).find((w: any) => w.wallet_type === "DEFAULT");
+      balance = def ? parseFloat(def.balance) : 0;
+    } catch {
+      balance = null;
+    }
+    if (balance !== null && balance >= price) {
+      setLoading(null);
+      setChooserBalance(balance);
+    } else {
+      await payByGateway();
     }
   };
 
@@ -90,9 +130,11 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
       <div className="glass-panel rounded-2xl p-6 border border-gray-200">
         <h3 className="text-base font-bold text-slate-900 mb-1">Buy an eSIM for a customer</h3>
-        <p className="text-xs text-slate-500 mb-6">Paid from your wallet balance and issued to your traveler customer.</p>
+        <p className="text-xs text-slate-500 mb-6">
+          Pay from your wallet, or by card / mobile banking when your balance doesn&apos;t cover it. The eSIM is issued to your customer.
+        </p>
 
-        <form onSubmit={handleBuyForUser} className="space-y-4">
+        <form onSubmit={handleBuyNow} className="space-y-4">
           <div>
             <label className="text-xs text-slate-700 font-semibold block mb-1">Destination Country</label>
             <select value={selectedCountry} onChange={(e) => setSelectedCountry(e.target.value)} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900" required>
@@ -134,10 +176,13 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
             </div>
           )}
 
-          <button type="submit" disabled={loading || !selectedProduct} className="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-60 text-white text-xs font-bold transition-all shadow-md shadow-brand-900/10 flex items-center justify-center space-x-2">
-            <Send className="w-3.5 h-3.5" />
-            <span>{loading ? "Setting up eSIM..." : "Issue eSIM for Customer"}</span>
+          <button type="submit" disabled={loading !== null || !selectedProduct} className="w-full py-3 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-60 text-white text-sm font-bold transition-all shadow-md shadow-brand-900/10 flex items-center justify-center space-x-2">
+            <Send className="w-4 h-4" />
+            <span>
+              {loading === "checking" ? "Checking wallet…" : loading === "wallet" ? "Setting up eSIM…" : loading === "gateway" ? "Opening payment…" : "Buy Now"}
+            </span>
           </button>
+          <p className="text-center text-[10px] text-slate-400">bKash · Nagad · Card · Wallet</p>
         </form>
       </div>
 
@@ -165,11 +210,22 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
         ) : (
           <div className="text-center text-xs text-slate-500 py-12">
             <QrCode className="w-12 h-12 mx-auto mb-3 opacity-30" />
-            <p>Fill out the form to instantly allocate an eSIM.</p>
+            <p>Fill out the form to issue an eSIM to your customer.</p>
             <p className="mt-1">The customer receives the QR code and installation steps by email.</p>
           </div>
         )}
       </div>
+
+      <PaymentMethodChooser
+        open={chooserBalance !== null && !!product}
+        summary={<>For {customerEmail || "your customer"} · {product?.is_unlimited ? "Unlimited" : `${product?.data_amount_gb} GB`} · {product?.validity_days} days</>}
+        priceLabel={formatPrice(price)}
+        walletBalanceLabel={formatPrice(chooserBalance ?? 0)}
+        walletAfterLabel={formatPrice((chooserBalance ?? 0) - price)}
+        onWallet={payByWallet}
+        onGateway={payByGateway}
+        onCancel={() => setChooserBalance(null)}
+      />
     </div>
   );
 }

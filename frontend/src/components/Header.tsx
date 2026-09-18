@@ -76,7 +76,14 @@ export default function Header() {
               <Briefcase className="w-4 h-4" />
               <span>{t("common", "merchant", "Partner Portal")}</span>
             </Link>
-          ) : null}
+          ) : (
+            // Everyone else sees the partner program - it's a marketing
+            // priority, so it lives in the main navigation.
+            <Link href="/partners" className="text-merchant-600 hover:text-merchant-700 font-semibold flex items-center space-x-1">
+              <Briefcase className="w-4 h-4" />
+              <span>For Business</span>
+            </Link>
+          )}
         </nav>
 
         {/* Right Controls: Currency, Language & Auth */}
@@ -169,6 +176,11 @@ export default function Header() {
           {userData?.role === "SUPER_ADMIN" || userData?.role === "ADMIN" ? (
             <Link href="/admin" onClick={() => setIsMenuOpen(false)} className="block py-2 text-admin-600">{t("common", "admin", "Admin Console")}</Link>
           ) : null}
+          {userData?.role === "MERCHANT" ? (
+            <Link href="/reseller" onClick={() => setIsMenuOpen(false)} className="block py-2 text-merchant-600 font-semibold">{t("common", "merchant", "Partner Portal")}</Link>
+          ) : (
+            <Link href="/partners" onClick={() => setIsMenuOpen(false)} className="block py-2 text-merchant-600 font-semibold">For Business — Partner Program</Link>
+          )}
           <div className="pt-2 border-t border-gray-200">
             {token ? (
               <Link href="/profile" onClick={() => setIsMenuOpen(false)} className="block py-2 text-emerald-600">

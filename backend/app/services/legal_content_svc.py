@@ -20,11 +20,16 @@ from app.models.settings import PlatformSetting
 
 MAX_LEGAL_BODY_CHARS = 60_000
 
+# Order is the order shown in the footer and the admin editor. Slugs are
+# the URLs (/legal/<slug>) and the storage keys, so keep them stable -
+# "data-policy" is titled Data Privacy but keeps its original URL.
 LEGAL_TITLES = {
-    "terms": "Terms & Conditions",
     "privacy": "Privacy Policy",
-    "data-policy": "Data Policy",
+    "data-policy": "Data Privacy",
+    "terms": "Terms & Conditions",
+    "declaration": "Declaration",
     "refund-policy": "Refund Policy",
+    "payment-policy": "Payment Policy",
 }
 
 DEFAULT_LEGAL_BODIES = {
@@ -102,7 +107,7 @@ We share only what each party needs to provide the Service:
 We do not sell your personal information.
 
 ## Retention
-We keep account and order records for as long as your account is active and afterwards for as long as needed for legal, tax and dispute purposes. See our Data Policy for details.
+We keep account and order records for as long as your account is active and afterwards for as long as needed for legal, tax and dispute purposes. See our Data Privacy page for details.
 
 ## Your rights
 You can view and update your profile at any time, and ask us for a copy of your data, to correct it, or to delete your account, subject to records we must keep by law. Contact {support_email}.
@@ -116,7 +121,7 @@ We will post any update to this policy on this page with its new date.
 ## Contact
 {support_email}
 """,
-    "data-policy": """This Data Policy describes how {platform_name} stores, protects and retains data. It supplements our Privacy Policy.
+    "data-policy": """This Data Privacy notice describes how {platform_name} stores, protects and retains your data. It supplements our Privacy Policy.
 
 ## Where data is stored
 Platform data is stored on secured servers operated by our hosting provider. Access is limited to authorised staff who need it for their role.
@@ -172,6 +177,74 @@ Customers who bought through a merchant should contact that merchant. Merchants 
 
 ## How to ask
 Email {support_email} with your order number, the email on your account and a short description of the problem (screenshots help).
+""",
+    "declaration": """{platform_name} makes the following declaration to its customers, partners and the relevant authorities.
+
+## Who we are
+- **Business name:** [Registered business name]
+- **Trade licence:** [Trade licence number and issuing authority]
+- **TIN / BIN:** [TIN] / [BIN]
+- **Registered address:** [Full business address]
+- **Contact:** {support_email}
+
+## What we sell
+{platform_name} sells prepaid travel eSIM data plans for use abroad, delivered digitally as a QR code or install link. We do not sell physical SIM cards and do not provide mobile service inside Bangladesh.
+
+## Our commitments
+- The full price is shown before you pay, with no hidden charges.
+- Each plan's data allowance, validity and coverage are shown before purchase, and that is what you receive.
+- Payments are handled by a licensed payment service provider. We never see or store your card number or mobile-banking PIN.
+- If an eSIM cannot be delivered, the full amount is refunded as described in our Refund Policy.
+- We aim to acknowledge every complaint within 24 hours and resolve it within 7 working days.
+- We operate in line with the laws of Bangladesh that apply to digital commerce, consumer protection and data protection.
+
+## Your declaration as a customer
+By buying an eSIM you confirm that:
+- your device supports eSIM and is not carrier-locked;
+- you will use the plan lawfully while travelling;
+- the details you give us are accurate.
+
+## Merchants and partners
+Approved merchants and API partners declare that they sell our eSIMs only to genuine customers, pass on accurate plan information, and keep to this declaration.
+
+## Updates
+We review this declaration regularly. The date of the latest version is shown at the top of this page.
+""",
+    "payment-policy": """This Payment Policy explains how you can pay {platform_name}, in which currency, and what happens if a payment fails.
+
+## Ways to pay
+- **Card and mobile banking** through ShurjoPay, a payment gateway licensed in Bangladesh: bKash, Nagad, Rocket, Visa, Mastercard and other methods it supports.
+- **{platform_name} wallet** — pay instantly from a balance you have topped up.
+- **Manual deposit** to an account listed on the wallet page, where available. It is credited after we verify your transaction ID.
+
+## How Buy Now works
+- If your wallet balance covers the plan, you choose whether to pay from your wallet or by card / mobile banking.
+- If it doesn't, you go straight to the secure ShurjoPay checkout.
+
+Your eSIM is issued only after the payment is confirmed.
+
+## Currency
+Prices are set in Euro (EUR). When you pay in Taka (BDT), the amount is converted at the rate shown at checkout, and that is the amount charged. Your bank or mobile-wallet provider may charge its own fees.
+
+## Security
+Card and mobile-banking details are entered on ShurjoPay's secure page. {platform_name} never receives or stores your card number, CVV or PIN.
+
+## Failed or interrupted payments
+- If a payment fails or you cancel it, you are not charged.
+- If you are charged but the eSIM cannot be issued, the full amount is returned to your wallet automatically.
+- If money leaves your account but no order appears within 30 minutes, email {support_email} with the transaction ID.
+
+## Minimum amounts
+The payment gateway does not accept payments below 10 BDT. Wallet top-ups have minimum and maximum amounts, shown on the wallet page.
+
+## Wallet balance
+Wallet balance is prepaid credit for purchases on {platform_name}. It is not a bank account and earns no interest. See our Refund Policy for when a balance can be returned.
+
+## Merchants
+Merchants pay for their customers' eSIMs the same way — from their wallet, or by ShurjoPay when the balance is short. Commission is credited to the merchant's commission wallet when the eSIM is delivered.
+
+## Questions
+{support_email}
 """,
 }
 
