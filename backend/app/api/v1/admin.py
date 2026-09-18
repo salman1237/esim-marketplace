@@ -36,6 +36,7 @@ from app.services.ledger_svc import LedgerService
 from app.services.payment_methods_svc import get_payment_methods, set_payment_methods
 from app.services.legal_content_svc import LEGAL_TITLES, get_legal_document, save_legal_document
 from app.services import gateway_config_svc, topup_limits_svc
+from app.services.admin_overview_svc import build_overview
 from app.services.catalog_export_svc import build_catalog_workbook
 from app.services.shurjopay_svc import ShurjoPayService
 from app.services.pricing_svc import MAX_SELLING_PROFIT_PCT, get_selling_profit_pct, retail_price_for, set_selling_profit_pct
@@ -654,6 +655,13 @@ async def update_branding(
 class TopupLimitsRequest(BaseModel):
     min: Decimal = Field(..., gt=0)
     max: Decimal = Field(..., gt=0)
+
+
+@router.get("/dashboard", dependencies=[Depends(require_admin)])
+async def admin_dashboard(days: int = Query(30, ge=7, le=365), db: AsyncSession = Depends(get_db)):
+    """The Overview tab: KPIs against the previous period, daily trends,
+    where sales come from, and what needs attention - one consistent slice."""
+    return await build_overview(db, days)
 
 
 @router.get("/topup-limits", dependencies=[Depends(require_admin)])

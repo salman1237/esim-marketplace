@@ -50,6 +50,7 @@ export const api = {
   getProduct: (id: string) => fetchApi(`/api/v1/catalog/products/${id}`),
   // Country page by slug or ISO2 - /explore/bangladesh and /explore/bd both work.
   getDestination: (slug: string) => fetchApi(`/api/v1/catalog/destinations/${encodeURIComponent(slug)}`),
+  getAdminDashboard: (token: string, days: number) => fetchApi(`/api/v1/admin/dashboard?days=${days}`, { headers: { Authorization: `Bearer ${token}` } }),
   getTopupLimits: (token: string) => fetchApi("/api/v1/admin/topup-limits", { headers: { Authorization: `Bearer ${token}` } }),
   updateTopupLimits: (token: string, data: { min: string; max: string }) => fetchApi("/api/v1/admin/topup-limits", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
 
