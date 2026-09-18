@@ -58,7 +58,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="en" dir="ltr">
-      <body className="min-h-screen flex flex-col bg-gray-50 text-slate-900 antialiased selection:bg-brand-500 selection:text-white pb-16 md:pb-0">
+      <body className="min-h-screen flex flex-col bg-gray-50 text-slate-900 antialiased selection:bg-brand-500 selection:text-white pb-16 md:pb-0 print:bg-white print:pb-0 print:min-h-0">
         <AppSettingsProvider initialSettings={initialSettings}>
           <MaintenanceGate>
             <Header />

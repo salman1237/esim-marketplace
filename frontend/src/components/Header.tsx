@@ -30,7 +30,7 @@ export default function Header() {
   const activeLanguages = languages.filter((l) => l.is_active);
 
   return (
-    <header className="sticky top-0 z-50 glass-panel border-b border-gray-200">
+    <header className="sticky top-0 z-50 glass-panel border-b border-gray-200 print:hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
 
         {/* Brand Logo & Name */}

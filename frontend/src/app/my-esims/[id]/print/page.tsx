@@ -77,7 +77,12 @@ export default function PrintEsimPage() {
     <div className="print-sheet">
       <style>{`
         @page { size: A4; margin: 16mm; }
-        @media print { .no-print { display: none !important; } }
+        @media print {
+          .no-print { display: none !important; }
+          html, body { background: #ffffff !important; }
+          .print-sheet { max-width: none; padding: 0; }
+          .print-sheet > * { break-inside: avoid; }
+        }
         .print-sheet {
           background: #ffffff; color: #0f172a; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
           max-width: 720px; margin: 0 auto; padding: 32px 24px;

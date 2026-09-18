@@ -34,7 +34,7 @@ export default function Footer() {
   const link = "text-slate-500 hover:text-slate-900 transition-colors";
 
   return (
-    <footer className="bg-white border-t border-gray-200 text-sm mt-20">
+    <footer className="bg-white border-t border-gray-200 text-sm mt-20 print:hidden">
       {/* Partner call-to-action - the B2B program gets its own band, not a
           buried link. */}
       <div className="bg-gradient-to-r from-merchant-600 to-brand-600">
