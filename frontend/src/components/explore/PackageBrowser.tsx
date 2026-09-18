@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { ArrowRight, CheckCircle2, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { api } from "@/lib/api";
@@ -8,6 +8,7 @@ import { useAppSettings } from "@/lib/AppSettingsContext";
 import { esimInstallLinks } from "@/lib/esimInstall";
 import { waitForOrder } from "@/lib/waitForOrder";
 import PaymentMethodChooser from "@/components/PaymentMethodChooser";
+import { usePackageFilters, PackageFilterChips } from "@/components/explore/PackageFilters";
 
 type Product = {
   id: string;
@@ -27,11 +28,6 @@ type Flow =
   | { stage: "success"; product: Product; order: any }
   | { stage: "error"; product: Product; message: string };
 
-// The filter chips customers asked for. A value only appears if this
-// destination actually sells something matching it.
-const DAY_CHOICES = [1, 3, 5, 7, 10, 15, 30];
-const GB_CHOICES = [1, 2, 3, 5, 10, 15, 20, 30];
-
 const WORKING_STEPS = ["Payment confirmed", "Reserving your eSIM with the carrier", "Preparing your QR code"];
 
 const priceOf = (p: Product) => parseFloat(String(p.retail_price));
@@ -39,31 +35,10 @@ const dataLabel = (p: Product) => (p.is_unlimited ? "Unlimited" : `${Number(p.da
 
 export default function PackageBrowser({ country, products }: { country: any; products: Product[] }) {
   const { formatPrice } = useAppSettings();
-  const [days, setDays] = useState<number | null>(null);
-  const [gb, setGb] = useState<number | "unlimited" | null>(null);
+  const filters = usePackageFilters(products);
+  const { filtered } = filters;
   const [flow, setFlow] = useState<Flow | null>(null);
   const [workingStep, setWorkingStep] = useState(0);
-
-  const availableDays = useMemo(
-    () => DAY_CHOICES.filter((d) => products.some((p) => p.validity_days === d)),
-    [products]
-  );
-  const availableGb = useMemo(
-    () => GB_CHOICES.filter((g) => products.some((p) => !p.is_unlimited && Number(p.data_amount_gb) === g)),
-    [products]
-  );
-  const hasUnlimited = useMemo(() => products.some((p) => p.is_unlimited), [products]);
-
-  const filtered = useMemo(
-    () =>
-      products.filter((p) => {
-        if (days !== null && p.validity_days !== days) return false;
-        if (gb === "unlimited") return p.is_unlimited;
-        if (gb !== null) return !p.is_unlimited && Number(p.data_amount_gb) === gb;
-        return true;
-      }),
-    [products, days, gb]
-  );
 
   React.useEffect(() => {
     if (flow?.stage !== "working") {
@@ -141,36 +116,11 @@ export default function PackageBrowser({ country, products }: { country: any; pr
     }
   };
 
-  const chip = (active: boolean) =>
-    `px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
-      active ? "bg-brand-600 border-brand-600 text-white" : "bg-white border-gray-300 text-slate-700 hover:bg-gray-50"
-    }`;
-
   return (
     <>
-      {(availableDays.length > 0 || availableGb.length > 0 || hasUnlimited) && (
-        <div className="glass-panel rounded-2xl border border-gray-200 p-4 sm:p-5 space-y-3">
-          {availableGb.length > 0 || hasUnlimited ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 w-16">Data</span>
-              <button type="button" onClick={() => setGb(null)} className={chip(gb === null)}>All</button>
-              {availableGb.map((g) => (
-                <button key={g} type="button" onClick={() => setGb(gb === g ? null : g)} className={chip(gb === g)}>{g} GB</button>
-              ))}
-              {hasUnlimited && (
-                <button type="button" onClick={() => setGb(gb === "unlimited" ? null : "unlimited")} className={chip(gb === "unlimited")}>Unlimited</button>
-              )}
-            </div>
-          ) : null}
-          {availableDays.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 w-16">Days</span>
-              <button type="button" onClick={() => setDays(null)} className={chip(days === null)}>All</button>
-              {availableDays.map((d) => (
-                <button key={d} type="button" onClick={() => setDays(days === d ? null : d)} className={chip(days === d)}>{d} {d === 1 ? "day" : "days"}</button>
-              ))}
-            </div>
-          )}
+      {(filters.availableDays.length > 0 || filters.availableGb.length > 0 || filters.hasUnlimited) && (
+        <div className="glass-panel rounded-2xl border border-gray-200 p-4 sm:p-5">
+          <PackageFilterChips filters={filters} />
         </div>
       )}
 
@@ -178,8 +128,8 @@ export default function PackageBrowser({ country, products }: { country: any; pr
         <p className="text-xs text-slate-500">
           {filtered.length} of {products.length} package{products.length === 1 ? "" : "s"}
         </p>
-        {(days !== null || gb !== null) && (
-          <button type="button" onClick={() => { setDays(null); setGb(null); }} className="text-xs text-brand-600 hover:underline">
+        {filters.active && (
+          <button type="button" onClick={filters.reset} className="text-xs text-brand-600 hover:underline">
             Clear filters
           </button>
         )}

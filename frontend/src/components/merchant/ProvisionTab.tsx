@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { CheckCircle2, QrCode, Send, Share2 } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { CheckCircle2, QrCode, Search, Send, Share2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { waitForOrder } from "@/lib/waitForOrder";
 import PaymentMethodChooser from "@/components/PaymentMethodChooser";
+import { usePackageFilters, PackageFilterChips } from "@/components/explore/PackageFilters";
 import { getToken } from "./shared";
 
 type Props = {
@@ -18,8 +19,11 @@ const NOT_FOUND = "Beneficiary user account not found";
 
 export default function ProvisionTab({ commissionRatePct, showCommission, formatPrice, onOrderSettled }: Props) {
   const [countries, setCountries] = useState<any[]>([]);
-  const [selectedCountry, setSelectedCountry] = useState<string>("");
+  const [countryQuery, setCountryQuery] = useState("");
+  const [countryOpen, setCountryOpen] = useState(false);
+  const [selectedCountry, setSelectedCountry] = useState<any | null>(null);
   const [products, setProducts] = useState<any[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<string>("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -27,21 +31,38 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
   const [chooserBalance, setChooserBalance] = useState<number | null>(null);
   const [orderResult, setOrderResult] = useState<any | null>(null);
 
+  const filters = usePackageFilters(products);
+
+  // Every destination we sell - not only the handful flagged "popular".
   useEffect(() => {
-    api.getCountries(undefined, true).then(setCountries).catch(console.error);
+    api.getCountries().then(setCountries).catch(console.error);
   }, []);
 
-  useEffect(() => {
-    if (selectedCountry) {
-      api.getCountryProducts(selectedCountry).then((data) => {
-        setProducts(data);
-        if (data.length > 0) setSelectedProduct(data[0].id);
-      }).catch(console.error);
-    }
-  }, [selectedCountry]);
+  const countryMatches = useMemo(() => {
+    const needle = countryQuery.trim().toLowerCase();
+    if (!needle || (selectedCountry && countryQuery === selectedCountry.name_en)) return countries;
+    return countries.filter(
+      (c) => (c.name_en || "").toLowerCase().includes(needle) || (c.iso2 || "").toLowerCase() === needle
+    );
+  }, [countries, countryQuery, selectedCountry]);
+
+  const chooseCountry = (c: any) => {
+    setSelectedCountry(c);
+    setCountryQuery(c.name_en);
+    setCountryOpen(false);
+    setSelectedProduct("");
+    filters.reset();
+    setLoadingProducts(true);
+    api
+      .getCountryProducts(c.iso2)
+      .then(setProducts)
+      .catch(() => setProducts([]))
+      .finally(() => setLoadingProducts(false));
+  };
 
   const product = products.find((p) => p.id === selectedProduct);
   const price = product ? parseFloat(product.retail_price) : 0;
+  const packLabel = (p: any) => (p.is_unlimited ? "Unlimited" : `${Number(p.data_amount_gb)} GB`);
 
   // Same beneficiary rule for both payment methods: issue to the customer's
   // existing account by email, or create one if there isn't any.
@@ -136,25 +157,100 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
 
         <form onSubmit={handleBuyNow} className="space-y-4">
           <div>
-            <label className="text-xs text-slate-700 font-semibold block mb-1">Destination Country</label>
-            <select value={selectedCountry} onChange={(e) => setSelectedCountry(e.target.value)} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900" required>
-              <option value="">-- Select Destination Country --</option>
-              {countries.map((c) => (
-                <option key={c.iso2} value={c.iso2}>{c.name_en || c.name} ({c.iso2})</option>
-              ))}
-            </select>
+            <label htmlFor="provision-country" className="text-xs text-slate-700 font-semibold block mb-1">
+              Destination Country {countries.length > 0 && <span className="font-normal text-slate-400">· {countries.length} available</span>}
+            </label>
+            <div className="relative">
+              <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-xl px-3 focus-within:border-brand-500">
+                {selectedCountry?.flag_url && countryQuery === selectedCountry.name_en ? (
+                  <img src={selectedCountry.flag_url} alt="" className="w-6 h-4 rounded-sm object-cover shrink-0" />
+                ) : (
+                  <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                )}
+                <input
+                  id="provision-country"
+                  value={countryQuery}
+                  onChange={(e) => { setCountryQuery(e.target.value); setCountryOpen(true); }}
+                  onFocus={() => setCountryOpen(true)}
+                  onBlur={() => setCountryOpen(false)}
+                  placeholder="Search a country…"
+                  autoComplete="off"
+                  className="flex-1 py-2.5 text-xs text-slate-900 bg-transparent outline-none"
+                />
+              </div>
+              {countryOpen && (
+                <div className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-lg">
+                  {countryMatches.length === 0 ? (
+                    <p className="px-3 py-3 text-xs text-slate-500">No country matches &ldquo;{countryQuery}&rdquo;</p>
+                  ) : (
+                    countryMatches.map((c) => (
+                      <button
+                        key={c.iso2}
+                        type="button"
+                        // mousedown fires before the input's blur closes the list
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => chooseCountry(c)}
+                        className={`w-full flex items-center gap-3 px-3 py-2 text-start hover:bg-gray-50 ${selectedCountry?.iso2 === c.iso2 ? "bg-brand-50" : ""}`}
+                      >
+                        {c.flag_url ? <img src={c.flag_url} alt="" className="w-6 h-4 rounded-sm object-cover shrink-0" /> : <span className="w-6 shrink-0" />}
+                        <span className="text-xs text-slate-900 flex-1">{c.name_en}</span>
+                        <span className="text-[10px] text-slate-400">{c.iso2}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {selectedCountry && (
-            <div>
-              <label className="text-xs text-slate-700 font-semibold block mb-1">eSIM Package Bundle</label>
-              <select value={selectedProduct} onChange={(e) => setSelectedProduct(e.target.value)} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900" required>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title_en} — {p.is_unlimited ? "Unlimited" : `${p.data_amount_gb} GB`} ({p.validity_days} Days) — {formatPrice(parseFloat(p.retail_price))}
-                  </option>
-                ))}
-              </select>
+            <div className="space-y-3">
+              <label className="text-xs text-slate-700 font-semibold block">eSIM Package</label>
+              {loadingProducts ? (
+                <div className="h-24 rounded-xl bg-gray-50 animate-pulse" />
+              ) : products.length === 0 ? (
+                <p className="text-xs text-slate-500">No packages available for {selectedCountry.name_en} right now.</p>
+              ) : (
+                <>
+                  <PackageFilterChips filters={filters} className="rounded-xl bg-gray-50 border border-gray-200 p-3" />
+                  <div className="flex items-center justify-between text-[11px] text-slate-500">
+                    <span>{filters.filtered.length} of {products.length} packages</span>
+                    {filters.active && (
+                      <button type="button" onClick={filters.reset} className="text-brand-600 hover:underline">Clear filters</button>
+                    )}
+                  </div>
+                  <div role="radiogroup" aria-label="eSIM package" className="max-h-72 overflow-y-auto space-y-2 pe-1">
+                    {filters.filtered.length === 0 ? (
+                      <p className="text-xs text-slate-500 py-4 text-center">No package matches these filters.</p>
+                    ) : (
+                      filters.filtered.map((p) => {
+                        const selected = p.id === selectedProduct;
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            onClick={() => setSelectedProduct(p.id)}
+                            className={`w-full flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-start transition-colors ${
+                              selected ? "border-brand-500 bg-brand-50" : "border-gray-200 bg-white hover:border-gray-300"
+                            }`}
+                          >
+                            <span className="flex items-center gap-2.5">
+                              <span className={`w-4 h-4 rounded-full border-2 shrink-0 ${selected ? "border-brand-600 bg-brand-600 ring-2 ring-white ring-inset" : "border-gray-300"}`} />
+                              <span>
+                                <span className="block text-sm font-bold text-slate-900">{packLabel(p)}</span>
+                                <span className="block text-[11px] text-slate-500">{p.validity_days} days</span>
+                              </span>
+                            </span>
+                            <span className="text-sm font-black text-emerald-600">{formatPrice(parseFloat(p.retail_price))}</span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -176,10 +272,17 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
             </div>
           )}
 
+          {product && (
+            <div className="flex items-center justify-between rounded-xl bg-gray-50 border border-gray-200 px-3 py-2 text-xs">
+              <span className="text-slate-600">{selectedCountry?.name_en} · {packLabel(product)} · {product.validity_days} days</span>
+              <span className="font-black text-slate-900">{formatPrice(price)}</span>
+            </div>
+          )}
+
           <button type="submit" disabled={loading !== null || !selectedProduct} className="w-full py-3 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-60 text-white text-sm font-bold transition-all shadow-md shadow-brand-900/10 flex items-center justify-center space-x-2">
             <Send className="w-4 h-4" />
             <span>
-              {loading === "checking" ? "Checking wallet…" : loading === "wallet" ? "Setting up eSIM…" : loading === "gateway" ? "Opening payment…" : "Buy Now"}
+              {loading === "checking" ? "Checking wallet…" : loading === "wallet" ? "Setting up eSIM…" : loading === "gateway" ? "Opening payment…" : selectedProduct ? "Buy Now" : "Choose a package"}
             </span>
           </button>
           <p className="text-center text-[10px] text-slate-400">bKash · Nagad · Card · Wallet</p>
@@ -218,7 +321,7 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
 
       <PaymentMethodChooser
         open={chooserBalance !== null && !!product}
-        summary={<>For {customerEmail || "your customer"} · {product?.is_unlimited ? "Unlimited" : `${product?.data_amount_gb} GB`} · {product?.validity_days} days</>}
+        summary={<>For {customerEmail || "your customer"} · {product ? packLabel(product) : ""} · {product?.validity_days} days</>}
         priceLabel={formatPrice(price)}
         walletBalanceLabel={formatPrice(chooserBalance ?? 0)}
         walletAfterLabel={formatPrice((chooserBalance ?? 0) - price)}
