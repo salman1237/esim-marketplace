@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Wifi, Phone, Mail, MessageCircle, ShieldCheck, Briefcase, ArrowRight, Facebook, Instagram, Twitter, Youtube, Linkedin } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
+import PartnerCta from "@/components/PartnerCta";
 
 // Kept in step with LEGAL_TITLES in the backend's legal_content_svc - the
 // pages themselves are edited from the admin console.
@@ -47,9 +48,9 @@ export default function Footer() {
               <div className="text-xs text-white/80">Earn commission on every eSIM you sell — from your dashboard or our API.</div>
             </div>
           </div>
-          <Link href="/partners" className="inline-flex items-center justify-center gap-1.5 bg-white text-slate-900 hover:bg-white/90 text-xs font-bold px-4 py-2.5 rounded-xl shrink-0">
-            Become a partner <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
+          <div className="shrink-0">
+            <PartnerCta size="sm" guestPrimary={{ label: "Become a partner", href: "/partners", icon: ArrowRight }} />
+          </div>
         </div>
       </div>
 

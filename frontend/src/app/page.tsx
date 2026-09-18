@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Search, Sparkles, Zap, ShieldCheck, Globe, ArrowRight, Briefcase } from "lucide-react";
 import { api } from "@/lib/api";
+import PartnerCta from "@/components/PartnerCta";
 
 // Clicking a country opens its own page (/explore/bangladesh) rather than a
 // popup, so the link can be shared with a customer directly.
@@ -197,13 +198,8 @@ export default function HomePage() {
             <p className="mt-3 text-sm text-white/85 max-w-xl">
               Issue eSIMs to your customers from a partner dashboard or through our API, and earn commission on each delivery.
             </p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Link href="/partners" className="inline-flex items-center gap-2 bg-white text-slate-900 hover:bg-white/90 text-sm font-bold px-5 py-3 rounded-xl">
-                Become a partner <ArrowRight className="w-4 h-4" />
-              </Link>
-              <Link href="/api-docs" className="inline-flex items-center gap-2 border border-white/30 hover:bg-white/10 text-sm font-bold px-5 py-3 rounded-xl">
-                API docs
-              </Link>
+            <div className="mt-6">
+              <PartnerCta guestPrimary={{ label: "Become a partner", href: "/partners", icon: ArrowRight }} />
             </div>
           </div>
           <ul className="space-y-3 text-sm">

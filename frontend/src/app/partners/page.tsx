@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import PartnerCta from "@/components/PartnerCta";
 import {
-  ArrowRight, BadgePercent, Briefcase, Code2, FileText, Globe2, LayoutDashboard, Send, ShieldCheck, Wallet, Zap,
+  BadgePercent, Briefcase, Code2, FileText, Globe2, LayoutDashboard, Send, ShieldCheck, Wallet, Zap,
 } from "lucide-react";
 
 export const metadata: Metadata = {
@@ -50,13 +51,8 @@ export default function PartnersPage() {
               Add instant mobile data to every ticket and tour you sell. Issue eSIMs from your own dashboard or through our API,
               and earn commission on each delivery.
             </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/reseller" className="inline-flex items-center gap-2 bg-white text-slate-900 hover:bg-white/90 text-sm font-bold px-5 py-3 rounded-xl">
-                Apply now <ArrowRight className="w-4 h-4" />
-              </Link>
-              <Link href="/api-docs" className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/30 text-sm font-bold px-5 py-3 rounded-xl">
-                <Code2 className="w-4 h-4" /> View API docs
-              </Link>
+            <div className="mt-8">
+              <PartnerCta showNote />
             </div>
           </div>
 
@@ -150,13 +146,8 @@ export default function PartnersPage() {
             <h2 className="text-2xl font-extrabold">Ready to add eSIMs to what you sell?</h2>
             <p className="mt-2 text-sm text-white/70">Applications take two minutes. We&apos;ll review yours and set up your account.</p>
           </div>
-          <div className="flex flex-wrap gap-3 shrink-0">
-            <Link href="/reseller" className="inline-flex items-center gap-2 bg-white text-slate-900 hover:bg-white/90 text-sm font-bold px-5 py-3 rounded-xl">
-              Apply now <ArrowRight className="w-4 h-4" />
-            </Link>
-            <Link href="/auth/register" className="inline-flex items-center gap-2 border border-white/30 hover:bg-white/10 text-sm font-bold px-5 py-3 rounded-xl">
-              Create an account
-            </Link>
+          <div className="shrink-0">
+            <PartnerCta guestSecondary={{ label: "Create an account", href: "/auth/register" }} />
           </div>
         </div>
       </section>
