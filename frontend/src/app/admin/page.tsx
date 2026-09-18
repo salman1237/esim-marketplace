@@ -7,6 +7,7 @@ import { useAppSettings } from "@/lib/AppSettingsContext";
 import TranslationsManager from "@/components/TranslationsManager";
 import PricingCard from "@/components/admin/PricingCard";
 import PaymentMethodsCard from "@/components/admin/PaymentMethodsCard";
+import PackagePicker, { packLabel } from "@/components/PackagePicker";
 import ShurjoPayCard from "@/components/admin/ShurjoPayCard";
 import LegalContentCard from "@/components/admin/LegalContentCard";
 import SalesReportTab from "@/components/admin/SalesReportTab";
@@ -81,6 +82,7 @@ export default function AdminConsolePage() {
   const [purchaseCountry, setPurchaseCountry] = useState("");
   const [purchaseProducts, setPurchaseProducts] = useState<any[]>([]);
   const [purchaseProductId, setPurchaseProductId] = useState("");
+  const [purchaseSelection, setPurchaseSelection] = useState<{ country: any | null; product: any | null }>({ country: null, product: null });
   const [purchasingEsim, setPurchasingEsim] = useState(false);
   const [purchaseResult, setPurchaseResult] = useState<{ ok: boolean; message: string } | null>(null);
 
@@ -370,6 +372,7 @@ export default function AdminConsolePage() {
     setPurchaseCountry("");
     setPurchaseProducts([]);
     setPurchaseProductId("");
+    setPurchaseSelection({ country: null, product: null });
     setPurchaseResult(null);
     if (purchaseCountries.length === 0) {
       // Every destination we hold stock for, not just the ~10 flagged
@@ -403,21 +406,6 @@ export default function AdminConsolePage() {
     }
   };
 
-  const handleSelectPurchaseCountry = async (iso2: string) => {
-    setPurchaseCountry(iso2);
-    setPurchaseProductId("");
-    if (!iso2) {
-      setPurchaseProducts([]);
-      return;
-    }
-    try {
-      const products = await api.getCountryProducts(iso2);
-      setPurchaseProducts(products);
-    } catch (err: any) {
-      alert("Failed to load products: " + err.message);
-    }
-  };
-
   const handlePurchaseEsimForCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     const token = localStorage.getItem("esim_token");
@@ -427,7 +415,7 @@ export default function AdminConsolePage() {
     try {
       const res = await api.adminPurchaseEsimForCustomer(token, selectedCustomer.id, purchaseProductId);
       setPurchaseResult({ ok: true, message: `Order ${res.order_no} completed — eSIM issued.` });
-      const product = purchaseProducts.find(p => p.id === purchaseProductId);
+      const product = purchaseSelection.product;
       const price = product ? parseFloat(product.retail_price) : 0;
       const newBalance = selectedCustomer.wallet_balance - price;
       setSelectedCustomer({ ...selectedCustomer, wallet_balance: newBalance });
@@ -1311,40 +1299,37 @@ export default function AdminConsolePage() {
                 <h3 className="text-base font-bold text-slate-900 mb-1">Purchase eSIM for Customer</h3>
                 <p className="text-xs text-slate-500 mb-4">Charged to {selectedCustomer.username}&apos;s own wallet balance.</p>
                 <form onSubmit={handlePurchaseEsimForCustomer} className="space-y-3">
-                  <div>
-                    <label className="text-xs text-slate-700 font-semibold block mb-1">Destination Country</label>
-                    <select
-                      value={purchaseCountry}
-                      onChange={(e) => handleSelectPurchaseCountry(e.target.value)}
-                      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
-                      required
-                    >
-                      <option value="">-- Select Country --</option>
-                      {purchaseCountries.map((c) => (
-                        <option key={c.iso2} value={c.iso2}>{c.name_en || c.name} ({c.iso2})</option>
-                      ))}
-                    </select>
-                  </div>
-                  {purchaseCountry && (
-                    <div>
-                      <label className="text-xs text-slate-700 font-semibold block mb-1">Product</label>
-                      <select
-                        value={purchaseProductId}
-                        onChange={(e) => setPurchaseProductId(e.target.value)}
-                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
-                        required
-                      >
-                        <option value="">-- Select Product --</option>
-                        {purchaseProducts.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.title_en} — {p.is_unlimited ? "Unlimited" : `${p.data_amount_gb} GB`} ({p.validity_days} Days) — €{parseFloat(p.retail_price).toFixed(2)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                  <button type="submit" disabled={purchasingEsim || !purchaseProductId} className="w-full bg-admin-600 hover:bg-admin-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl">
-                    {purchasingEsim ? "Processing..." : "Purchase eSIM"}
+                  <PackagePicker
+                    key={selectedCustomer.id}
+                    id="admin-purchase-country"
+                    countries={purchaseCountries}
+                    formatPrice={(n) => `€${n.toFixed(2)}`}
+                    onChange={(sel) => { setPurchaseSelection(sel); setPurchaseProductId(sel.product?.id || ""); }}
+                  />
+                  {purchaseSelection.product && (() => {
+                    const price = parseFloat(purchaseSelection.product.retail_price);
+                    const balance = Number(selectedCustomer.wallet_balance || 0);
+                    const short = balance < price;
+                    return (
+                      <div className={`rounded-lg border px-3 py-2 text-xs ${short ? "bg-rose-50 border-rose-200 text-rose-700" : "bg-gray-50 border-gray-200 text-slate-600"}`}>
+                        <div className="flex items-center justify-between">
+                          <span>{purchaseSelection.country?.name_en} · {packLabel(purchaseSelection.product)} · {purchaseSelection.product.validity_days} days</span>
+                          <span className="font-black">€{price.toFixed(2)}</span>
+                        </div>
+                        <div className="mt-1">
+                          {short
+                            ? `Wallet has €${balance.toFixed(2)} — €${(price - balance).toFixed(2)} short. Recharge it above first.`
+                            : `Wallet €${balance.toFixed(2)} → €${(balance - price).toFixed(2)} after purchase.`}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <button
+                    type="submit"
+                    disabled={purchasingEsim || !purchaseProductId || (purchaseSelection.product && Number(selectedCustomer.wallet_balance || 0) < parseFloat(purchaseSelection.product.retail_price))}
+                    className="w-full bg-admin-600 hover:bg-admin-500 disabled:opacity-60 text-white text-xs font-bold px-4 py-2.5 rounded-xl"
+                  >
+                    {purchasingEsim ? "Processing..." : purchaseProductId ? "Purchase eSIM" : "Choose a package"}
                   </button>
                   {purchaseResult && (
                     <div className={`p-3 rounded-lg text-xs ${purchaseResult.ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"}`}>
