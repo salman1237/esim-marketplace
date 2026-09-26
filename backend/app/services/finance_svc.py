@@ -20,6 +20,7 @@ from app.models.merchant import MerchantProfile
 from app.models.order import Order, OrderStatus
 from app.models.user import User, UserRole
 from app.models.wallet import LedgerRefType, LedgerTxType, Wallet, WalletLedgerEntry, WalletType
+from app.models.withdrawal import WithdrawalRequest, WithdrawalStatus
 
 CENTS = Decimal("0.01")
 CREATE_TRX_ENDPOINT = "create-transaction"
@@ -151,7 +152,12 @@ async def money_cycle_summary(db: AsyncSession, start: datetime, end: datetime) 
             "commission_moved_to_main_wallet": cents(
                 ledger_sum(LedgerRefType.COMMISSION_TRANSFER, LedgerTxType.DEBIT, WalletType.COMMISSION)
             ),
+            # The hold is taken when a withdrawal is requested, so these two
+            # explain balance that left wallets without an order behind it.
+            "withdrawals_held": cents(ledger_sum(LedgerRefType.WITHDRAWAL_HOLD, LedgerTxType.DEBIT)),
+            "withdrawals_returned": cents(ledger_sum(LedgerRefType.WITHDRAWAL_REVERSED, LedgerTxType.CREDIT)),
         },
+        "withdrawals": await withdrawals_in_period(db, start, end),
         "sales": {
             "completed_orders": sum(r[2] for r in completed),
             "selling_price": cents(sales),
@@ -174,6 +180,38 @@ async def money_cycle_summary(db: AsyncSession, start: datetime, end: datetime) 
     }
 
 
+async def withdrawals_in_period(db: AsyncSession, start: datetime, end: datetime) -> dict:
+    """Cash actually paid out, and what is still queued. `paid_out` is the
+    net amount sent (after the processing fee we keep), so it reconciles
+    against the bank/bKash statements rather than against the ledger hold."""
+    rows = (await db.execute(
+        select(
+            WithdrawalRequest.status,
+            func.count(WithdrawalRequest.id),
+            func.coalesce(func.sum(WithdrawalRequest.amount), 0),
+            func.coalesce(func.sum(WithdrawalRequest.net_amount), 0),
+            func.coalesce(func.sum(WithdrawalRequest.fee_amount), 0),
+        )
+        .where(WithdrawalRequest.created_at >= start, WithdrawalRequest.created_at < end)
+        .group_by(WithdrawalRequest.status)
+    )).all()
+    by_status = {
+        status.value: {
+            "requests": n,
+            "requested": cents(Decimal(str(gross))),
+            "net": cents(Decimal(str(net))),
+            "fees": cents(Decimal(str(fees))),
+        }
+        for status, n, gross, net, fees in rows
+    }
+    paid = by_status.get("PAID", {})
+    return {
+        "by_status": by_status,
+        "paid_out": paid.get("net", cents(Decimal("0"))),
+        "fees_kept": paid.get("fees", cents(Decimal("0"))),
+    }
+
+
 async def wallet_liabilities(db: AsyncSession) -> dict:
     """What we owe wallet holders right now - money received but not yet spent."""
     rows = (await db.execute(
@@ -190,10 +228,22 @@ async def wallet_liabilities(db: AsyncSession) -> dict:
         g["wallets"] += n
         g["balance"] += Decimal(str(balance))
         total += Decimal(str(balance))
+    # Pending withdrawals are no longer in any wallet balance (the hold was
+    # taken at request time), but we still owe the money - so they are a
+    # separate payable, not part of the wallet total.
+    pending = (await db.execute(
+        select(
+            func.count(WithdrawalRequest.id),
+            func.coalesce(func.sum(WithdrawalRequest.net_amount), 0),
+        ).where(WithdrawalRequest.status == WithdrawalStatus.PENDING)
+    )).one()
+
     return {
         "as_of": datetime.now(timezone.utc).isoformat(),
         "groups": {k: {"wallets": v["wallets"], "balance": cents(v["balance"])} for k, v in sorted(groups.items())},
         "total": cents(total),
+        "pending_withdrawals": {"requests": pending[0], "payable": cents(Decimal(str(pending[1])))},
+        "total_including_pending_withdrawals": cents(total + Decimal(str(pending[1]))),
     }
 
 

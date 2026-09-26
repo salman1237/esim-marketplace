@@ -7,6 +7,7 @@ set up or is temporarily down.
 """
 import io
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 import aiosmtplib
 import qrcode
@@ -29,12 +30,33 @@ TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates" / "email"
 _env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=select_autoescape(["html"]))
 
 
+CURRENCY_SYMBOLS = {"EUR": "€", "BDT": "৳", "USD": "$", "GBP": "£"}
+
+
+def money(amount, currency: str) -> str:
+    """"€12.50" / "৳1,773.24" / "12.50 SAR" - readable in an email body,
+    where a bare number next to a code reads as a template that failed."""
+    value = Decimal(str(amount or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    formatted = f"{value:,.2f}"
+    symbol = CURRENCY_SYMBOLS.get((currency or "").upper())
+    return f"{symbol}{formatted}" if symbol else f"{formatted} {(currency or '').upper()}".strip()
+
+
 class EmailService:
     @staticmethod
     async def _get_platform_name(db: AsyncSession) -> str:
         res = await db.execute(select(PlatformSetting).where(PlatformSetting.key == "platform_name"))
         row = res.scalar_one_or_none()
         return row.value if row and row.value else "eSIM Global"
+
+    @staticmethod
+    async def finance_notice_address(db: AsyncSession) -> str:
+        """Where the admin's copy of a payout receipt goes. The support
+        address the platform already publishes, falling back to the sending
+        address so a receipt is never silently dropped."""
+        res = await db.execute(select(PlatformSetting).where(PlatformSetting.key == "support_email"))
+        row = res.scalar_one_or_none()
+        return (row.value if row and row.value else None) or settings.SMTP_FROM_EMAIL
 
     @staticmethod
     async def _logo_png(db: AsyncSession) -> bytes | None:
@@ -163,6 +185,99 @@ class EmailService:
         )
         await cls._send(to_email, f"Reset your {platform_name} password", html,
                         inline_images={"brand_logo": logo_png} if logo_png else None)
+
+    @classmethod
+    async def send_withdrawal_requested(cls, db: AsyncSession, to_email: str, withdrawal: dict, processing_time: str):
+        platform_name = await cls._get_platform_name(db)
+        logo_png = await cls._logo_png(db)
+        details = [
+            ("Reference", withdrawal["reference_no"]),
+            ("Requested", money(withdrawal["amount"], withdrawal["base_currency"])),
+        ]
+        if Decimal(str(withdrawal["fee_amount"])) > 0:
+            details.append(("Processing fee", f"- {money(withdrawal['fee_amount'], withdrawal['base_currency'])}"))
+        details.extend([
+            ("You will receive", money(withdrawal["net_amount"], withdrawal["base_currency"])),
+            ("Paid to", withdrawal["account_line"]),
+            ("Requested on", withdrawal["created_display"]),
+        ])
+        html = _env.get_template("withdrawal_requested.html").render(
+            platform_name=platform_name, has_logo=logo_png is not None, details=details,
+            processing_time=processing_time, payout_currency=withdrawal["payout_currency"],
+            frontend_base_url=settings.FRONTEND_BASE_URL, year=datetime.now(timezone.utc).year,
+        )
+        text = (
+            f"Withdrawal request {withdrawal['reference_no']} received.\n"
+            f"Requested: {money(withdrawal['amount'], withdrawal['base_currency'])}\n"
+            f"You will receive: {money(withdrawal['net_amount'], withdrawal['base_currency'])}\n"
+            f"Paid to: {withdrawal['account_line']}\n"
+            f"Expected processing time: {processing_time}\n"
+        )
+        await cls._send(to_email, f"Withdrawal request received — {withdrawal['reference_no']}", html,
+                        text_body=text, inline_images={"brand_logo": logo_png} if logo_png else None)
+
+    @classmethod
+    async def send_withdrawal_paid(
+        cls, db: AsyncSession, to_email: str, withdrawal: dict, processing_time: str, for_admin: bool = False
+    ):
+        """The receipt. Sent to the user and, with for_admin=True, to the
+        platform's finance address - the client asked for both copies to
+        carry the conversion rate and amounts."""
+        platform_name = await cls._get_platform_name(db)
+        logo_png = await cls._logo_png(db)
+        base = withdrawal["base_currency"]
+        payout_display = money(withdrawal["payout_amount"], withdrawal["payout_currency"])
+        details = [
+            ("Reference", withdrawal["reference_no"]),
+            ("Withdrawn from wallet", money(withdrawal["amount"], base)),
+        ]
+        if Decimal(str(withdrawal["fee_amount"])) > 0:
+            details.append(("Processing fee", f"- {money(withdrawal['fee_amount'], base)}"))
+        details.extend([
+            ("Net amount", money(withdrawal["net_amount"], base)),
+            ("Conversion rate", f"1 {base} = {withdrawal['conversion_rate']} {withdrawal['payout_currency']}"),
+            ("Amount sent", payout_display),
+            ("Sent to", withdrawal["account_line"]),
+            ("Payment reference", withdrawal["payment_reference"] or "—"),
+            ("Requested on", withdrawal["created_display"]),
+            ("Paid on", withdrawal["paid_display"]),
+        ])
+        html = _env.get_template("withdrawal_paid.html").render(
+            platform_name=platform_name, has_logo=logo_png is not None, details=details,
+            payout_display=payout_display, reference_no=withdrawal["reference_no"],
+            withdrawal_id=withdrawal["id"], processing_time=processing_time, for_admin=for_admin,
+            username=withdrawal.get("username"), user_email=withdrawal.get("user_email"),
+            frontend_base_url=settings.FRONTEND_BASE_URL, year=datetime.now(timezone.utc).year,
+        )
+        text = "\n".join(f"{label}: {value}" for label, value in details)
+        subject = (
+            f"Withdrawal paid to {withdrawal.get('username')} — {withdrawal['reference_no']}" if for_admin
+            else f"Your withdrawal has been paid — {withdrawal['reference_no']}"
+        )
+        await cls._send(to_email, subject, html, text_body=text,
+                        inline_images={"brand_logo": logo_png} if logo_png else None)
+
+    @classmethod
+    async def send_withdrawal_rejected(cls, db: AsyncSession, to_email: str, withdrawal: dict, reason: str | None):
+        platform_name = await cls._get_platform_name(db)
+        logo_png = await cls._logo_png(db)
+        details = [
+            ("Reference", withdrawal["reference_no"]),
+            ("Amount returned", money(withdrawal["amount"], withdrawal["base_currency"])),
+            ("Requested on", withdrawal["created_display"]),
+        ]
+        html = _env.get_template("withdrawal_rejected.html").render(
+            platform_name=platform_name, has_logo=logo_png is not None, details=details,
+            reference_no=withdrawal["reference_no"], reason=reason,
+            frontend_base_url=settings.FRONTEND_BASE_URL, year=datetime.now(timezone.utc).year,
+        )
+        text = (
+            f"Withdrawal {withdrawal['reference_no']} was not approved.\n"
+            f"{money(withdrawal['amount'], withdrawal['base_currency'])} has been returned to your wallet.\n"
+            + (f"Reason: {reason}\n" if reason else "")
+        )
+        await cls._send(to_email, f"Withdrawal not approved — {withdrawal['reference_no']}", html,
+                        text_body=text, inline_images={"brand_logo": logo_png} if logo_png else None)
 
     @classmethod
     async def send_order_confirmation(

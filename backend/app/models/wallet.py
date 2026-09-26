@@ -23,6 +23,12 @@ class LedgerRefType(str, enum.Enum):
     REFUND = "REFUND"
     # A merchant moving earned commission into their main wallet (both legs).
     COMMISSION_TRANSFER = "COMMISSION_TRANSFER"
+    # The balance leaves the wallet the moment a withdrawal is REQUESTED, not
+    # when it is paid - otherwise a user can request a payout and spend the
+    # same money on eSIMs before an admin gets to it. REVERSED puts it back
+    # when a request is rejected or cancelled.
+    WITHDRAWAL_HOLD = "WITHDRAWAL_HOLD"
+    WITHDRAWAL_REVERSED = "WITHDRAWAL_REVERSED"
 
 class Wallet(Base):
     __tablename__ = "wallets"

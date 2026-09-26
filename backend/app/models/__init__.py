@@ -10,6 +10,7 @@ from app.models.kyc import KYCSubmission, KYCStatus
 from app.models.password_reset import PasswordResetToken
 from app.models.commission_tier import CommissionTier
 from app.models.partner_api import ApiKey, WebhookDeliveryLog
+from app.models.withdrawal import BankAccount, WithdrawalRequest, WithdrawalStatus, PayoutAccountType
 
 __all__ = [
     "User", "UserRole", "UserStatus",
@@ -23,5 +24,6 @@ __all__ = [
     "KYCSubmission", "KYCStatus",
     "PasswordResetToken",
     "CommissionTier",
-    "ApiKey", "WebhookDeliveryLog"
+    "ApiKey", "WebhookDeliveryLog",
+    "BankAccount", "WithdrawalRequest", "WithdrawalStatus", "PayoutAccountType"
 ]

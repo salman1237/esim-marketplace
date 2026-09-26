@@ -99,6 +99,12 @@ export default function OverviewTab({ onNavigate }: { onNavigate: (tab: string) 
           detail: "Identity documents to review",
           status: data.attention.pending_kyc ? "warning" : "good",
         },
+        {
+          key: "withdrawals", tab: "withdrawals",
+          label: data.attention.pending_withdrawals ? `${data.attention.pending_withdrawals} withdrawal(s) to pay out` : "No withdrawals waiting",
+          detail: "Balance already held from the wallet",
+          status: data.attention.pending_withdrawals ? "warning" : "good",
+        },
       ]
     : [];
 

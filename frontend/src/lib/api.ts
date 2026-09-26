@@ -86,6 +86,19 @@ export const api = {
   getWalletLedger: (token: string, type: string) => fetchApi(`/api/v1/wallets/ledger?wallet_type=${type}`, { headers: { Authorization: `Bearer ${token}` } }),
   submitManualDeposit: (token: string, data: any) => fetchApi("/api/v1/wallets/manual-deposit", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
 
+  // Withdrawals — limits, fee and eligibility all come from /config, so the
+  // page never shows a button that the API is going to refuse.
+  getWithdrawalConfig: (token: string) => fetchApi("/api/v1/withdrawals/config", { headers: { Authorization: `Bearer ${token}` } }),
+  getPayoutAccounts: (token: string) => fetchApi("/api/v1/withdrawals/accounts", { headers: { Authorization: `Bearer ${token}` } }),
+  addPayoutAccount: (token: string, data: any) => fetchApi("/api/v1/withdrawals/accounts", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  setDefaultPayoutAccount: (token: string, id: string) => fetchApi(`/api/v1/withdrawals/accounts/${id}/default`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+  deletePayoutAccount: (token: string, id: string) => fetchApi(`/api/v1/withdrawals/accounts/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }),
+  getMyWithdrawals: (token: string) => fetchApi("/api/v1/withdrawals", { headers: { Authorization: `Bearer ${token}` } }),
+  getWithdrawal: (token: string, id: string) => fetchApi(`/api/v1/withdrawals/${id}`, { headers: { Authorization: `Bearer ${token}` } }),
+  createWithdrawal: (token: string, data: { amount: string; bank_account_id: string; note_category?: string; note?: string }) =>
+    fetchApi("/api/v1/withdrawals", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  cancelWithdrawal: (token: string, id: string) => fetchApi(`/api/v1/withdrawals/${id}/cancel`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+
   // Payments
   initiateShurjopayTopup: (token: string, amountUsd: number) =>
     fetchApi(`/api/v1/payments/shurjopay/topup?amount=${amountUsd}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
@@ -203,6 +216,36 @@ export const api = {
   getAdminUsers: (token: string, q?: string) => fetchApi(`/api/v1/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   makeUserReseller: (token: string, userId: string, data: { business_name: string; contact_phone: string; commission_rate_pct?: number }) => fetchApi(`/api/v1/admin/users/${userId}/make-reseller`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
   createStaffAccount: (token: string, data: any) => fetchApi("/api/v1/admin/users", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  // Admin: withdrawals
+  getAdminWithdrawals: (token: string, status?: string) => fetchApi(`/api/v1/admin/withdrawals${status ? `?status=${status}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
+  getAdminWithdrawalSettings: (token: string) => fetchApi("/api/v1/admin/withdrawal-settings", { headers: { Authorization: `Bearer ${token}` } }),
+  updateAdminWithdrawalSettings: (token: string, data: any) => fetchApi("/api/v1/admin/withdrawal-settings", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  // Multipart: the payment reference and the proof screenshot are both
+  // required to mark a payout sent, so this can't go through fetchApi.
+  approveWithdrawal: async (token: string, id: string, paymentReference: string, proof: File) => {
+    const form = new FormData();
+    form.append("payment_reference", paymentReference);
+    form.append("proof", proof);
+    const res = await fetch(`${API_BASE}/api/v1/admin/withdrawals/${id}/approve`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || `Approval failed with status ${res.status}`);
+    }
+    return res.json();
+  },
+  rejectWithdrawal: (token: string, id: string, reason: string) => fetchApi(`/api/v1/admin/withdrawals/${id}/reject?reason=${encodeURIComponent(reason)}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+  getWithdrawalProofUrl: async (token: string, id: string) => {
+    const res = await fetch(`${API_BASE}/api/v1/admin/withdrawals/${id}/proof`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to load proof (${res.status})`);
+    const blob = await res.blob();
+    return { url: URL.createObjectURL(blob), contentType: blob.type };
+  },
   getKycQueue: (token: string) => fetchApi("/api/v1/admin/kyc/queue", { headers: { Authorization: `Bearer ${token}` } }),
   approveKyc: (token: string, id: string) => fetchApi(`/api/v1/admin/kyc/${id}/approve`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
   rejectKyc: (token: string, id: string, reason: string) => fetchApi(`/api/v1/admin/kyc/${id}/reject?reason=${encodeURIComponent(reason)}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),

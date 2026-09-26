@@ -99,6 +99,12 @@ export default function CommissionTab({ overview, formatPrice, onChanged }: Prop
           {message && (
             <p className={`mt-3 text-xs font-medium ${message.kind === "ok" ? "text-emerald-600" : "text-rose-600"}`}>{message.text}</p>
           )}
+          {/* Cashing out goes through the main wallet - commission can't be
+              withdrawn directly, so the order of the two steps matters. */}
+          <p className="mt-3 text-[11px] text-slate-500">
+            Want the money in your bank or bKash? Move it to your wallet first, then{" "}
+            <a href="/wallet/withdraw" className="font-bold text-brand-600 underline">request a withdrawal</a>.
+          </p>
         </Panel>
       </div>
 

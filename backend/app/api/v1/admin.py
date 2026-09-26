@@ -26,6 +26,7 @@ from app.models.audit import AuditLog, SupplierTransactionLog
 from app.models.kyc import KYCSubmission, KYCStatus
 from app.models.commission_tier import CommissionTier
 from app.models.partner_api import ApiKey
+from app.models.withdrawal import WithdrawalRequest, WithdrawalStatus
 from datetime import date as Date, datetime, timedelta, timezone
 from app.core.seed_translations import EN_TRANSLATIONS, flatten
 from app.schemas.settings import (
@@ -35,7 +36,7 @@ from app.schemas.settings import (
 from app.services.ledger_svc import LedgerService
 from app.services.payment_methods_svc import get_payment_methods, set_payment_methods
 from app.services.legal_content_svc import LEGAL_TITLES, get_legal_document, save_legal_document
-from app.services import gateway_config_svc, topup_limits_svc
+from app.services import gateway_config_svc, topup_limits_svc, withdrawal_settings_svc, withdrawal_svc
 from app.services.admin_overview_svc import build_overview
 from app.services.catalog_export_svc import build_catalog_workbook
 from app.services.shurjopay_svc import ShurjoPayService
@@ -1857,3 +1858,191 @@ async def reject_kyc(
     )
     await db.commit()
     return {"status": "success"}
+
+
+# --- Withdrawals (Admin + Super Admin review; the settings behind them are
+# Super-Admin-only to change, matching topup-limits) ---
+WITHDRAWAL_UPLOAD_DIR = Path(settings.WITHDRAWAL_UPLOADS_DIR)
+WITHDRAWAL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+WITHDRAWAL_PROOF_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "application/pdf": ".pdf"}
+MAX_WITHDRAWAL_PROOF_BYTES = 5 * 1024 * 1024
+
+
+class WithdrawalSettingsRequest(BaseModel):
+    min_amount: Decimal = Field(..., gt=0)
+    max_amount: Decimal = Field(..., gt=0)
+    fee_type: str = "flat"
+    fee_value: Decimal = Field(Decimal("0"), ge=0)
+    payout_currency: str = "BDT"
+    processing_time: str = "1-3 business days"
+    is_enabled: bool = True
+
+
+@router.get("/withdrawal-settings", dependencies=[Depends(require_admin)])
+async def get_withdrawal_settings_endpoint(db: AsyncSession = Depends(get_db)):
+    cfg = await withdrawal_settings_svc.get_withdrawal_settings(db)
+    return {
+        **withdrawal_settings_svc.serialize(cfg),
+        "fee_types": list(withdrawal_settings_svc.FEE_TYPES),
+        "payout_currencies": list(withdrawal_settings_svc.PAYOUT_CURRENCIES),
+        "base_currency": settings.BASE_CURRENCY,
+    }
+
+
+@router.put("/withdrawal-settings", dependencies=[Depends(require_super_admin)])
+async def update_withdrawal_settings(
+    req: WithdrawalSettingsRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        change = await withdrawal_settings_svc.set_withdrawal_settings(db, req.model_dump(), admin_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_WITHDRAWAL_SETTINGS",
+        before_state=change["before"], after_state=change["after"],
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return change["after"]
+
+
+@router.get("/withdrawals", dependencies=[Depends(require_admin)])
+async def list_withdrawals(
+    status: Optional[str] = None,
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db)
+):
+    query = (
+        select(WithdrawalRequest, User)
+        .join(User, WithdrawalRequest.user_id == User.id)
+        .order_by(WithdrawalRequest.created_at.desc())
+        .limit(limit)
+    )
+    if status:
+        try:
+            query = query.where(WithdrawalRequest.status == WithdrawalStatus(status.upper()))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Unknown withdrawal status")
+    res = await db.execute(query)
+    return [withdrawal_svc.serialize(w, include_user=u) for w, u in res.all()]
+
+
+@router.get("/withdrawals/{withdrawal_id}/proof", dependencies=[Depends(require_admin)])
+async def get_withdrawal_proof(withdrawal_id: str, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(WithdrawalRequest).where(WithdrawalRequest.id == withdrawal_id))
+    withdrawal = res.scalar_one_or_none()
+    if not withdrawal or not withdrawal.proof_filename:
+        raise HTTPException(status_code=404, detail="No payment proof on this withdrawal")
+    path = WITHDRAWAL_UPLOAD_DIR / withdrawal.proof_filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Proof file missing from storage")
+    return FileResponse(path)
+
+
+@router.post("/withdrawals/{withdrawal_id}/approve", dependencies=[Depends(require_admin)])
+async def approve_withdrawal(
+    withdrawal_id: str,
+    request: Request,
+    payment_reference: str = Form(...),
+    proof: UploadFile = File(...),
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Marks a payout sent. The proof screenshot and the reference are both
+    required: this is the only record that the money actually left, and the
+    conversion rate is frozen onto the request at this moment."""
+    res = await db.execute(select(WithdrawalRequest).where(WithdrawalRequest.id == withdrawal_id))
+    withdrawal = res.scalar_one_or_none()
+    if not withdrawal:
+        raise HTTPException(status_code=404, detail="Withdrawal not found")
+
+    ext = WITHDRAWAL_PROOF_TYPES.get(proof.content_type)
+    if not ext:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {proof.content_type}")
+    contents = await proof.read()
+    if len(contents) > MAX_WITHDRAWAL_PROOF_BYTES:
+        raise HTTPException(status_code=400, detail="File too large (max 5MB)")
+    proof_filename = f"{uuid.uuid4().hex}{ext}"
+
+    try:
+        await withdrawal_svc.approve_withdrawal(db, withdrawal, admin_user, payment_reference, proof_filename)
+    except withdrawal_svc.WithdrawalError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Written only once the request itself is accepted, so a refused approval
+    # does not litter the volume with orphan files.
+    (WITHDRAWAL_UPLOAD_DIR / proof_filename).write_bytes(contents)
+
+    user_res = await db.execute(select(User).where(User.id == withdrawal.user_id))
+    user = user_res.scalar_one()
+    payload = withdrawal_svc.email_payload(withdrawal, user)
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="APPROVE_WITHDRAWAL",
+        after_state={
+            "withdrawal_id": withdrawal.id, "reference_no": withdrawal.reference_no,
+            "user_id": withdrawal.user_id, "amount": str(withdrawal.amount),
+            "payout_amount": str(withdrawal.payout_amount), "payout_currency": withdrawal.payout_currency,
+            "conversion_rate": str(withdrawal.conversion_rate), "payment_reference": withdrawal.payment_reference,
+        },
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+
+    cfg = await withdrawal_settings_svc.get_withdrawal_settings(db)
+    admin_copy_to = await EmailService.finance_notice_address(db)
+    # The client asked for the receipt to reach the user and the admin.
+    asyncio.create_task(withdrawal_svc.send_email_background(
+        "paid", user.email, payload, {"processing_time": cfg["processing_time"]}
+    ))
+    asyncio.create_task(withdrawal_svc.send_email_background(
+        "paid", admin_copy_to, payload, {"processing_time": cfg["processing_time"], "for_admin": True}
+    ))
+    return withdrawal_svc.serialize(withdrawal, include_user=user)
+
+
+@router.post("/withdrawals/{withdrawal_id}/reject", dependencies=[Depends(require_admin)])
+async def reject_withdrawal(
+    withdrawal_id: str,
+    request: Request,
+    reason: Optional[str] = None,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(select(WithdrawalRequest).where(WithdrawalRequest.id == withdrawal_id))
+    withdrawal = res.scalar_one_or_none()
+    if not withdrawal:
+        raise HTTPException(status_code=404, detail="Withdrawal not found")
+
+    try:
+        await withdrawal_svc.reject_withdrawal(db, withdrawal, admin_user, reason)
+    except withdrawal_svc.WithdrawalError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    user_res = await db.execute(select(User).where(User.id == withdrawal.user_id))
+    user = user_res.scalar_one()
+    payload = withdrawal_svc.email_payload(withdrawal, user)
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="REJECT_WITHDRAWAL",
+        after_state={
+            "withdrawal_id": withdrawal.id, "reference_no": withdrawal.reference_no,
+            "user_id": withdrawal.user_id, "amount_returned": str(withdrawal.amount), "reason": reason,
+        },
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+
+    asyncio.create_task(withdrawal_svc.send_email_background("rejected", user.email, payload, {"reason": reason}))
+    return withdrawal_svc.serialize(withdrawal, include_user=user)

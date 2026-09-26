@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Wallet, CheckCircle2, Copy, Check } from "lucide-react";
+import Link from "next/link";
+import { Wallet, CheckCircle2, Copy, Check, Banknote } from "lucide-react";
 import { animate } from "framer-motion";
 import { api, API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
@@ -153,9 +154,17 @@ export default function WalletPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <div className="mb-8">
-        <h1 className="text-3xl font-extrabold text-slate-900">Wallets &amp; Financial Ledger</h1>
-        <p className="text-xs text-slate-500 mt-1">Manage balances, top up via cards or mobile banking, and inspect transactions.</p>
+      <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-extrabold text-slate-900">Wallets &amp; Financial Ledger</h1>
+          <p className="text-xs text-slate-500 mt-1">Manage balances, top up via cards or mobile banking, and inspect transactions.</p>
+        </div>
+        <Link
+          href="/wallet/withdraw"
+          className="inline-flex items-center gap-1.5 shrink-0 bg-white hover:bg-gray-50 border border-gray-300 text-slate-700 text-xs font-bold px-4 py-2.5 rounded-xl"
+        >
+          <Banknote className="w-3.5 h-3.5 text-brand-600" /> Withdraw funds
+        </Link>
       </div>
 
       {topupBanner && (

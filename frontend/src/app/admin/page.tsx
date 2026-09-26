@@ -12,12 +12,13 @@ import ShurjoPayCard from "@/components/admin/ShurjoPayCard";
 import LegalContentCard from "@/components/admin/LegalContentCard";
 import SalesReportTab from "@/components/admin/SalesReportTab";
 import FinanceTab from "@/components/admin/FinanceTab";
+import WithdrawalsTab from "@/components/admin/WithdrawalsTab";
 import OverviewTab from "@/components/admin/overview/OverviewTab";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { Trash2, Download } from "lucide-react";
 import { saveBlob } from "@/components/finance/StatementView";
 
-type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales" | "finance";
+type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "withdrawals" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales" | "finance";
 
 export default function AdminConsolePage() {
   const { formatPrice, languages: appLanguages } = useAppSettings();
@@ -93,6 +94,9 @@ export default function AdminConsolePage() {
   const [uploadingKind, setUploadingKind] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [syncing, setSyncing] = useState(false);
+  // Kept here rather than inside WithdrawalsTab so the sidebar badge is right
+  // before the tab has ever been opened.
+  const [pendingWithdrawals, setPendingWithdrawals] = useState(0);
 
   // Currency override
   const [overrideCurrency, setOverrideCurrency] = useState("BDT");
@@ -117,6 +121,7 @@ export default function AdminConsolePage() {
     api.getMerchantQueue(token).then(setMerchants).catch(console.error);
     api.getPaymentQueue(token).then(setPayments).catch(console.error);
     api.getSupplierLogs(token).then(setSupplierLogs).catch(console.error);
+    api.getAdminWithdrawals(token, "PENDING").then((rows) => setPendingWithdrawals(rows.length)).catch(console.error);
     api.getAdminOrders(token).then(setAllOrders).catch(console.error);
     loadCatalog(token, { offset: 0 });
     api.getKycQueue(token).then(setKycQueue).catch(console.error);
@@ -573,6 +578,7 @@ export default function AdminConsolePage() {
           { id: "overview", label: "Overview" },
           { id: "merchants", label: `Merchants (${merchants.filter(m => m.status === "PENDING").length})` },
           { id: "payments", label: `Manual Deposits (${payments.filter(p => p.status === "PENDING").length})` },
+          { id: "withdrawals", label: `Withdrawals (${pendingWithdrawals})` },
           { id: "orders", label: "Orders" },
           { id: "catalog", label: "Catalog" },
           { id: "sales", label: "Sales & Profit" },
@@ -1081,6 +1087,7 @@ export default function AdminConsolePage() {
       {/* Tab: Sales & Profit report */}
       {activeTab === "sales" && <SalesReportTab />}
       {activeTab === "finance" && <FinanceTab />}
+      {activeTab === "withdrawals" && <WithdrawalsTab isSuperAdmin={isSuperAdmin} onCountChange={setPendingWithdrawals} />}
 
       {/* Tab: Catalog - selling profit % sets every price */}
       {activeTab === "catalog" && (

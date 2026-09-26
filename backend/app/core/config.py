@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     # authenticated endpoint (GET /admin/kyc/{id}/document/{side}).
     KYC_UPLOADS_DIR: str = os.getenv("KYC_UPLOADS_DIR", "kyc_uploads")
 
+    # Payout proof screenshots attached when an admin marks a withdrawal
+    # paid. Private for the same reason as KYC: the image shows a bank or
+    # mobile-wallet account. Only served via GET /admin/withdrawals/{id}/proof
+    # and the owner's own receipt endpoint.
+    WITHDRAWAL_UPLOADS_DIR: str = os.getenv("WITHDRAWAL_UPLOADS_DIR", "withdrawal_uploads")
+
     # How often the background job re-syncs the VivaPe catalog (countries +
     # products for the popular-destination list). 0 disables the scheduled
     # job entirely (sync still available on-demand via POST

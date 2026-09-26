@@ -62,11 +62,16 @@ services:
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Triptel}
       UPLOADS_DIR: /app/uploads
       KYC_UPLOADS_DIR: /app/kyc_uploads
+      # Payout proof screenshots. Its own volume, like KYC: these are the
+      # only evidence a withdrawal was actually sent, so they must survive a
+      # redeploy, and they are never served from the public uploads mount.
+      WITHDRAWAL_UPLOADS_DIR: /app/withdrawal_uploads
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - uploads_data:/app/uploads
       - kyc_uploads_data:/app/kyc_uploads
+      - withdrawal_uploads_data:/app/withdrawal_uploads
       - logs_data:/var/log/esim
     networks:
       - esim-network
@@ -105,6 +110,8 @@ volumes:
     name: esim_uploads_data
   kyc_uploads_data:
     name: esim_kyc_uploads_data
+  withdrawal_uploads_data:
+    name: esim_withdrawal_uploads_data
   logs_data:
     name: esim_logs_data
 
