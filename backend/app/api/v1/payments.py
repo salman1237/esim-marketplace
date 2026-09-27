@@ -16,6 +16,7 @@ from app.services.shurjopay_svc import ShurjoPayService
 from app.services.currency_svc import CurrencyService
 from app.services.ledger_svc import LedgerService
 from app.services.topup_limits_svc import get_topup_limits
+from app.services import discount_svc
 from app.services.checkout_svc import resolve_beneficiary, RESELLER_ROLES
 from app.services.order_fulfilment import start_fulfilment
 from app.core.logging import get_logger
@@ -107,7 +108,15 @@ async def initiate_order_via_shurjopay(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    total_cost = Decimal(str(product.retail_price))
+    list_price = Decimal(str(product.retail_price))
+    try:
+        discount_code, discount_amount = await discount_svc.resolve_for_checkout(
+            db, req.discount_code, current_user, product, list_price
+        )
+    except discount_svc.DiscountError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    total_cost = list_price - discount_amount
+
     order_no = f"ORD-{uuid.uuid4().hex[:6].upper()}"
     order = Order(
         order_no=order_no,
@@ -124,6 +133,11 @@ async def initiate_order_via_shurjopay(
     db.add(order)
     await db.flush()
 
+    if discount_code:
+        await discount_svc.apply_to_order(db, order, discount_code, current_user.id, discount_amount)
+
+    # The gateway is asked for the discounted amount, so the customer pays
+    # what the checkout page showed them.
     amount_bdt = await CurrencyService.convert(db, total_cost, "BDT")
     # "ORDERPAY-" prefix distinguishes this from a wallet TOPUP- callback;
     # the order id itself (a UUID, so already globally unique) is the

@@ -8,6 +8,7 @@ import { useAppSettings } from "@/lib/AppSettingsContext";
 import { esimInstallLinks } from "@/lib/esimInstall";
 import { waitForOrder } from "@/lib/waitForOrder";
 import PaymentMethodChooser from "@/components/PaymentMethodChooser";
+import DiscountCodeBox from "@/components/DiscountCodeBox";
 import { usePackageFilters, PackageFilterChips } from "@/components/explore/PackageFilters";
 
 type Product = {
@@ -20,9 +21,11 @@ type Product = {
   currency?: string;
 };
 
+type Discount = { code: string; discount_amount: number; total: number };
+
 type Flow =
   | { stage: "checking"; product: Product }
-  | { stage: "choose"; product: Product; balance: number }
+  | { stage: "choose"; product: Product; balance: number; discount: Discount | null }
   | { stage: "working"; product: Product }
   | { stage: "redirecting"; product: Product }
   | { stage: "success"; product: Product; order: any }
@@ -39,6 +42,9 @@ export default function PackageBrowser({ country, products }: { country: any; pr
   const { filtered } = filters;
   const [flow, setFlow] = useState<Flow | null>(null);
   const [workingStep, setWorkingStep] = useState(0);
+  const [code, setCode] = useState("");
+  const [applied, setApplied] = useState<{ code: string; discountLabel: string; totalLabel: string } | null>(null);
+  const [codeError, setCodeError] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (flow?.stage !== "working") {
@@ -51,12 +57,12 @@ export default function PackageBrowser({ country, products }: { country: any; pr
 
   const busy = flow?.stage === "checking" || flow?.stage === "working" || flow?.stage === "redirecting";
 
-  const payByGateway = async (product: Product) => {
+  const payByGateway = async (product: Product, code?: string) => {
     const token = localStorage.getItem("esim_token");
     if (!token) return;
     setFlow({ stage: "redirecting", product });
     try {
-      const res = await api.initiateOrderPayment(token, product.id);
+      const res = await api.initiateOrderPayment(token, product.id, code ? { discount_code: code } : {});
       const checkoutUrl = res.checkout_url || res.checkoutUrl;
       if (checkoutUrl) {
         window.location.href = checkoutUrl;
@@ -68,12 +74,15 @@ export default function PackageBrowser({ country, products }: { country: any; pr
     }
   };
 
-  const payByWallet = async (product: Product) => {
+  const payByWallet = async (product: Product, code?: string) => {
     const token = localStorage.getItem("esim_token");
     if (!token) return;
     setFlow({ stage: "working", product });
     try {
-      const accepted = await api.checkout(token, { product_id: product.id, payment_method: "WALLET", is_buy_for_user: false });
+      const accepted = await api.checkout(token, {
+        product_id: product.id, payment_method: "WALLET", is_buy_for_user: false,
+        ...(code ? { discount_code: code } : {}),
+      });
       let order;
       try {
         order = await waitForOrder(token, accepted.id);
@@ -100,6 +109,40 @@ export default function PackageBrowser({ country, products }: { country: any; pr
       return;
     }
     setFlow({ stage: "checking", product });
+    setCodeError(null);
+
+    // A code is checked against the package being bought, since it can be
+    // limited to a destination, a package or a minimum order. Checkout
+    // re-validates under a lock, so this is a quote, not a promise.
+    let discount: Discount | null = null;
+    const typed = code.trim();
+    if (typed) {
+      try {
+        const preview = await api.previewDiscount(token, typed, product.id);
+        if (preview.valid) {
+          discount = { code: preview.code, discount_amount: Number(preview.discount_amount), total: Number(preview.total) };
+          setApplied({
+            code: preview.code,
+            discountLabel: formatPrice(Number(preview.discount_amount)),
+            totalLabel: formatPrice(Number(preview.total)),
+          });
+        } else {
+          // Stop rather than quietly charge full price - the customer
+          // deliberately entered a code.
+          setApplied(null);
+          setCodeError(preview.reason || "That code isn't valid.");
+          setFlow(null);
+          return;
+        }
+      } catch {
+        setApplied(null);
+        setCodeError("Couldn't check that code. Try again, or clear it to buy at the normal price.");
+        setFlow(null);
+        return;
+      }
+    }
+
+    const payable = discount ? discount.total : priceOf(product);
     let balance: number | null = null;
     try {
       const wallets = await api.getMyWallets(token);
@@ -109,11 +152,17 @@ export default function PackageBrowser({ country, products }: { country: any; pr
       // Balance unknown - don't offer a wallet payment we can't vouch for.
       balance = null;
     }
-    if (balance !== null && balance >= priceOf(product)) {
-      setFlow({ stage: "choose", product, balance });
+    if (balance !== null && balance >= payable) {
+      setFlow({ stage: "choose", product, balance, discount });
     } else {
-      await payByGateway(product);
+      await payByGateway(product, discount?.code);
     }
+  };
+
+  const clearCode = () => {
+    setCode("");
+    setApplied(null);
+    setCodeError(null);
   };
 
   return (
@@ -123,6 +172,16 @@ export default function PackageBrowser({ country, products }: { country: any; pr
           <PackageFilterChips filters={filters} />
         </div>
       )}
+
+      <div className="glass-panel rounded-2xl border border-gray-200 p-4 sm:p-5 max-w-md">
+        <DiscountCodeBox
+          value={code}
+          onChange={(v) => { setCode(v); setApplied(null); setCodeError(null); }}
+          applied={applied}
+          error={codeError}
+          onClear={clearCode}
+        />
+      </div>
 
       <div className="flex items-center justify-between">
         <p className="text-xs text-slate-500">
@@ -163,18 +222,24 @@ export default function PackageBrowser({ country, products }: { country: any; pr
         </div>
       )}
 
-      {flow?.stage === "choose" && (
-        <PaymentMethodChooser
-          open
-          summary={<>{country.name_en} · {dataLabel(flow.product)} · {flow.product.validity_days} days</>}
-          priceLabel={formatPrice(priceOf(flow.product))}
-          walletBalanceLabel={formatPrice(flow.balance)}
-          walletAfterLabel={formatPrice(flow.balance - priceOf(flow.product))}
-          onWallet={() => payByWallet(flow.product)}
-          onGateway={() => payByGateway(flow.product)}
-          onCancel={() => setFlow(null)}
-        />
-      )}
+      {flow?.stage === "choose" && (() => {
+        const payable = flow.discount ? flow.discount.total : priceOf(flow.product);
+        return (
+          <PaymentMethodChooser
+            open
+            summary={<>{country.name_en} · {dataLabel(flow.product)} · {flow.product.validity_days} days</>}
+            priceLabel={formatPrice(payable)}
+            listPriceLabel={formatPrice(priceOf(flow.product))}
+            discountLabel={flow.discount ? formatPrice(flow.discount.discount_amount) : undefined}
+            discountCode={flow.discount?.code}
+            walletBalanceLabel={formatPrice(flow.balance)}
+            walletAfterLabel={formatPrice(flow.balance - payable)}
+            onWallet={() => payByWallet(flow.product, flow.discount?.code)}
+            onGateway={() => payByGateway(flow.product, flow.discount?.code)}
+            onCancel={() => setFlow(null)}
+          />
+        );
+      })()}
 
       {flow && flow.stage !== "choose" && flow.stage !== "checking" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">

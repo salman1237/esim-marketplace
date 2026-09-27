@@ -9,6 +9,11 @@ type Props = {
   priceLabel: string;
   walletBalanceLabel: string;
   walletAfterLabel: string;
+  // Set only when a discount code was applied: the pre-discount price and
+  // what came off, so the customer can see where the total came from.
+  listPriceLabel?: string;
+  discountLabel?: string;
+  discountCode?: string;
   onWallet: () => void;
   onGateway: () => void;
   onCancel: () => void;
@@ -17,7 +22,8 @@ type Props = {
 // Shown only when the wallet can actually cover the purchase - otherwise
 // Buy Now goes straight to the payment gateway and this never opens.
 export default function PaymentMethodChooser({
-  open, summary, priceLabel, walletBalanceLabel, walletAfterLabel, onWallet, onGateway, onCancel,
+  open, summary, priceLabel, walletBalanceLabel, walletAfterLabel,
+  listPriceLabel, discountLabel, discountCode, onWallet, onGateway, onCancel,
 }: Props) {
   if (!open) return null;
   return (
@@ -35,9 +41,25 @@ export default function PaymentMethodChooser({
         <h3 id="pay-choose-title" className="text-lg font-bold text-slate-900 pe-8">How would you like to pay?</h3>
         <p className="text-xs text-slate-500 mt-1">{summary}</p>
 
-        <div className="mt-4 rounded-xl bg-gray-50 border border-gray-200 px-4 py-3 flex items-center justify-between">
-          <span className="text-xs text-slate-500">Total</span>
-          <span className="text-lg font-black text-slate-900">{priceLabel}</span>
+        <div className="mt-4 rounded-xl bg-gray-50 border border-gray-200 px-4 py-3 space-y-1.5">
+          {discountLabel && (
+            <>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500">Package price</span>
+                <span className="text-slate-500 line-through">{listPriceLabel}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-emerald-700 font-semibold">
+                  Discount{discountCode ? ` · ${discountCode}` : ""}
+                </span>
+                <span className="text-emerald-700 font-semibold">- {discountLabel}</span>
+              </div>
+            </>
+          )}
+          <div className={`flex items-center justify-between${discountLabel ? " pt-1.5 border-t border-gray-200" : ""}`}>
+            <span className="text-xs text-slate-500">Total</span>
+            <span className="text-lg font-black text-slate-900">{priceLabel}</span>
+          </div>
         </div>
 
         <div className="mt-4 space-y-3">

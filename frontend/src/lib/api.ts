@@ -20,6 +20,8 @@ export type SalesReportParams = {
   validity?: string;
   channel?: string;
   country?: string;
+  // A code, or the special values ANY (every discounted sale) / NONE.
+  discount_code?: string;
   sort?: string;
   direction?: "asc" | "desc";
   limit?: number;
@@ -102,6 +104,11 @@ export const api = {
   // Payments
   initiateShurjopayTopup: (token: string, amountUsd: number) =>
     fetchApi(`/api/v1/payments/shurjopay/topup?amount=${amountUsd}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+
+  // Discount codes — preview before paying; the real validation happens
+  // again at checkout, under a row lock.
+  previewDiscount: (token: string, code: string, productId: string) =>
+    fetchApi("/api/v1/discounts/preview", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ code, product_id: productId }) }),
 
   // Orders
   checkout: (token: string, data: any) => fetchApi("/api/v1/orders/checkout", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
@@ -216,6 +223,13 @@ export const api = {
   getAdminUsers: (token: string, q?: string) => fetchApi(`/api/v1/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   makeUserReseller: (token: string, userId: string, data: { business_name: string; contact_phone: string; commission_rate_pct?: number }) => fetchApi(`/api/v1/admin/users/${userId}/make-reseller`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
   createStaffAccount: (token: string, data: any) => fetchApi("/api/v1/admin/users", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  // Admin: discount codes
+  getAdminDiscounts: (token: string) => fetchApi("/api/v1/admin/discounts", { headers: { Authorization: `Bearer ${token}` } }),
+  createAdminDiscount: (token: string, data: any) => fetchApi("/api/v1/admin/discounts", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  updateAdminDiscount: (token: string, id: string, data: any) => fetchApi(`/api/v1/admin/discounts/${id}`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  deleteAdminDiscount: (token: string, id: string) => fetchApi(`/api/v1/admin/discounts/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }),
+  getAdminDiscountRedemptions: (token: string, id: string) => fetchApi(`/api/v1/admin/discounts/${id}/redemptions`, { headers: { Authorization: `Bearer ${token}` } }),
+
   // Admin: withdrawals
   getAdminWithdrawals: (token: string, status?: string) => fetchApi(`/api/v1/admin/withdrawals${status ? `?status=${status}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   getAdminWithdrawalSettings: (token: string) => fetchApi("/api/v1/admin/withdrawal-settings", { headers: { Authorization: `Bearer ${token}` } }),

@@ -31,6 +31,13 @@ class Order(Base):
     # report's profit stays true after later cost or profit % changes.
     cost_amount = Column(Numeric(18, 4), nullable=True)
     currency = Column(String(10), default="EUR")
+    # A discount code applied at checkout. total_amount above is already net
+    # of it - this is kept so the sales report can separate "we sold cheaper"
+    # from "the product got cheaper", and so commission (calculated on
+    # total_amount) is visibly on the discounted price.
+    discount_code_id = Column(String(36), ForeignKey("discount_codes.id", ondelete="SET NULL"), nullable=True)
+    # server_default so the NOT NULL holds for the orders that already exist.
+    discount_amount = Column(Numeric(18, 4), default=0.0000, server_default="0", nullable=False)
     payment_method = Column(Enum(PaymentMethod), nullable=False)
     status = Column(Enum(OrderStatus), default=OrderStatus.PENDING, nullable=False)
     is_reseller_order = Column(Boolean, default=False)

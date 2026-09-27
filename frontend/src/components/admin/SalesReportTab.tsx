@@ -31,12 +31,13 @@ const STATUS_OPTIONS = [
 
 const CHANNEL_LABELS: Record<string, string> = { web: "Web", api: "Partner API", admin: "Admin" };
 
-type View = "transactions" | "daily" | "bundle" | "country";
+type View = "transactions" | "daily" | "bundle" | "country" | "discount";
 const VIEWS: { id: View; label: string }[] = [
   { id: "transactions", label: "Transactions" },
   { id: "daily", label: "Day by day" },
   { id: "bundle", label: "By bundle" },
   { id: "country", label: "By country" },
+  { id: "discount", label: "By discount code" },
 ];
 
 const selectCls = "bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900";
@@ -65,7 +66,7 @@ function SortHeader({ label, column, sort, direction, onSort, align = "end" }: {
 }
 
 // Grouped view (day / bundle / country) - sorted client-side, the groups are small.
-function GroupTable({ rows, labelKey, labelTitle, renderLabel }: { rows: any[]; labelKey: string; labelTitle: string; renderLabel?: (r: any) => React.ReactNode }) {
+function GroupTable({ rows, labelKey, labelTitle, renderLabel, showDiscount = false }: { rows: any[]; labelKey: string; labelTitle: string; renderLabel?: (r: any) => React.ReactNode; showDiscount?: boolean }) {
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: labelKey === "day" ? "day" : "selling_price", dir: "desc" });
   const sorted = [...rows].sort((a, b) => {
     const av = a[sort.key], bv = b[sort.key];
@@ -82,6 +83,7 @@ function GroupTable({ rows, labelKey, labelTitle, renderLabel }: { rows: any[]; 
           <tr>
             <SortHeader label={labelTitle} column={labelKey} sort={sort.key} direction={sort.dir} onSort={onSort} align="start" />
             <SortHeader label="Orders" column="orders" sort={sort.key} direction={sort.dir} onSort={onSort} />
+            {showDiscount && <SortHeader label="Discount" column="discount" sort={sort.key} direction={sort.dir} onSort={onSort} />}
             <SortHeader label="Selling price" column="selling_price" sort={sort.key} direction={sort.dir} onSort={onSort} />
             <SortHeader label="Base cost" column="cost" sort={sort.key} direction={sort.dir} onSort={onSort} />
             <SortHeader label="Profit" column="profit" sort={sort.key} direction={sort.dir} onSort={onSort} />
@@ -99,6 +101,7 @@ function GroupTable({ rows, labelKey, labelTitle, renderLabel }: { rows: any[]; 
                 </div>
               </td>
               <td className="py-2.5 pe-3 text-end font-mono">{r.orders}</td>
+              {showDiscount && <td className="py-2.5 pe-3 text-end font-mono text-amber-600">{eur(r.discount || 0)}</td>}
               <td className="py-2.5 pe-3 text-end font-mono font-bold text-slate-900">{eur(r.selling_price)}</td>
               <td className="py-2.5 pe-3 text-end font-mono text-slate-600">{eur(r.cost)}</td>
               <td className="py-2.5 pe-3 text-end font-mono text-emerald-600">
@@ -109,7 +112,7 @@ function GroupTable({ rows, labelKey, labelTitle, renderLabel }: { rows: any[]; 
               <td className="py-2.5 text-end font-mono font-bold text-emerald-700">{eur(r.net_profit)}</td>
             </tr>
           ))}
-          {rows.length === 0 && <tr><td colSpan={7} className="py-10 text-center text-slate-500">No orders match these filters.</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={showDiscount ? 8 : 7} className="py-10 text-center text-slate-500">No orders match these filters.</td></tr>}
         </tbody>
       </table>
     </div>
@@ -125,6 +128,7 @@ export default function SalesReportTab() {
   const [validity, setValidity] = useState("");
   const [channel, setChannel] = useState("");
   const [country, setCountry] = useState("");
+  const [discountCode, setDiscountCode] = useState("");
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("date");
@@ -141,8 +145,9 @@ export default function SalesReportTab() {
     (): SalesReportParams => ({
       date_from: dateFrom || undefined, date_to: dateTo || undefined, status, q: query || undefined,
       plan: plan || undefined, validity: validity || undefined, channel: channel || undefined, country: country || undefined,
+      discount_code: discountCode || undefined,
     }),
-    [dateFrom, dateTo, status, query, plan, validity, channel, country]
+    [dateFrom, dateTo, status, query, plan, validity, channel, country, discountCode]
   );
 
   const load = useCallback(async () => {
@@ -266,6 +271,15 @@ export default function SalesReportTab() {
             </select>
           </div>
           <div>
+            <label className="text-[11px] text-slate-600 font-semibold block mb-1">Discount code</label>
+            <select value={discountCode} onChange={(e) => withReset(setDiscountCode)(e.target.value)} className={selectCls}>
+              <option value="">Any (with or without)</option>
+              <option value="ANY">Any discounted sale</option>
+              <option value="NONE">Full price only</option>
+              {(breakdown?.discount_code_options || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
             <label className="text-[11px] text-slate-600 font-semibold block mb-1">Country</label>
             <input value={country} maxLength={10} placeholder="ISO e.g. TH" onChange={(e) => withReset(setCountry)(e.target.value.toUpperCase())} className={`${selectCls} w-24 uppercase`} />
           </div>
@@ -285,9 +299,14 @@ export default function SalesReportTab() {
       </div>
 
       {totals && (
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
           <Total label="Orders" value={String(totals.orders)} />
           <Total label="Selling price" value={eur(totals.selling_price)} />
+          <Total
+            label={`Discounts${totals.discounted_orders ? ` (${totals.discounted_orders} order${totals.discounted_orders === 1 ? "" : "s"})` : ""}`}
+            value={eur(totals.discount || 0)}
+            tone="text-amber-600"
+          />
           <Total label="Base cost" value={eur(totals.cost)} tone="text-slate-600" />
           <Total label={`Profit${totals.profit_pct ? ` (${Number(totals.profit_pct).toFixed(1)}%)` : ""}`} value={eur(totals.profit)} tone="text-emerald-600" />
           <Total label="Merchant commission" value={eur(totals.merchant_commission)} tone="text-merchant-600" />
@@ -322,6 +341,20 @@ export default function SalesReportTab() {
         {view === "country" && breakdown && (
           <GroupTable rows={breakdown.by_country} labelKey="country" labelTitle="Country" renderLabel={(r) => <>{r.country} <span className="text-slate-400">({r.country_iso2})</span></>} />
         )}
+        {view === "discount" && breakdown && (
+          <>
+            <p className="text-[11px] text-slate-500 mb-3">
+              Only discounted orders appear here. &ldquo;Selling price&rdquo; is what was actually received, so profit is already net of the discount.
+            </p>
+            <GroupTable
+              rows={breakdown.by_discount_code}
+              labelKey="code"
+              labelTitle="Code"
+              renderLabel={(r) => <span className="font-mono font-bold">{r.code}</span>}
+              showDiscount
+            />
+          </>
+        )}
 
         {view === "transactions" && (
           <>
@@ -334,6 +367,7 @@ export default function SalesReportTab() {
                     <th className="py-2 pe-3 text-start">Buyer</th>
                     <SortHeader label="Product" column="product" align="start" {...sortProps} />
                     <SortHeader label="Base cost" column="cost" {...sortProps} />
+                    <SortHeader label="Discount" column="discount" {...sortProps} />
                     <SortHeader label="Selling price" column="price" {...sortProps} />
                     <SortHeader label="Profit" column="profit" {...sortProps} />
                     <SortHeader label="Commission" column="commission" {...sortProps} />
@@ -341,7 +375,7 @@ export default function SalesReportTab() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {loading && !report && <tr><td colSpan={9} className="py-8 text-center text-slate-400">Loading…</td></tr>}
+                  {loading && !report && <tr><td colSpan={10} className="py-8 text-center text-slate-400">Loading…</td></tr>}
                   {report?.rows.map((r: any) => (
                     <tr key={r.order_id}>
                       <td className="py-2.5 pe-3">
@@ -358,7 +392,20 @@ export default function SalesReportTab() {
                         {r.plan && <div className="text-[10px] text-slate-400">{r.plan}</div>}
                       </td>
                       <td className="py-2.5 pe-3 text-end font-mono text-slate-600">{eur(r.cost)}</td>
-                      <td className="py-2.5 pe-3 text-end font-mono font-bold text-slate-900">{eur(r.selling_price)}</td>
+                      <td className="py-2.5 pe-3 text-end font-mono text-amber-600">
+                        {Number(r.discount) > 0 ? (
+                          <>
+                            {eur(r.discount)}
+                            <div className="text-[10px] text-slate-400 font-sans">{r.discount_code}</div>
+                          </>
+                        ) : "—"}
+                      </td>
+                      <td className="py-2.5 pe-3 text-end font-mono font-bold text-slate-900">
+                        {eur(r.selling_price)}
+                        {Number(r.discount) > 0 && (
+                          <div className="text-[10px] text-slate-400 line-through">{eur(r.list_price)}</div>
+                        )}
+                      </td>
                       <td className="py-2.5 pe-3 text-end font-mono text-emerald-600">
                         {eur(r.profit)}
                         {r.profit_pct && <div className="text-[10px] text-slate-400">{Number(r.profit_pct).toFixed(1)}%</div>}
@@ -368,7 +415,7 @@ export default function SalesReportTab() {
                     </tr>
                   ))}
                   {report && report.rows.length === 0 && (
-                    <tr><td colSpan={9} className="py-10 text-center text-slate-500">No orders match these filters.</td></tr>
+                    <tr><td colSpan={10} className="py-10 text-center text-slate-500">No orders match these filters.</td></tr>
                   )}
                 </tbody>
               </table>

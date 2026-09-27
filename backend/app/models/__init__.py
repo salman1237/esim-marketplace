@@ -11,6 +11,7 @@ from app.models.password_reset import PasswordResetToken
 from app.models.commission_tier import CommissionTier
 from app.models.partner_api import ApiKey, WebhookDeliveryLog
 from app.models.withdrawal import BankAccount, WithdrawalRequest, WithdrawalStatus, PayoutAccountType
+from app.models.discount import DiscountCode, DiscountRedemption, DiscountType, DiscountScope
 
 __all__ = [
     "User", "UserRole", "UserStatus",
@@ -25,5 +26,6 @@ __all__ = [
     "PasswordResetToken",
     "CommissionTier",
     "ApiKey", "WebhookDeliveryLog",
-    "BankAccount", "WithdrawalRequest", "WithdrawalStatus", "PayoutAccountType"
+    "BankAccount", "WithdrawalRequest", "WithdrawalStatus", "PayoutAccountType",
+    "DiscountCode", "DiscountRedemption", "DiscountType", "DiscountScope"
 ]

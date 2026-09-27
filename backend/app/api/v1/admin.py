@@ -27,6 +27,7 @@ from app.models.kyc import KYCSubmission, KYCStatus
 from app.models.commission_tier import CommissionTier
 from app.models.partner_api import ApiKey
 from app.models.withdrawal import WithdrawalRequest, WithdrawalStatus
+from app.models.discount import DiscountCode, DiscountRedemption, DiscountScope, DiscountType
 from datetime import date as Date, datetime, timedelta, timezone
 from app.core.seed_translations import EN_TRANSLATIONS, flatten
 from app.schemas.settings import (
@@ -36,7 +37,7 @@ from app.schemas.settings import (
 from app.services.ledger_svc import LedgerService
 from app.services.payment_methods_svc import get_payment_methods, set_payment_methods
 from app.services.legal_content_svc import LEGAL_TITLES, get_legal_document, save_legal_document
-from app.services import gateway_config_svc, topup_limits_svc, withdrawal_settings_svc, withdrawal_svc
+from app.services import discount_svc, gateway_config_svc, topup_limits_svc, withdrawal_settings_svc, withdrawal_svc
 from app.services.admin_overview_svc import build_overview
 from app.services.catalog_export_svc import build_catalog_workbook
 from app.services.shurjopay_svc import ShurjoPayService
@@ -1297,8 +1298,20 @@ def _order_channel(order_no: str) -> str:
 def _sales_filters(
     date_from: Optional[Date], date_to: Optional[Date], status: str, q: Optional[str],
     plan: Optional[str] = None, validity: Optional[int] = None, channel: Optional[str] = None, country: Optional[str] = None,
+    discount_code: Optional[str] = None,
 ) -> list:
     conditions = []
+    if discount_code and discount_code.strip():
+        code = discount_svc.normalize_code(discount_code)
+        if code == "ANY":
+            # "Any code" - every discounted sale, whichever campaign it came from.
+            conditions.append(Order.discount_code_id.isnot(None))
+        elif code == "NONE":
+            conditions.append(Order.discount_code_id.is_(None))
+        else:
+            conditions.append(Order.discount_code_id.in_(
+                select(DiscountCode.id).where(func.upper(DiscountCode.code) == code)
+            ))
     if plan:
         if plan not in ("data", "unlimited"):
             raise HTTPException(status_code=400, detail="plan must be 'data' or 'unlimited'")
@@ -1339,6 +1352,9 @@ def _sales_joins(stmt):
         stmt.join(Product, Order.product_id == Product.id)
         .join(Country, Product.country_id == Country.id)
         .join(User, Order.buyer_id == User.id)
+        # Outer: most orders carry no code. discount_code_id is single-valued,
+        # so this can't duplicate a row and inflate the aggregates.
+        .outerjoin(DiscountCode, Order.discount_code_id == DiscountCode.id)
     )
 
 
@@ -1353,6 +1369,7 @@ _SALES_SORTS = {
     "cost": lambda: Order.cost_amount,
     "profit": lambda: Order.total_amount - Order.cost_amount,
     "commission": lambda: Order.reseller_commission_amount,
+    "discount": lambda: Order.discount_amount,
     "product": lambda: Product.title_en,
     "country": lambda: Country.iso2,
 }
@@ -1367,12 +1384,19 @@ def _sales_order_by(sort: str, direction: str) -> list:
     return [ordered.nulls_last(), Order.created_at.desc()]
 
 
-def _sales_row(order: Order, product: Product, country_iso2: str, buyer: User) -> dict:
+def _sales_row(order: Order, product: Product, country_iso2: str, buyer: User, discount_code: Optional[str] = None) -> dict:
+    # selling_price is what the customer actually paid: total_amount is
+    # already net of any discount, so profit here is the real profit and
+    # needs no separate adjustment.
     selling = Decimal(str(order.total_amount))
     cost = Decimal(str(order.cost_amount)) if order.cost_amount is not None else None
     commission = Decimal(str(order.reseller_commission_amount or 0))
+    discount = Decimal(str(order.discount_amount or 0))
     profit = selling - cost if cost is not None else None
     return {
+        "discount_code": discount_code,
+        "discount": _cents(discount),
+        "list_price": _cents(selling + discount),
         "order_id": order.id,
         "order_no": order.order_no,
         "created_at": order.created_at.isoformat() if order.created_at else None,
@@ -1406,6 +1430,7 @@ async def sales_report(
     validity: Optional[int] = None,
     channel: Optional[str] = None,
     country: Optional[str] = None,
+    discount_code: Optional[str] = None,
     sort: str = "date",
     direction: str = Query("desc", pattern="^(asc|desc)$"),
     limit: int = Query(50, ge=1, le=500),
@@ -1413,29 +1438,33 @@ async def sales_report(
     db: AsyncSession = Depends(get_db)
 ):
     """Per-transaction base cost, selling price, profit, merchant commission
-    and Triptel's net profit, with totals for the filtered range."""
-    conditions = _sales_filters(date_from, date_to, status, q, plan, validity, channel, country)
+    and Triptel's net profit, with totals for the filtered range.
+    `discount_code` accepts a code, ANY (every discounted sale) or NONE."""
+    conditions = _sales_filters(date_from, date_to, status, q, plan, validity, channel, country, discount_code)
     order_by = _sales_order_by(sort, direction)
     has_cost = Order.cost_amount.isnot(None)
 
-    count, selling_total, selling_with_cost, cost_total, commission_total = (await db.execute(
+    count, selling_total, selling_with_cost, cost_total, commission_total, discount_total, discounted_orders = (await db.execute(
         _sales_joins(select(
             func.count(Order.id),
             func.coalesce(func.sum(Order.total_amount), 0),
             func.coalesce(func.sum(Order.total_amount).filter(has_cost), 0),
             func.coalesce(func.sum(Order.cost_amount), 0),
             func.coalesce(func.sum(Order.reseller_commission_amount), 0),
+            func.coalesce(func.sum(Order.discount_amount), 0),
+            func.count(Order.id).filter(Order.discount_code_id.isnot(None)),
         ).select_from(Order)).where(*conditions)
     )).one()
 
     rows = (await db.execute(
-        _sales_joins(select(Order, Product, Country.iso2, User).select_from(Order))
+        _sales_joins(select(Order, Product, Country.iso2, User, DiscountCode.code).select_from(Order))
         .where(*conditions).order_by(*order_by).limit(limit).offset(offset)
     )).all()
 
     cost_total = Decimal(str(cost_total))
     profit_total = Decimal(str(selling_with_cost)) - cost_total
     commission_total = Decimal(str(commission_total))
+    discount_total = Decimal(str(discount_total))
     return {
         "currency": settings.BASE_CURRENCY,
         "totals": {
@@ -1446,6 +1475,10 @@ async def sales_report(
             "profit_pct": _cents(profit_total / cost_total * 100) if cost_total else None,
             "merchant_commission": _cents(commission_total),
             "net_profit": _cents(profit_total - commission_total),
+            # Revenue given away, and the list price it came off.
+            "discount": _cents(discount_total),
+            "discounted_orders": discounted_orders,
+            "list_price": _cents(Decimal(str(selling_total)) + discount_total),
         },
         "rows": [_sales_row(*row) for row in rows],
         "limit": limit,
@@ -1453,7 +1486,7 @@ async def sales_report(
     }
 
 
-def _money_group(n, selling, selling_with_cost, cost, commission) -> dict:
+def _money_group(n, selling, selling_with_cost, cost, commission, discount=0) -> dict:
     profit = Decimal(str(selling_with_cost)) - Decimal(str(cost))
     cost = Decimal(str(cost))
     return {
@@ -1464,6 +1497,7 @@ def _money_group(n, selling, selling_with_cost, cost, commission) -> dict:
         "profit_pct": _cents(profit / cost * 100) if cost else None,
         "merchant_commission": _cents(commission),
         "net_profit": _cents(profit - Decimal(str(commission))),
+        "discount": _cents(discount),
     }
 
 
@@ -1477,17 +1511,20 @@ async def sales_breakdown(
     validity: Optional[int] = None,
     channel: Optional[str] = None,
     country: Optional[str] = None,
+    discount_code: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
     """The same filtered sales grouped by UTC day, by bundle (data size +
-    validity) and by country - for spotting which days and packages earn."""
-    conditions = _sales_filters(date_from, date_to, status, q, plan, validity, channel, country)
+    validity), by country and by discount code - for spotting which days,
+    packages and campaigns earn."""
+    conditions = _sales_filters(date_from, date_to, status, q, plan, validity, channel, country, discount_code)
     money = (
         func.count(Order.id),
         func.coalesce(func.sum(Order.total_amount), 0),
         func.coalesce(func.sum(Order.total_amount).filter(Order.cost_amount.isnot(None)), 0),
         func.coalesce(func.sum(Order.cost_amount), 0),
         func.coalesce(func.sum(Order.reseller_commission_amount), 0),
+        func.coalesce(func.sum(Order.discount_amount), 0),
     )
 
     day = func.date(func.timezone("UTC", Order.created_at))
@@ -1507,8 +1544,20 @@ async def sales_breakdown(
         .order_by(func.sum(Order.total_amount).desc()).limit(50)
     )).all()
 
+    # Per-campaign performance: what each code sold and what it gave away.
+    by_code_rows = (await db.execute(
+        _sales_joins(select(DiscountCode.code, *money).select_from(Order))
+        .where(*conditions, Order.discount_code_id.isnot(None))
+        .group_by(DiscountCode.code)
+        .order_by(func.sum(Order.total_amount).desc())
+    )).all()
+
     validity_options = (await db.execute(
         select(Product.validity_days).where(Product.is_active == True).distinct().order_by(Product.validity_days)
+    )).scalars().all()
+
+    code_options = (await db.execute(
+        select(DiscountCode.code).order_by(DiscountCode.created_at.desc()).limit(200)
     )).scalars().all()
 
     by_bundle = []
@@ -1523,7 +1572,9 @@ async def sales_breakdown(
         "daily": [{"day": d.isoformat(), **_money_group(*m)} for d, *m in daily],
         "by_bundle": by_bundle,
         "by_country": [{"country_iso2": iso2, "country": name, **_money_group(*m)} for iso2, name, *m in countries],
+        "by_discount_code": [{"code": code, **_money_group(*m)} for code, *m in by_code_rows],
         "validity_options": validity_options,
+        "discount_code_options": code_options,
     }
 
 
@@ -1537,13 +1588,14 @@ async def sales_report_csv(
     validity: Optional[int] = None,
     channel: Optional[str] = None,
     country: Optional[str] = None,
+    discount_code: Optional[str] = None,
     sort: str = "date",
     direction: str = Query("desc", pattern="^(asc|desc)$"),
     db: AsyncSession = Depends(get_db)
 ):
-    conditions = _sales_filters(date_from, date_to, status, q, plan, validity, channel, country)
+    conditions = _sales_filters(date_from, date_to, status, q, plan, validity, channel, country, discount_code)
     rows = (await db.execute(
-        _sales_joins(select(Order, Product, Country.iso2, User).select_from(Order))
+        _sales_joins(select(Order, Product, Country.iso2, User, DiscountCode.code).select_from(Order))
         .where(*conditions).order_by(*_sales_order_by(sort, direction)).limit(50000)
     )).all()
 
@@ -1552,7 +1604,8 @@ async def sales_report_csv(
     writer = csv.writer(buf)
     writer.writerow([
         "Order no", "Date (UTC)", "Status", "Channel", "Payment", "Buyer", "Buyer email", "Product", "Plan", "Country",
-        f"Base cost ({currency})", f"Selling price ({currency})", f"Profit ({currency})", "Profit %",
+        f"Base cost ({currency})", f"List price ({currency})", "Discount code", f"Discount ({currency})",
+        f"Selling price ({currency})", f"Profit ({currency})", "Profit %",
         f"Merchant commission ({currency})", f"Net profit ({currency})",
     ])
     for row in rows:
@@ -1560,7 +1613,8 @@ async def sales_report_csv(
         writer.writerow([
             r["order_no"], r["created_at"], r["status"], r["channel"], r["payment_method"],
             r["buyer"]["username"], r["buyer"]["email"], r["product"], r["plan"], r["country_iso2"],
-            r["cost"], r["selling_price"], r["profit"], r["profit_pct"], r["merchant_commission"], r["net_profit"],
+            r["cost"], r["list_price"], r["discount_code"] or "", r["discount"],
+            r["selling_price"], r["profit"], r["profit_pct"], r["merchant_commission"], r["net_profit"],
         ])
 
     filename = f"triptel-sales-{date_from or 'start'}-to-{date_to or 'now'}.csv"
@@ -2046,3 +2100,241 @@ async def reject_withdrawal(
 
     asyncio.create_task(withdrawal_svc.send_email_background("rejected", user.email, payload, {"reason": reason}))
     return withdrawal_svc.serialize(withdrawal, include_user=user)
+
+
+# --- Discount codes (Admin + Super Admin; the usage report is what makes a
+# campaign judgeable, so it ships with the CRUD rather than after it) ---
+
+class DiscountCodeRequest(BaseModel):
+    code: str = Field(..., min_length=3, max_length=40)
+    description: Optional[str] = None
+    discount_type: DiscountType = DiscountType.PERCENT
+    value: Decimal = Field(..., gt=0)
+    max_discount_amount: Optional[Decimal] = Field(None, gt=0)
+    min_order_amount: Optional[Decimal] = Field(None, ge=0)
+    starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
+    max_uses: Optional[int] = Field(None, ge=1)
+    max_uses_per_user: Optional[int] = Field(None, ge=1)
+    first_order_only: bool = False
+    scope: DiscountScope = DiscountScope.ALL
+    country_id: Optional[int] = None
+    product_id: Optional[str] = None
+    is_active: bool = True
+
+
+def _validate_discount_request(req: "DiscountCodeRequest") -> None:
+    if req.discount_type == DiscountType.PERCENT and req.value > 100:
+        raise HTTPException(status_code=400, detail="A percentage discount cannot exceed 100%")
+    if req.starts_at and req.ends_at and req.ends_at <= req.starts_at:
+        raise HTTPException(status_code=400, detail="The end date must be after the start date")
+    if req.scope == DiscountScope.COUNTRY and not req.country_id:
+        raise HTTPException(status_code=400, detail="Choose the destination this code applies to")
+    if req.scope == DiscountScope.PRODUCT and not req.product_id:
+        raise HTTPException(status_code=400, detail="Choose the package this code applies to")
+
+
+async def _discount_usage(db: AsyncSession, code_ids: List[str]) -> dict:
+    """Uses, discount given and revenue kept, per code - counted the same way
+    discount_svc counts them, so the admin figures match what checkout
+    enforces."""
+    if not code_ids:
+        return {}
+    now = datetime.now(timezone.utc)
+    rows = (await db.execute(
+        select(
+            DiscountRedemption.discount_code_id,
+            func.count(DiscountRedemption.id),
+            func.coalesce(func.sum(DiscountRedemption.discount_amount), 0),
+            func.coalesce(func.sum(Order.total_amount), 0),
+        )
+        .join(Order, DiscountRedemption.order_id == Order.id)
+        .where(
+            DiscountRedemption.discount_code_id.in_(code_ids),
+            discount_svc._counted_orders_clause(now),
+        )
+        .group_by(DiscountRedemption.discount_code_id)
+    )).all()
+    return {code_id: (n, Decimal(str(given)), Decimal(str(revenue))) for code_id, n, given, revenue in rows}
+
+
+@router.get("/discounts", dependencies=[Depends(require_admin)])
+async def list_discount_codes(db: AsyncSession = Depends(get_db)):
+    codes = (await db.execute(select(DiscountCode).order_by(DiscountCode.created_at.desc()))).scalars().all()
+    usage = await _discount_usage(db, [c.id for c in codes])
+    return [
+        discount_svc.serialize(
+            c,
+            total_uses=usage.get(c.id, (0, Decimal("0"), Decimal("0")))[0],
+            given=usage.get(c.id, (0, Decimal("0"), Decimal("0")))[1],
+            revenue=usage.get(c.id, (0, Decimal("0"), Decimal("0")))[2],
+        )
+        for c in codes
+    ]
+
+
+@router.post("/discounts", dependencies=[Depends(require_admin)])
+async def create_discount_code(
+    req: DiscountCodeRequest,
+    request: Request,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    _validate_discount_request(req)
+    code_str = discount_svc.normalize_code(req.code)
+    if await discount_svc.find_code(db, code_str):
+        raise HTTPException(status_code=400, detail="That code already exists")
+
+    code = DiscountCode(
+        code=code_str,
+        description=req.description,
+        discount_type=req.discount_type,
+        value=req.value,
+        max_discount_amount=req.max_discount_amount,
+        min_order_amount=req.min_order_amount,
+        starts_at=req.starts_at,
+        ends_at=req.ends_at,
+        max_uses=req.max_uses,
+        max_uses_per_user=req.max_uses_per_user,
+        first_order_only=req.first_order_only,
+        scope=req.scope,
+        country_id=req.country_id if req.scope == DiscountScope.COUNTRY else None,
+        product_id=req.product_id if req.scope == DiscountScope.PRODUCT else None,
+        is_active=req.is_active,
+        created_by_id=admin_user.id,
+    )
+    db.add(code)
+    await db.flush()
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="CREATE_DISCOUNT_CODE",
+        after_state={"code": code.code, "type": code.discount_type.value, "value": str(code.value)},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    await db.refresh(code)
+    return discount_svc.serialize(code)
+
+
+@router.put("/discounts/{code_id}", dependencies=[Depends(require_admin)])
+async def update_discount_code(
+    code_id: str,
+    req: DiscountCodeRequest,
+    request: Request,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    code = (await db.execute(select(DiscountCode).where(DiscountCode.id == code_id))).scalar_one_or_none()
+    if not code:
+        raise HTTPException(status_code=404, detail="Discount code not found")
+    _validate_discount_request(req)
+
+    new_code = discount_svc.normalize_code(req.code)
+    if new_code != code.code:
+        clash = await discount_svc.find_code(db, new_code)
+        if clash and clash.id != code.id:
+            raise HTTPException(status_code=400, detail="That code already exists")
+
+    before = {"code": code.code, "value": str(code.value), "is_active": code.is_active}
+    # Orders already placed keep the discount they were given: only the code's
+    # future behaviour changes here, never a past redemption.
+    code.code = new_code
+    code.description = req.description
+    code.discount_type = req.discount_type
+    code.value = req.value
+    code.max_discount_amount = req.max_discount_amount
+    code.min_order_amount = req.min_order_amount
+    code.starts_at = req.starts_at
+    code.ends_at = req.ends_at
+    code.max_uses = req.max_uses
+    code.max_uses_per_user = req.max_uses_per_user
+    code.first_order_only = req.first_order_only
+    code.scope = req.scope
+    code.country_id = req.country_id if req.scope == DiscountScope.COUNTRY else None
+    code.product_id = req.product_id if req.scope == DiscountScope.PRODUCT else None
+    code.is_active = req.is_active
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_DISCOUNT_CODE", before_state=before,
+        after_state={"code": code.code, "value": str(code.value), "is_active": code.is_active},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    await db.refresh(code)
+    return discount_svc.serialize(code)
+
+
+@router.delete("/discounts/{code_id}", dependencies=[Depends(require_admin)])
+async def delete_discount_code(
+    code_id: str,
+    request: Request,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Only ever deletes a code nobody used. A used code is deactivated
+    instead, because deleting it would cut the link from those orders to the
+    campaign that discounted them."""
+    code = (await db.execute(select(DiscountCode).where(DiscountCode.id == code_id))).scalar_one_or_none()
+    if not code:
+        raise HTTPException(status_code=404, detail="Discount code not found")
+
+    used = (await db.execute(
+        select(func.count(DiscountRedemption.id)).where(DiscountRedemption.discount_code_id == code.id)
+    )).scalar() or 0
+
+    action = "DELETE_DISCOUNT_CODE"
+    if used:
+        code.is_active = False
+        action = "DEACTIVATE_USED_DISCOUNT_CODE"
+    else:
+        await db.delete(code)
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action=action, after_state={"code": code.code, "redemptions": used},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {
+        "status": "success",
+        "deleted": not used,
+        "message": (
+            f"{code.code} has been used {used} time(s), so it was switched off rather than deleted."
+            if used else f"{code.code} deleted."
+        ),
+    }
+
+
+@router.get("/discounts/{code_id}/redemptions", dependencies=[Depends(require_admin)])
+async def list_discount_redemptions(
+    code_id: str,
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db)
+):
+    rows = (await db.execute(
+        select(DiscountRedemption, Order, User)
+        .join(Order, DiscountRedemption.order_id == Order.id)
+        .join(User, DiscountRedemption.user_id == User.id)
+        .where(DiscountRedemption.discount_code_id == code_id)
+        .order_by(DiscountRedemption.created_at.desc())
+        .limit(limit)
+    )).all()
+    return [
+        {
+            "id": r.id,
+            "order_id": o.id,
+            "order_no": o.order_no,
+            "order_status": o.status.value,
+            "username": u.username,
+            "email": u.email,
+            "discount_amount": str(r.discount_amount),
+            "paid_amount": str(o.total_amount),
+            "created_at": r.created_at,
+        }
+        for r, o, u in rows
+    ]

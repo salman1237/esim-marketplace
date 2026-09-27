@@ -13,6 +13,7 @@ from app.models.wallet import Wallet, WalletType, LedgerRefType
 from app.models.order import Order, OrderStatus, PaymentMethod, ESIMProfile
 from app.schemas.order import OrderCreateRequest, OrderResponse, ESIMProfileResponse
 from app.services.ledger_svc import LedgerService
+from app.services import discount_svc
 from app.services.checkout_svc import resolve_beneficiary, RESELLER_ROLES
 from app.services.order_fulfilment import start_fulfilment
 from app.core.logging import get_logger
@@ -53,7 +54,15 @@ async def checkout_esim(
     if req.payment_method != PaymentMethod.WALLET:
         raise HTTPException(status_code=400, detail="Use POST /payments/shurjopay/order-initiate for gateway checkout")
 
-    total_cost = Decimal(str(product.retail_price))
+    list_price = Decimal(str(product.retail_price))
+    # A bad code is an error, not a silent full-price charge.
+    try:
+        discount_code, discount_amount = await discount_svc.resolve_for_checkout(
+            db, req.discount_code, current_user, product, list_price
+        )
+    except discount_svc.DiscountError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    total_cost = list_price - discount_amount
 
     w_res = await db.execute(
         select(Wallet).where(Wallet.user_id == current_user.id, Wallet.wallet_type == WalletType.DEFAULT)
@@ -68,6 +77,8 @@ async def checkout_esim(
         buyer_id=current_user.id,
         beneficiary_id=beneficiary_id,
         product_id=product.id,
+        # What was actually charged - so the wallet debit, the refund on
+        # failure, the profit report and the commission all use one figure.
         total_amount=total_cost,
         cost_amount=product.cost_price,
         currency=product.currency,
@@ -77,6 +88,9 @@ async def checkout_esim(
     )
     db.add(order)
     await db.flush()
+
+    if discount_code:
+        await discount_svc.apply_to_order(db, order, discount_code, current_user.id, discount_amount)
 
     # Debit wallet — raises ValueError (-> 400 below) on insufficient balance,
     # rolling back the whole transaction including the Order row above.

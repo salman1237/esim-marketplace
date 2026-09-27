@@ -7,6 +7,9 @@ from app.models.order import OrderStatus, PaymentMethod, ESIMStatus
 class OrderCreateRequest(BaseModel):
     product_id: str
     payment_method: PaymentMethod = PaymentMethod.WALLET
+    # One code per order - the request carries a single field, and the unique
+    # constraint on discount_redemptions.order_id enforces it in the database.
+    discount_code: Optional[str] = None
     # Reseller flow
     is_buy_for_user: bool = False
     beneficiary_username: Optional[str] = None
@@ -34,6 +37,9 @@ class OrderResponse(BaseModel):
     beneficiary_id: str
     product_id: str
     total_amount: Decimal
+    # Already deducted from total_amount; kept in the response so a receipt
+    # can show what the code saved.
+    discount_amount: Decimal = Decimal("0")
     currency: str
     payment_method: PaymentMethod
     status: OrderStatus
