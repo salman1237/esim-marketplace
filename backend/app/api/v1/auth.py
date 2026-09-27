@@ -27,8 +27,9 @@ from app.schemas.auth import (
 )
 from app.services.google_auth import GoogleTokenError, GoogleUnavailableError, verify_google_id_token
 from app.services.ledger_svc import LedgerService
-from app.services import agent_svc, referral_svc
+from app.services import agent_svc, notify_svc, referral_svc
 from app.services.email_svc import EmailService
+from app.services.referral_settings_svc import event_amounts, get_referral_settings
 
 logger = get_logger(__name__)
 
@@ -91,6 +92,19 @@ async def register(request: Request, req: UserRegister, db: AsyncSession = Depen
             logger.warning("referral_joining_grant_failed", user_id=user.id, error=str(e))
 
     asyncio.create_task(_send_welcome_email_background(user.email, user.username))
+    notify_svc.account_created(
+        username=user.username, email=user.email,
+        referred_by=referrer.username if referrer else None,
+    )
+    if referrer:
+        cfg = await get_referral_settings(db)
+        _, referred_amount = event_amounts(cfg, ReferralEvent.JOINING)
+        referrer_amount, _ = event_amounts(cfg, ReferralEvent.JOINING)
+        notify_svc.referral_used(
+            to=referrer.email, referrer=referrer.username, joined=user.username,
+            reward=str(referrer_amount) if referrer_amount > 0 else None,
+            currency=settings.BASE_CURRENCY,
+        )
 
     token = create_access_token(subject=user.id, role=user.role.value)
     return Token(access_token=token, token_type="bearer", role=user.role.value, user_id=user.id, username=user.username)
@@ -328,6 +342,22 @@ async def apply_merchant(
     )
     db.add(profile)
     await db.commit()
+
+    notify_svc.merchant_applied(
+        to=current_user.email, business_name=profile.business_name,
+        username=current_user.username,
+        agent=agent_profile.company_name if agent_id else None,
+    )
+    if agent_id:
+        # The agent hears that their code was used, which is the whole point
+        # of giving them one.
+        agent_user = (await db.execute(select(User).where(User.id == agent_id))).scalar_one_or_none()
+        if agent_user:
+            notify_svc.agent_code_used(
+                to=agent_user.email, agent=agent_user.username,
+                business_name=profile.business_name, applicant=current_user.username,
+            )
+
     return {
         "status": "success",
         "message": "Application submitted for review",

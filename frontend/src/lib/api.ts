@@ -258,6 +258,8 @@ export const api = {
   makeUserReseller: (token: string, userId: string, data: { business_name: string; contact_phone: string; commission_rate_pct?: number }) => fetchApi(`/api/v1/admin/users/${userId}/make-reseller`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
   createStaffAccount: (token: string, data: any) => fetchApi("/api/v1/admin/users", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
   // Admin: agents
+  getNotificationSettings: (token: string) => fetchApi("/api/v1/admin/notification-settings", { headers: { Authorization: `Bearer ${token}` } }),
+  updateNotificationSettings: (token: string, email: string) => fetchApi("/api/v1/admin/notification-settings", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ system_notice_email: email }) }),
   getSupplierAccount: (token: string, refresh = false) => fetchApi(`/api/v1/admin/supplier/account${refresh ? "?refresh=true" : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   getAdminAgents: (token: string, status?: string) => fetchApi(`/api/v1/admin/agents${status ? `?status=${status}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   getAgentMarginCheck: (token: string, merchantPct: string, agentPct: string) =>

@@ -42,8 +42,8 @@ from app.services.ledger_svc import LedgerService
 from app.services.payment_methods_svc import get_payment_methods, set_payment_methods
 from app.services.legal_content_svc import LEGAL_TITLES, get_legal_document, save_legal_document
 from app.services import (
-    agent_svc, discount_svc, esim_telemetry_svc, gateway_config_svc, referral_settings_svc,
-    referral_svc, topup_limits_svc, withdrawal_settings_svc, withdrawal_svc,
+    agent_svc, discount_svc, esim_telemetry_svc, gateway_config_svc, notify_svc,
+    referral_settings_svc, referral_svc, topup_limits_svc, withdrawal_settings_svc, withdrawal_svc,
 )
 from app.services.admin_overview_svc import build_overview
 from app.services.catalog_export_svc import build_catalog_workbook
@@ -345,9 +345,24 @@ async def approve_merchant(
         # Whoever referred this account earns the new-partner reward, if the
         # admin configured one. Never fails the approval.
         try:
-            await referral_svc.grant(db, user, ReferralEvent.NEW_MERCHANT)
+            reward = await referral_svc.grant(db, user, ReferralEvent.NEW_MERCHANT)
+            if reward:
+                referrer = (await db.execute(
+                    select(User).where(User.id == reward.referrer_id)
+                )).scalar_one_or_none()
+                if referrer:
+                    notify_svc.referred_became_merchant(
+                        to=referrer.email, referrer=referrer.username,
+                        business_name=m.business_name,
+                        reward=str(reward.referrer_amount), currency=settings.BASE_CURRENCY,
+                    )
         except Exception as e:
             logger.warning("referral_new_merchant_grant_failed", user_id=user.id, error=str(e))
+
+        notify_svc.merchant_approved(
+            to=user.email, business_name=m.business_name,
+            rate_pct=str(m.commission_rate_pct), username=user.username,
+        )
 
     await AuditService.log_action(
         db, actor_id=admin_user.id, actor_role=admin_user.role.value,
@@ -2603,6 +2618,11 @@ async def approve_agent(
         user_agent=request.headers.get("user-agent")
     )
     await db.commit()
+    if user:
+        notify_svc.agent_approved(
+            to=user.email, company_name=profile.company_name, agent_code=profile.agent_code,
+            rate_pct=str(profile.commission_rate_pct), username=user.username,
+        )
     return {"status": "success", "agent_code": profile.agent_code}
 
 
@@ -2952,3 +2972,44 @@ async def request_kyc_reverification(
         "message": f"{user.username} must verify again before they can withdraw.",
         "had_submission": submission is not None,
     }
+
+
+# --- Notification settings (Admin sees it, Super Admin changes it) ---
+
+class SystemEmailRequest(BaseModel):
+    system_notice_email: EmailStr
+
+
+@router.get("/notification-settings", dependencies=[Depends(require_admin)])
+async def get_notification_settings(db: AsyncSession = Depends(get_db)):
+    return {
+        "system_notice_email": await notify_svc.get_system_email(db),
+        "default": notify_svc.DEFAULT_SYSTEM_EMAIL,
+        "sender": settings.SMTP_FROM_EMAIL,
+        "smtp_configured": settings.smtp_configured,
+    }
+
+
+@router.put("/notification-settings", dependencies=[Depends(require_super_admin)])
+async def update_notification_settings(
+    req: SystemEmailRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """The mailbox every monetary notice is copied to."""
+    try:
+        change = await notify_svc.set_system_email(db, str(req.system_notice_email), admin_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_SYSTEM_NOTICE_EMAIL",
+        before_state={"system_notice_email": change["before"]},
+        after_state={"system_notice_email": change["after"]},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success", "system_notice_email": change["after"]}

@@ -10,6 +10,7 @@ import PaymentMethodsCard from "@/components/admin/PaymentMethodsCard";
 import PackagePicker, { packLabel } from "@/components/PackagePicker";
 import ShurjoPayCard from "@/components/admin/ShurjoPayCard";
 import LegalContentCard from "@/components/admin/LegalContentCard";
+import NotificationSettingsCard from "@/components/admin/NotificationSettingsCard";
 import SalesReportTab from "@/components/admin/SalesReportTab";
 import FinanceTab from "@/components/admin/FinanceTab";
 import WithdrawalsTab from "@/components/admin/WithdrawalsTab";
@@ -1028,6 +1029,10 @@ export default function AdminConsolePage() {
 
           <div className="md:col-span-2">
             <PaymentMethodsCard isSuperAdmin={isSuperAdmin} />
+          </div>
+
+          <div className="md:col-span-2">
+            <NotificationSettingsCard isSuperAdmin={isSuperAdmin} />
           </div>
 
           <div className="md:col-span-2">

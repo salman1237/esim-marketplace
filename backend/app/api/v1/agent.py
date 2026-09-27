@@ -25,7 +25,7 @@ from app.models.merchant import MerchantProfile, MerchantStatus
 from app.models.order import Order, OrderStatus
 from app.models.user import User, UserRole
 from app.models.wallet import LedgerRefType, Wallet, WalletLedgerEntry, WalletType
-from app.services import agent_svc, finance_svc
+from app.services import agent_svc, finance_svc, notify_svc
 from app.services.audit_svc import AuditService
 from app.services.ledger_svc import LedgerService
 
@@ -109,6 +109,9 @@ async def apply_as_agent(
     )
     db.add(profile)
     await db.commit()
+    notify_svc.agent_applied(
+        to=current_user.email, company_name=profile.company_name, username=current_user.username
+    )
     return {"status": "success", "message": "Application submitted for review", "agent_status": "PENDING"}
 
 

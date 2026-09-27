@@ -28,7 +28,7 @@ from app.services.checkout_svc import (
     complete_from_supplier_trx,
     _refund_failed_order,
 )
-from app.services import esim_telemetry_svc, referral_svc
+from app.services import esim_telemetry_svc, notify_svc, referral_svc
 from app.services.email_svc import EmailService
 from app.services.webhook_svc import deliver_webhook
 
@@ -42,6 +42,19 @@ GIVE_UP_AFTER = timedelta(minutes=60)
 
 
 async def _send_confirmation(db, order: Order, product: Product, profile) -> None:
+    buyer = (await db.execute(select(User).where(User.id == order.buyer_id))).scalar_one_or_none()
+    # The platform's transaction alert. Sent regardless of whether the
+    # recipient's delivery email can be addressed, because the sale happened
+    # either way and the records should show it.
+    notify_svc.transaction(
+        order_no=order.order_no,
+        buyer=buyer.username if buyer else "unknown",
+        product=product.title_en,
+        amount=str(order.total_amount),
+        currency=order.currency,
+        method=order.payment_method.value,
+    )
+
     email = (await db.execute(select(User.email).where(User.id == order.beneficiary_id))).scalar_one_or_none()
     if not email:
         return

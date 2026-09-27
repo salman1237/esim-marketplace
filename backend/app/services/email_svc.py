@@ -51,12 +51,12 @@ class EmailService:
 
     @staticmethod
     async def finance_notice_address(db: AsyncSession) -> str:
-        """Where the admin's copy of a payout receipt goes. The support
-        address the platform already publishes, falling back to the sending
-        address so a receipt is never silently dropped."""
-        res = await db.execute(select(PlatformSetting).where(PlatformSetting.key == "support_email"))
-        row = res.scalar_one_or_none()
-        return (row.value if row and row.value else None) or settings.SMTP_FROM_EMAIL
+        """Where the platform's copy of a payout receipt goes: the same system
+        mailbox every other monetary notice is copied to, so withdrawals are
+        not the one thing sitting in a different inbox."""
+        from app.services.notify_svc import get_system_email
+
+        return await get_system_email(db)
 
     @staticmethod
     async def _logo_png(db: AsyncSession) -> bytes | None:
@@ -184,6 +184,29 @@ class EmailService:
             year=datetime.now(timezone.utc).year,
         )
         await cls._send(to_email, f"Reset your {platform_name} password", html,
+                        inline_images={"brand_logo": logo_png} if logo_png else None)
+
+    @classmethod
+    async def send_notice(
+        cls, db: AsyncSession, to_email: str, *, subject: str, title: str, intro: str,
+        rows=None, highlight=None, highlight_label=None, cta_label=None, cta_url=None, footnote=None,
+    ):
+        """The generic branded notice used by notify_svc. Everything that is
+        not a welcome, an eSIM delivery or a withdrawal receipt goes through
+        this, so the layout lives in one template."""
+        platform_name = await cls._get_platform_name(db)
+        logo_png = await cls._logo_png(db)
+        rows = list(rows or [])
+        html = _env.get_template("notice.html").render(
+            platform_name=platform_name, has_logo=logo_png is not None,
+            title=title, intro=intro, rows=rows,
+            highlight=highlight, highlight_label=highlight_label,
+            cta_label=cta_label, cta_url=cta_url, footnote=footnote,
+            year=datetime.now(timezone.utc).year,
+        )
+        text_rows = "\n".join(f"{label}: {value}" for label, value in rows)
+        text = f"{title}\n\n{intro}\n\n{text_rows}\n" + (f"\n{cta_url}\n" if cta_url else "")
+        await cls._send(to_email, subject, html, text_body=text,
                         inline_images={"brand_logo": logo_png} if logo_png else None)
 
     @classmethod
