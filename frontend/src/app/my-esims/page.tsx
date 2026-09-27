@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { QrCode, Copy, Check, Smartphone, Sparkles, Clock, Printer, Activity } from "lucide-react";
+import { QrCode, Copy, Check, Smartphone, Sparkles, Clock, Printer, Activity, ChevronRight } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
@@ -57,6 +57,26 @@ function EsimCard({ item }: { item: any }) {
           </span>
         )}
       </div>
+
+      {/* Always visible, deliberately outside the QR reveal below: tracking
+          data usage is the thing a customer comes back for, and burying it
+          behind "tap to reveal" made it invisible to anyone who had already
+          installed the eSIM and had no reason to tap again. */}
+      <a
+        href={`/my-esims/${item.id}`}
+        className="mb-4 w-full flex items-center justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50/60 hover:bg-brand-50 px-4 py-3 transition-colors group"
+      >
+        <span className="flex items-center gap-2.5 min-w-0">
+          <span className="w-8 h-8 rounded-lg bg-white text-brand-600 flex items-center justify-center shrink-0 border border-brand-200">
+            <Activity className="w-4 h-4" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-bold text-slate-900">Live status &amp; data usage</span>
+            <span className="block text-[11px] text-slate-500">See what you&apos;ve used, what&apos;s left and when it expires</span>
+          </span>
+        </span>
+        <ChevronRight className="w-4 h-4 text-brand-600 shrink-0 group-hover:translate-x-0.5 transition-transform" />
+      </a>
 
       <AnimatePresence mode="wait">
         {!revealed ? (
@@ -127,22 +147,15 @@ function EsimCard({ item }: { item: any }) {
                   );
                 })()}
 
-                <div className="grid grid-cols-2 gap-2">
-                  <a
-                    href={`/my-esims/${item.id}`}
-                    className="flex items-center justify-center space-x-2 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors"
-                  >
-                    <Activity className="w-3.5 h-3.5" />
-                    <span>Live status &amp; data</span>
-                  </a>
-                  <a
-                    href={`/my-esims/${item.id}/print`}
-                    className="flex items-center justify-center space-x-2 bg-white hover:bg-gray-50 text-slate-700 text-xs font-semibold py-2 px-3 rounded-lg border border-gray-300 transition-colors"
-                  >
-                    <Printer className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Print / PDF</span>
-                  </a>
-                </div>
+                {/* Live status lives above the reveal, so this row is just
+                    the printable sheet. */}
+                <a
+                  href={`/my-esims/${item.id}/print`}
+                  className="w-full flex items-center justify-center space-x-2 bg-white hover:bg-gray-50 text-slate-700 text-xs font-semibold py-2 px-3 rounded-lg border border-gray-300 transition-colors"
+                >
+                  <Printer className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Print / Save as PDF</span>
+                </a>
 
                 {item.lpa_string && (
                   <button
