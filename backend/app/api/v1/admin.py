@@ -41,8 +41,8 @@ from app.services.ledger_svc import LedgerService
 from app.services.payment_methods_svc import get_payment_methods, set_payment_methods
 from app.services.legal_content_svc import LEGAL_TITLES, get_legal_document, save_legal_document
 from app.services import (
-    agent_svc, discount_svc, gateway_config_svc, referral_settings_svc, referral_svc,
-    topup_limits_svc, withdrawal_settings_svc, withdrawal_svc,
+    agent_svc, discount_svc, esim_telemetry_svc, gateway_config_svc, referral_settings_svc,
+    referral_svc, topup_limits_svc, withdrawal_settings_svc, withdrawal_svc,
 )
 from app.services.admin_overview_svc import build_overview
 from app.services.catalog_export_svc import build_catalog_workbook
@@ -644,6 +644,7 @@ async def admin_purchase_esim_for_customer(
             data_label="Unlimited" if product.is_unlimited else f"{product.data_amount_gb} GB",
             purchase_reference=profile.supplier_reference,
             purchased_at=order.created_at,
+            status_url=esim_telemetry_svc.share_url(profile),
         ))
 
     return {"order_id": order.id, "order_no": order_no, "status": order.status.value, "iccid": profile.iccid}

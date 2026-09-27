@@ -87,6 +87,12 @@ class ESIMProfile(Base):
     supplier_reference = Column(String(100), nullable=True)
     status = Column(Enum(ESIMStatus), default=ESIMStatus.ALLOCATED, nullable=False)
     is_mock_fallback = Column(Boolean, default=False)
+    # Public tracking link, sent in the delivery email. 128 bits of entropy,
+    # deliberately NOT the profile id: VivaPe's own status page is keyed on a
+    # sequential transaction id, so anyone can count upwards and read other
+    # people's eSIMs. This exposes no more than the delivery email itself,
+    # which already carries the QR code and the LPA string.
+    share_token = Column(String(64), unique=True, index=True, nullable=True)
     # Validity runs from FIRST ACTIVATION, not from purchase — confirmed
     # against VivaPe's own status page and their usage API. Both stay NULL
     # until the customer installs the profile and telemetry tells us when

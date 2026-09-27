@@ -292,6 +292,7 @@ class EmailService:
         data_label: str | None = None,
         purchase_reference: str | None = None,
         purchased_at: datetime | None = None,
+        status_url: str | None = None,
     ):
         platform_name = await cls._get_platform_name(db)
         qr_png = cls._qr_png(lpa_string) if lpa_string else None
@@ -313,7 +314,7 @@ class EmailService:
         html = _env.get_template("order_confirmation.html").render(
             platform_name=platform_name, order_no=order_no, product_title=product_title,
             iccid=iccid, lpa_string=lpa_string, has_qr=qr_png is not None, details=details,
-            has_logo=logo_png is not None,
+            has_logo=logo_png is not None, status_url=status_url, validity_days=validity_days,
             ios_install_url=install["ios"], android_install_url=install["android"],
             frontend_base_url=settings.FRONTEND_BASE_URL, year=datetime.now(timezone.utc).year,
         )
@@ -324,7 +325,8 @@ class EmailService:
             f"Activation code (LPA): {lpa_string}\n\n"
             f"Install it by scanning the QR code in this email, or enter the activation "
             f"code manually in your phone's cellular settings.\n"
-            f"{settings.FRONTEND_BASE_URL}/my-esims\n"
+            + (f"\nTrack your data usage and expiry any time: {status_url}\n" if status_url else "")
+            + f"{settings.FRONTEND_BASE_URL}/my-esims\n"
         )
         images = {}
         if qr_png:

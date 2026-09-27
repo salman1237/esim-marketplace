@@ -4,6 +4,7 @@ provisioning behavior can't drift between them.
 """
 import uuid
 import json
+import secrets
 from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -23,6 +24,13 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 RESELLER_ROLES = {UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MERCHANT}
+
+
+def new_share_token() -> str:
+    """The token in a customer's public tracking link. 32 hex characters =
+    128 bits, so the links cannot be guessed or walked the way VivaPe's
+    sequential status ids can."""
+    return secrets.token_hex(16)
 
 
 async def resolve_beneficiary(db: AsyncSession, current_user: User, is_buy_for_user: bool, auto_create_user: bool, beneficiary_username: str | None, beneficiary_email: str | None) -> str:
@@ -132,6 +140,7 @@ def _attach_profile(db: AsyncSession, order: Order, product: Product, beneficiar
         supplier_reference=str(trx_id),
         status=ESIMStatus.RELEASED,
         is_mock_fallback=False,
+        share_token=new_share_token(),
         # activated_at/expires_at are deliberately left unset: the plan's
         # validity starts when the customer installs the profile, not now.
         # esim_telemetry_svc fills both in from VivaPe once that happens.

@@ -141,6 +141,9 @@ export const api = {
   // Live carrier telemetry for one eSIM. The GET is cache-backed; the POST
   // asks the carrier for fresh numbers and is cooled down server-side.
   getEsimStatus: (token: string, esimId: string) => fetchApi(`/api/v1/esims/${esimId}/status`, { headers: { Authorization: `Bearer ${token}` } }),
+  // The tracking link from the delivery email — no auth, keyed on a random
+  // share token rather than the eSIM id.
+  getPublicEsimStatus: (shareToken: string) => fetchApi(`/api/v1/esims/public/${encodeURIComponent(shareToken)}`),
   refreshEsimStatus: (token: string, esimId: string) => fetchApi(`/api/v1/esims/${esimId}/refresh`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
   getOrder: (token: string, orderId: string) => fetchApi(`/api/v1/orders/${orderId}`, { headers: { Authorization: `Bearer ${token}` } }),
   getResellerOrders: (token: string) => fetchApi("/api/v1/orders/reseller-orders", { headers: { Authorization: `Bearer ${token}` } }),

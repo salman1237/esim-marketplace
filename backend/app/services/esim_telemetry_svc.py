@@ -17,6 +17,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.catalog import Product
 from app.models.esim_telemetry import ESIMTelemetry
@@ -187,8 +188,24 @@ def status_label(row: Optional[ESIMTelemetry], profile: ESIMProfile) -> str:
     return "Not installed yet"
 
 
-def serialize(row: Optional[ESIMTelemetry], profile: ESIMProfile, product: Product, order: Order) -> dict:
-    """One shape for the customer page, the merchant view and admin support."""
+def share_url(profile: ESIMProfile) -> Optional[str]:
+    """The public tracking link sent in the delivery email."""
+    if not profile.share_token:
+        return None
+    return f"{settings.FRONTEND_BASE_URL}/track/{profile.share_token}"
+
+
+def serialize(
+    row: Optional[ESIMTelemetry], profile: ESIMProfile, product: Product, order: Order, *, public: bool = False
+) -> dict:
+    """One shape for the customer page, the public tracking link, the merchant
+    view and admin support.
+
+    `public` strips the handset's hardware id (EID) from the carrier history
+    and withholds the share link itself. Everything else is identical: the
+    install details are the point of the link, and the delivery email carrying
+    it already contains the QR code and the LPA string.
+    """
     allowance = data_allowance_mb(product)
     used_mb = Decimal(str(row.data_used_mb)) if row and row.data_used_mb is not None else Decimal("0")
     remaining = None
@@ -250,7 +267,8 @@ def serialize(row: Optional[ESIMTelemetry], profile: ESIMProfile, product: Produ
                 else f"Validity starts when you install this eSIM — {product.validity_days} days from then."
             ),
         },
-        "history": (row.history or []) if row else [],
+        "share_url": None if public else share_url(profile),
+        "history": _history(row, public),
         "daily_breakdown": (row.daily_breakdown or []) if row else [],
         "telemetry": {
             "fetched_at": row.fetched_at if row else None,
@@ -258,6 +276,15 @@ def serialize(row: Optional[ESIMTelemetry], profile: ESIMProfile, product: Produ
             "available": row is not None and not (row.fetch_error and not row.fetched_at),
         },
     }
+
+
+def _history(row: Optional[ESIMTelemetry], public: bool) -> list:
+    events = (row.history or []) if row else []
+    if not public:
+        return events
+    # The EID identifies the customer's physical handset and tells them
+    # nothing useful, so it doesn't travel on a link that can be forwarded.
+    return [{k: v for k, v in e.items() if k != "eid"} for e in events if isinstance(e, dict)]
 
 
 def _row_activated(row: ESIMTelemetry) -> bool:

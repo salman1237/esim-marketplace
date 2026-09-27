@@ -12,6 +12,7 @@ from app.models.catalog import Country, Product
 from app.models.merchant import MerchantProfile
 from app.models.order import Order, OrderStatus
 from app.models.partner_api import WebhookDeliveryLog
+from app.services import esim_telemetry_svc
 from app.services.esim_links import esim_install_links
 from app.core.logging import get_logger
 
@@ -52,6 +53,9 @@ def serialize_partner_order(order: Order, esim_profile, product: Product | None,
         "smdp_address": esim_profile.smdp_address if esim_profile else None,
         "matching_id": esim_profile.matching_id if esim_profile else None,
         "install_links": esim_install_links(lpa),
+        # The public tracking page, so a partner can forward it to their own
+        # customer instead of building a usage view themselves.
+        "status_url": esim_telemetry_svc.share_url(esim_profile) if esim_profile else None,
         "is_mock_fallback": esim_profile.is_mock_fallback if esim_profile else None,
         "created_at": order.created_at.isoformat() if order.created_at else None,
         "updated_at": order.updated_at.isoformat() if order.updated_at else None,

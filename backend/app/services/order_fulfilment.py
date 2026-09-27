@@ -28,7 +28,7 @@ from app.services.checkout_svc import (
     complete_from_supplier_trx,
     _refund_failed_order,
 )
-from app.services import referral_svc
+from app.services import esim_telemetry_svc, referral_svc
 from app.services.email_svc import EmailService
 from app.services.webhook_svc import deliver_webhook
 
@@ -52,6 +52,10 @@ async def _send_confirmation(db, order: Order, product: Product, profile) -> Non
             data_label="Unlimited" if product.is_unlimited else f"{product.data_amount_gb} GB",
             purchase_reference=profile.supplier_reference,
             purchased_at=order.created_at,
+            # The customer may have no account at all (a merchant can buy on
+            # their behalf), so the tracking link is how they follow their own
+            # usage and expiry.
+            status_url=esim_telemetry_svc.share_url(profile),
         )
     except Exception as e:
         logger.warning("order_confirmation_email_failed", order_id=order.id, error=str(e))

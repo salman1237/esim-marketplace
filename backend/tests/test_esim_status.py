@@ -449,3 +449,122 @@ async def test_supplier_outage_falls_back_to_the_cached_balance(client, db_sessi
     assert res.json()["balance"] == "50.00"
     assert res.json()["cached"] is True
     assert "down" in res.json()["error"]
+
+
+async def test_the_delivery_email_carries_a_tracking_link(client, db_session):
+    """The customer may have no account (a merchant can buy for them), so the
+    link in the email is how they follow their own usage."""
+    import app.services.order_fulfilment as fulfilment
+
+    sent = {}
+
+    async def fake_send(db, to_email, order_no, product_title, iccid, lpa_string, **kwargs):
+        sent.update(to=to_email, order_no=order_no, **kwargs)
+
+    with patch.object(fulfilment.EmailService, "send_order_confirmation", AsyncMock(side_effect=fake_send)):
+        user = await _buy(client, db_session)
+
+    assert sent["status_url"], "no tracking link was passed to the delivery email"
+    profile = (await db_session.execute(
+        select(ESIMProfile).where(ESIMProfile.id == user["esim_id"])
+    )).scalar_one()
+    await db_session.refresh(profile)
+    assert profile.share_token
+    # 128 bits of hex, not the profile id - so the link can't be walked the way
+    # VivaPe's sequential status ids can.
+    assert len(profile.share_token) == 32
+    assert profile.share_token not in profile.id
+    assert sent["status_url"].endswith(f"/track/{profile.share_token}")
+
+
+async def test_the_public_link_works_with_no_login(client, db_session):
+    user = await _buy(client, db_session, data_gb="3.0")
+    profile = (await db_session.execute(
+        select(ESIMProfile).where(ESIMProfile.id == user["esim_id"])
+    )).scalar_one()
+    await db_session.refresh(profile)
+
+    usage_patch, device_patch = _vivape(ACTIVE_USAGE, ACTIVE_DEVICE)
+    with usage_patch, device_patch:
+        # No Authorization header at all: the recipient may have no account.
+        res = await client.get(f"/api/v1/esims/public/{profile.share_token}")
+    assert res.status_code == 200, res.text
+    body = res.json()
+
+    # Everything the customer needs to track and install.
+    assert Decimal(body["usage"]["used_mb"]) == Decimal("166.46")
+    assert body["usage"]["remaining_formatted"] == "2.84 GB"
+    assert body["status"]["label"] == "Active"
+    assert body["status"]["device_model"] == "Galaxy A55"
+    assert body["lpa_string"] and body["qr_code_data"]
+    assert body["validity"]["expires_at"]
+
+    # But not the handset's hardware id, and not the link to itself.
+    assert body["share_url"] is None
+    assert all("eid" not in event for event in body["history"])
+
+
+async def test_a_wrong_or_missing_token_reveals_nothing(client, db_session):
+    user = await _buy(client, db_session)
+    for token in ("", "short", "0" * 32, "not-a-real-token-at-all-000000000"):
+        res = await client.get(f"/api/v1/esims/public/{token}")
+        assert res.status_code == 404, f"{token} -> {res.status_code}"
+
+    # The eSIM's own id is not a valid public key for it, so knowing an id
+    # (which appears in our own URLs) grants nothing.
+    res = await client.get(f"/api/v1/esims/public/{user['esim_id']}")
+    assert res.status_code == 404
+
+
+async def test_tokens_are_unique_and_unguessable(client, db_session):
+    first = await _buy(client, db_session)
+    second = await _buy(client, db_session)
+    rows = (await db_session.execute(
+        select(ESIMProfile.share_token).where(ESIMProfile.id.in_([first["esim_id"], second["esim_id"]]))
+    )).scalars().all()
+    assert len(set(rows)) == 2
+    assert all(len(t) == 32 and all(c in "0123456789abcdef" for c in t) for t in rows)
+
+
+async def test_the_owner_is_given_the_link_to_share(client, db_session):
+    user = await _buy(client, db_session)
+    usage_patch, device_patch = _vivape(FRESH_USAGE, FRESH_DEVICE)
+    with usage_patch, device_patch:
+        body = (await client.get(f"/api/v1/esims/{user['esim_id']}/status", headers=user["headers"])).json()
+    assert body["share_url"].endswith("/track/" + body["share_url"].rsplit("/", 1)[-1])
+    assert len(body["share_url"].rsplit("/", 1)[-1]) == 32
+
+
+async def test_an_esim_from_before_tracking_links_gets_one_on_first_view(client, db_session):
+    """No bulk backfill: the token is issued the first time the owner looks."""
+    user = await _buy(client, db_session)
+    profile = (await db_session.execute(
+        select(ESIMProfile).where(ESIMProfile.id == user["esim_id"])
+    )).scalar_one()
+    profile.share_token = None
+    await db_session.commit()
+
+    usage_patch, device_patch = _vivape(FRESH_USAGE, FRESH_DEVICE)
+    with usage_patch, device_patch:
+        body = (await client.get(f"/api/v1/esims/{user['esim_id']}/status", headers=user["headers"])).json()
+    assert body["share_url"]
+
+    await db_session.refresh(profile)
+    assert profile.share_token
+    with usage_patch, device_patch:
+        assert (await client.get(f"/api/v1/esims/public/{profile.share_token}")).status_code == 200
+
+
+async def test_the_partner_webhook_carries_the_tracking_link(client, db_session):
+    from app.services.webhook_svc import serialize_partner_order
+
+    user = await _buy(client, db_session)
+    profile = (await db_session.execute(
+        select(ESIMProfile).where(ESIMProfile.id == user["esim_id"])
+    )).scalar_one()
+    await db_session.refresh(profile)
+
+    from app.models.order import Order
+    order = (await db_session.execute(select(Order).where(Order.id == user["order_id"]))).scalar_one()
+    payload = serialize_partner_order(order, profile, user["product"], "BD")
+    assert payload["status_url"].endswith(f"/track/{profile.share_token}")
