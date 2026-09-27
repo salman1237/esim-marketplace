@@ -34,6 +34,9 @@ class LedgerRefType(str, enum.Enum):
     # purchase that earned it is refunded.
     REWARD_EARNED = "REWARD_EARNED"
     REWARD_REVERSED = "REWARD_REVERSED"
+    # An agent's cut of a sale made by one of their merchants, paid on top of
+    # that merchant's own commission.
+    AGENT_COMMISSION_EARNED = "AGENT_COMMISSION_EARNED"
 
 class Wallet(Base):
     __tablename__ = "wallets"

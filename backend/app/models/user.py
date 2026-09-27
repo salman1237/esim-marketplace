@@ -9,6 +9,10 @@ class UserRole(str, enum.Enum):
     SUPER_ADMIN = "SUPER_ADMIN"
     ADMIN = "ADMIN"
     MERCHANT = "MERCHANT"
+    # Recruits merchants and earns on what they sell. Only for accounts that
+    # are *just* agents - agent capability itself comes from an approved
+    # AgentProfile, so a MERCHANT can be an agent too (see models/agent.py).
+    AGENT = "AGENT"
     USER = "USER"
 
 class UserStatus(str, enum.Enum):

@@ -110,6 +110,7 @@ export default function Footer() {
           <ul className="space-y-2 text-xs">
             <li><Link href="/partners" className="font-semibold text-merchant-600 hover:text-merchant-700">B2B Partner Program</Link></li>
             <li><Link href="/reseller" className={link}>Partner Portal</Link></li>
+            <li><Link href="/agent" className={link}>Become an Agent</Link></li>
             <li><Link href="/api-docs" className={link}>API Documentation</Link></li>
           </ul>
         </div>

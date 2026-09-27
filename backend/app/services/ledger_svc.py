@@ -24,8 +24,8 @@ class LedgerService:
                 w_r = Wallet(user_id=user_id, wallet_type=WalletType.REWARD, balance=Decimal("0.0000"), currency="EUR")
                 db.add(w_r)
 
-        # 3. Commission Wallet for Merchant
-        if role == UserRole.MERCHANT:
+        # 3. Commission Wallet for Merchant and Agent - both earn into it.
+        if role in (UserRole.MERCHANT, UserRole.AGENT):
             res_c = await db.execute(
                 select(Wallet).where(Wallet.user_id == user_id, Wallet.wallet_type == WalletType.COMMISSION)
             )
@@ -52,6 +52,20 @@ class LedgerService:
         if wallet:
             return wallet
         wallet = Wallet(user_id=user_id, wallet_type=WalletType.REWARD, balance=Decimal("0.0000"), currency="EUR")
+        db.add(wallet)
+        await db.flush()
+        await db.refresh(wallet)
+        return wallet
+
+    @staticmethod
+    async def ensure_commission_wallet(db: AsyncSession, user_id: str) -> Wallet:
+        """ensure_wallets_for_user creates one for a MERCHANT; an agent needs
+        one too, and an agent can hold any role, so it is created on demand
+        when commission is first credited. Caller commits."""
+        wallet = await LedgerService.get_wallet(db, user_id, WalletType.COMMISSION)
+        if wallet:
+            return wallet
+        wallet = Wallet(user_id=user_id, wallet_type=WalletType.COMMISSION, balance=Decimal("0.0000"), currency="EUR")
         db.add(wallet)
         await db.flush()
         await db.refresh(wallet)

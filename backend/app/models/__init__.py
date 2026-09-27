@@ -13,6 +13,7 @@ from app.models.partner_api import ApiKey, WebhookDeliveryLog
 from app.models.withdrawal import BankAccount, WithdrawalRequest, WithdrawalStatus, PayoutAccountType
 from app.models.discount import DiscountCode, DiscountRedemption, DiscountType, DiscountScope
 from app.models.referral import ReferralReward, ReferralEvent, ReferralRewardStatus
+from app.models.agent import AgentProfile, AgentStatus
 
 __all__ = [
     "User", "UserRole", "UserStatus",
@@ -29,5 +30,6 @@ __all__ = [
     "ApiKey", "WebhookDeliveryLog",
     "BankAccount", "WithdrawalRequest", "WithdrawalStatus", "PayoutAccountType",
     "DiscountCode", "DiscountRedemption", "DiscountType", "DiscountScope",
-    "ReferralReward", "ReferralEvent", "ReferralRewardStatus"
+    "ReferralReward", "ReferralEvent", "ReferralRewardStatus",
+    "AgentProfile", "AgentStatus"
 ]

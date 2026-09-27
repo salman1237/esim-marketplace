@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import PartnerCta from "@/components/PartnerCta";
 import {
-  BadgePercent, Briefcase, Code2, FileText, Globe2, LayoutDashboard, Send, ShieldCheck, Wallet, Zap,
+  BadgePercent, Briefcase, Code2, FileText, Globe2, Handshake, LayoutDashboard, Send, ShieldCheck, Wallet, Zap,
 } from "lucide-react";
 
 export const metadata: Metadata = {
@@ -136,6 +136,41 @@ export default function PartnersPage() {
               <p className="mt-2 text-xs text-slate-500 leading-relaxed">{f.a}</p>
             </details>
           ))}
+        </div>
+      </section>
+
+      {/* Agents — a second way in, for people who recruit partners rather than
+          sell eSIMs themselves. */}
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="glass-panel rounded-3xl border border-gray-200 p-8 sm:p-10 grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-8 items-center">
+          <div>
+            <span className="inline-flex items-center gap-2 bg-brand-50 text-brand-700 border border-brand-200 text-xs font-semibold px-3 py-1.5 rounded-full">
+              <Handshake className="w-3.5 h-3.5" /> Agent Program
+            </span>
+            <h2 className="mt-4 text-2xl font-extrabold text-slate-900">Bring travel agencies on board and earn from their sales</h2>
+            <p className="mt-3 text-sm text-slate-500 max-w-xl">
+              Don&apos;t sell eSIMs yourself? Recruit agencies as partners instead. You earn a percentage of everything they
+              sell, on top of the commission they earn — and you can be a partner and an agent at the same time.
+            </p>
+            <Link
+              href="/agent"
+              className="mt-6 inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-bold px-5 py-3 rounded-xl"
+            >
+              Become an agent
+            </Link>
+          </div>
+          <ul className="space-y-3 text-sm">
+            {[
+              "Your own agent code for partner sign-ups",
+              "Commission on every eSIM your partners deliver",
+              "A portal with your partners, sales and statements",
+              "Withdraw earnings to bank or mobile wallet",
+            ].map((point) => (
+              <li key={point} className="flex items-center gap-3 rounded-xl bg-gray-50 border border-gray-200 px-4 py-3 text-slate-700">
+                <ShieldCheck className="w-4 h-4 shrink-0 text-brand-600" /> {point}
+              </li>
+            ))}
+          </ul>
         </div>
       </section>
 

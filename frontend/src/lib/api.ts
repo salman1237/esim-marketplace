@@ -105,6 +105,21 @@ export const api = {
   initiateShurjopayTopup: (token: string, amountUsd: number) =>
     fetchApi(`/api/v1/payments/shurjopay/topup?amount=${amountUsd}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
 
+  // Agent portal. Gated on an approved agent profile, not on the role —
+  // an agent can also be a merchant.
+  getAgentStatus: (token: string) => fetchApi("/api/v1/agent/status", { headers: { Authorization: `Bearer ${token}` } }),
+  applyAsAgent: (token: string, data: { company_name: string; contact_phone: string }) =>
+    fetchApi("/api/v1/agent/apply", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  getAgentOverview: (token: string) => fetchApi("/api/v1/agent/overview", { headers: { Authorization: `Bearer ${token}` } }),
+  getAgentMerchants: (token: string) => fetchApi("/api/v1/agent/merchants", { headers: { Authorization: `Bearer ${token}` } }),
+  addAgentMerchant: (token: string, merchant: string) =>
+    fetchApi("/api/v1/agent/merchants", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ merchant }) }),
+  getAgentOrders: (token: string, opts?: { limit?: number; offset?: number }) =>
+    fetchApi(`/api/v1/agent/orders?limit=${opts?.limit ?? 100}&offset=${opts?.offset ?? 0}`, { headers: { Authorization: `Bearer ${token}` } }),
+  getAgentCommissionLedger: (token: string) => fetchApi("/api/v1/agent/commission-ledger", { headers: { Authorization: `Bearer ${token}` } }),
+  getAgentStatement: (token: string, month: string) => fetchApi(`/api/v1/agent/statement?month=${month}`, { headers: { Authorization: `Bearer ${token}` } }),
+  transferAgentCommission: (token: string) => fetchApi("/api/v1/agent/commission/transfer", { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+
   // Referrals. Reward credit lands in the REWARD wallet: spendable on
   // eSIMs, never withdrawable.
   validateReferralCode: (code: string) => fetchApi(`/api/v1/referrals/validate?code=${encodeURIComponent(code)}`),
@@ -230,6 +245,17 @@ export const api = {
   getAdminUsers: (token: string, q?: string) => fetchApi(`/api/v1/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   makeUserReseller: (token: string, userId: string, data: { business_name: string; contact_phone: string; commission_rate_pct?: number }) => fetchApi(`/api/v1/admin/users/${userId}/make-reseller`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
   createStaffAccount: (token: string, data: any) => fetchApi("/api/v1/admin/users", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  // Admin: agents
+  getAdminAgents: (token: string, status?: string) => fetchApi(`/api/v1/admin/agents${status ? `?status=${status}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
+  getAgentMarginCheck: (token: string, merchantPct: string, agentPct: string) =>
+    fetchApi(`/api/v1/admin/agents/margin-check?merchant_pct=${merchantPct}&agent_pct=${agentPct}`, { headers: { Authorization: `Bearer ${token}` } }),
+  approveAgent: (token: string, id: string) => fetchApi(`/api/v1/admin/agents/${id}/approve`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+  rejectAgent: (token: string, id: string, reason: string) => fetchApi(`/api/v1/admin/agents/${id}/reject?reason=${encodeURIComponent(reason)}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+  updateAgentCommission: (token: string, id: string, ratePct: string) =>
+    fetchApi(`/api/v1/admin/agents/${id}/commission`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ rate_pct: ratePct }) }),
+  updateMerchantAgent: (token: string, merchantId: string, agentCode: string | null) =>
+    fetchApi(`/api/v1/admin/merchants/${merchantId}/agent`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(agentCode ? { agent_code: agentCode } : {}) }),
+
   // Admin: referral programme
   getAdminReferralSettings: (token: string) => fetchApi("/api/v1/admin/referral-settings", { headers: { Authorization: `Bearer ${token}` } }),
   updateAdminReferralSettings: (token: string, data: any) => fetchApi("/api/v1/admin/referral-settings", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),

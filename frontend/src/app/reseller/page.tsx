@@ -50,6 +50,7 @@ export default function ResellerPortalPage() {
   const [businessName, setBusinessName] = useState("");
   const [tradeLicense, setTradeLicense] = useState("");
   const [contactPhone, setContactPhone] = useState("");
+  const [agentCode, setAgentCode] = useState("");
   const [applying, setApplying] = useState(false);
   const [applySuccess, setApplySuccess] = useState(false);
 
@@ -97,6 +98,7 @@ export default function ResellerPortalPage() {
         business_name: businessName,
         trade_license: tradeLicense,
         contact_phone: contactPhone,
+        agent_code: agentCode.trim() || undefined,
       });
       setApplySuccess(true);
     } catch (err: any) {
@@ -171,6 +173,21 @@ export default function ResellerPortalPage() {
             <div>
               <label className="text-xs text-slate-700 font-semibold block mb-1">Business Contact Phone</label>
               <input type="tel" required value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-700 font-semibold block mb-1">Agent Code (Optional)</label>
+              <input
+                type="text"
+                value={agentCode}
+                onChange={(e) => setAgentCode(e.target.value.toUpperCase())}
+                placeholder="If an agent introduced you"
+                maxLength={16}
+                spellCheck={false}
+                className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs font-mono uppercase text-slate-900"
+              />
+              <p className="mt-1 text-[11px] text-slate-500">
+                Credits the agent who brought you in. It doesn&apos;t change your own commission.
+              </p>
             </div>
             <button type="submit" disabled={applying} className="w-full py-2.5 rounded-xl bg-merchant-600 hover:bg-merchant-500 text-white text-xs font-bold transition-all shadow-md shadow-merchant-900/10">
               {applying ? "Submitting..." : "Submit B2B Application"}

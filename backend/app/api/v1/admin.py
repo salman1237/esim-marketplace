@@ -30,6 +30,7 @@ from app.models.partner_api import ApiKey
 from app.models.withdrawal import WithdrawalRequest, WithdrawalStatus
 from app.models.discount import DiscountCode, DiscountRedemption, DiscountScope, DiscountType
 from app.models.referral import ReferralEvent, ReferralReward, ReferralRewardStatus
+from app.models.agent import AgentProfile, AgentStatus
 from datetime import date as Date, datetime, timedelta, timezone
 from app.core.seed_translations import EN_TRANSLATIONS, flatten
 from app.schemas.settings import (
@@ -40,7 +41,7 @@ from app.services.ledger_svc import LedgerService
 from app.services.payment_methods_svc import get_payment_methods, set_payment_methods
 from app.services.legal_content_svc import LEGAL_TITLES, get_legal_document, save_legal_document
 from app.services import (
-    discount_svc, gateway_config_svc, referral_settings_svc, referral_svc,
+    agent_svc, discount_svc, gateway_config_svc, referral_settings_svc, referral_svc,
     topup_limits_svc, withdrawal_settings_svc, withdrawal_svc,
 )
 from app.services.admin_overview_svc import build_overview
@@ -111,8 +112,14 @@ async def sync_catalog_from_vivape(db: AsyncSession = Depends(get_db)):
 # --- Merchant Approval Queue ---
 @router.get("/merchants/queue", dependencies=[Depends(require_admin)])
 async def get_merchant_queue(db: AsyncSession = Depends(get_db)):
+    """Includes each partner's agent, so the Merchants tab can show who earns
+    on their sales and change it."""
+    agent_user = aliased(User)
     res = await db.execute(
-        select(MerchantProfile, User).join(User, MerchantProfile.user_id == User.id)
+        select(MerchantProfile, User, agent_user.username, AgentProfile.agent_code, AgentProfile.commission_rate_pct)
+        .join(User, MerchantProfile.user_id == User.id)
+        .outerjoin(agent_user, MerchantProfile.agent_id == agent_user.id)
+        .outerjoin(AgentProfile, AgentProfile.user_id == MerchantProfile.agent_id)
     )
     return [
         {
@@ -125,9 +132,15 @@ async def get_merchant_queue(db: AsyncSession = Depends(get_db)):
             "contact_phone": m.contact_phone,
             "status": m.status.value,
             "commission_rate_pct": float(m.commission_rate_pct),
+            "agent": {
+                "user_id": m.agent_id,
+                "username": agent_username,
+                "agent_code": agent_code,
+                "commission_rate_pct": float(agent_rate) if agent_rate is not None else None,
+            } if m.agent_id else None,
             "created_at": m.created_at
         }
-        for m, u in res.all()
+        for m, u, agent_username, agent_code, agent_rate in res.all()
     ]
 
 @router.put("/merchants/{merchant_id}/commission", dependencies=[Depends(require_super_admin)])
@@ -2490,3 +2503,214 @@ async def referral_report(
             for r, referrer_name, referred_name in rows
         ],
     }
+
+
+# --- Agents (Admin + Super Admin approve and map; only a Super Admin sets a
+# commission rate, matching the merchant-commission gate) ---
+
+class AgentCommissionRequest(BaseModel):
+    rate_pct: Decimal = Field(..., ge=0, le=agent_svc.MAX_AGENT_COMMISSION_PCT)
+
+
+class MerchantAgentRequest(BaseModel):
+    # Null clears the mapping; otherwise an agent's code or user id.
+    agent_code: Optional[str] = None
+    agent_user_id: Optional[str] = None
+
+
+@router.get("/agents", dependencies=[Depends(require_admin)])
+async def list_agents(status: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    query = (
+        select(AgentProfile, User).join(User, AgentProfile.user_id == User.id)
+        .order_by(AgentProfile.created_at.desc())
+    )
+    if status:
+        try:
+            query = query.where(AgentProfile.status == AgentStatus(status.upper()))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Unknown agent status")
+
+    rows = (await db.execute(query)).all()
+    completed = Order.status == OrderStatus.COMPLETED
+    out = []
+    for profile, user in rows:
+        earned = (await db.execute(
+            select(
+                func.count(Order.id).filter(completed),
+                func.coalesce(func.sum(Order.agent_commission_amount).filter(completed), 0),
+            ).where(Order.agent_id == user.id)
+        )).one()
+        out.append(agent_svc.serialize(
+            profile, user,
+            merchants=await agent_svc.merchant_count(db, user.id),
+            stats={"orders": earned[0], "commission_earned": _cents(Decimal(str(earned[1])))},
+        ))
+    return out
+
+
+@router.get("/agents/margin-check", dependencies=[Depends(require_admin)])
+async def agent_margin_check(
+    merchant_pct: Decimal = Query(Decimal("5.00"), ge=0),
+    agent_pct: Decimal = Query(Decimal("2.00"), ge=0),
+    db: AsyncSession = Depends(get_db)
+):
+    """What is left of a sale after both commissions. Both are percentages of
+    the selling price (the client's rule for agents), so a pair of rates can
+    add up to more than the margin - this is what warns before that happens."""
+    return await agent_svc.margin_check(db, merchant_pct, agent_pct)
+
+
+@router.post("/agents/{profile_id}/approve", dependencies=[Depends(require_admin)])
+async def approve_agent(
+    profile_id: str,
+    request: Request,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    profile = (await db.execute(select(AgentProfile).where(AgentProfile.id == profile_id))).scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Agent application not found")
+    if profile.status == AgentStatus.APPROVED:
+        raise HTTPException(status_code=400, detail="This agent is already approved")
+
+    profile.status = AgentStatus.APPROVED
+    profile.rejection_reason = None
+    profile.reviewed_by_id = admin_user.id
+    profile.reviewed_at = datetime.now(timezone.utc)
+
+    user = (await db.execute(select(User).where(User.id == profile.user_id))).scalar_one_or_none()
+    if user:
+        # A merchant stays a MERCHANT: the agent portal is gated on the
+        # approved profile, not the role, so both capabilities coexist.
+        if user.role == UserRole.USER:
+            user.role = UserRole.AGENT
+        await LedgerService.ensure_commission_wallet(db, user.id)
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="APPROVE_AGENT",
+        after_state={"agent_id": profile.id, "user_id": profile.user_id, "company": profile.company_name,
+                     "rate_pct": str(profile.commission_rate_pct)},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success", "agent_code": profile.agent_code}
+
+
+@router.post("/agents/{profile_id}/reject", dependencies=[Depends(require_admin)])
+async def reject_agent(
+    profile_id: str,
+    request: Request,
+    reason: Optional[str] = None,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    profile = (await db.execute(select(AgentProfile).where(AgentProfile.id == profile_id))).scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Agent application not found")
+
+    was_approved = profile.status == AgentStatus.APPROVED
+    profile.status = AgentStatus.SUSPENDED if was_approved else AgentStatus.REJECTED
+    profile.rejection_reason = reason
+    profile.reviewed_by_id = admin_user.id
+    profile.reviewed_at = datetime.now(timezone.utc)
+
+    # Suspending stops future commission (commission_rate_for_merchant only
+    # pays an APPROVED agent) but never touches what was already earned.
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="SUSPEND_AGENT" if was_approved else "REJECT_AGENT",
+        after_state={"agent_id": profile.id, "user_id": profile.user_id, "reason": reason},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success", "agent_status": profile.status.value}
+
+
+@router.put("/agents/{profile_id}/commission", dependencies=[Depends(require_super_admin)])
+async def update_agent_commission(
+    profile_id: str,
+    req: AgentCommissionRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    profile = (await db.execute(select(AgentProfile).where(AgentProfile.id == profile_id))).scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    before = str(profile.commission_rate_pct)
+    profile.commission_rate_pct = req.rate_pct
+
+    # The highest merchant rate this agent's partners are on - the pair that
+    # would cost the most per sale.
+    worst_merchant_pct = (await db.execute(
+        select(func.coalesce(func.max(MerchantProfile.commission_rate_pct), 0))
+        .where(MerchantProfile.agent_id == profile.user_id)
+    )).scalar() or Decimal("0")
+    margin = await agent_svc.margin_check(db, Decimal(str(worst_merchant_pct)), req.rate_pct)
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_AGENT_COMMISSION",
+        before_state={"rate_pct": before},
+        after_state={"agent_id": profile.id, "rate_pct": str(req.rate_pct), "margin": margin},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    # Saved either way - the rate is the admin's call. The warning is returned
+    # so the console can show what it costs.
+    return {"status": "success", "rate_pct": str(req.rate_pct), "margin": margin}
+
+
+@router.put("/merchants/{merchant_id}/agent", dependencies=[Depends(require_admin)])
+async def update_merchant_agent(
+    merchant_id: str,
+    req: MerchantAgentRequest,
+    request: Request,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Assigns, moves or clears a partner's agent. Past orders keep the agent
+    they were paid to (it is snapshotted on the order), so this only ever
+    changes who earns on sales from here on."""
+    merchant = (await db.execute(select(MerchantProfile).where(MerchantProfile.id == merchant_id))).scalar_one_or_none()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="Merchant not found")
+
+    before = merchant.agent_id
+    new_agent_id = None
+    if req.agent_user_id or req.agent_code:
+        if req.agent_code:
+            profile = await agent_svc.find_by_code(db, req.agent_code)
+        else:
+            profile = (await db.execute(
+                select(AgentProfile).where(AgentProfile.user_id == req.agent_user_id)
+            )).scalar_one_or_none()
+        if not profile:
+            raise HTTPException(status_code=404, detail="No agent found for that code")
+        if profile.status != AgentStatus.APPROVED:
+            raise HTTPException(status_code=400, detail="That agent isn't approved")
+        if profile.user_id == merchant.user_id:
+            raise HTTPException(status_code=400, detail="A partner can't be their own agent")
+        new_agent_id = profile.user_id
+
+    merchant.agent_id = new_agent_id
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_MERCHANT_AGENT",
+        before_state={"agent_user_id": before},
+        after_state={"merchant_id": merchant.id, "agent_user_id": new_agent_id},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+
+    margin = None
+    if new_agent_id:
+        _, agent_pct = await agent_svc.commission_rate_for_merchant(db, merchant)
+        margin = await agent_svc.margin_check(db, Decimal(str(merchant.commission_rate_pct)), agent_pct)
+    return {"status": "success", "agent_user_id": new_agent_id, "margin": margin}

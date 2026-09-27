@@ -15,12 +15,13 @@ import FinanceTab from "@/components/admin/FinanceTab";
 import WithdrawalsTab from "@/components/admin/WithdrawalsTab";
 import DiscountsTab from "@/components/admin/DiscountsTab";
 import ReferralsTab from "@/components/admin/ReferralsTab";
+import AgentsTab from "@/components/admin/AgentsTab";
 import OverviewTab from "@/components/admin/overview/OverviewTab";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { Trash2, Download } from "lucide-react";
 import { saveBlob } from "@/components/finance/StatementView";
 
-type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "withdrawals" | "discounts" | "referrals" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales" | "finance";
+type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "withdrawals" | "discounts" | "referrals" | "agents" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales" | "finance";
 
 export default function AdminConsolePage() {
   const { formatPrice, languages: appLanguages } = useAppSettings();
@@ -99,6 +100,7 @@ export default function AdminConsolePage() {
   // Kept here rather than inside WithdrawalsTab so the sidebar badge is right
   // before the tab has ever been opened.
   const [pendingWithdrawals, setPendingWithdrawals] = useState(0);
+  const [pendingAgents, setPendingAgents] = useState(0);
 
   // Currency override
   const [overrideCurrency, setOverrideCurrency] = useState("BDT");
@@ -124,6 +126,7 @@ export default function AdminConsolePage() {
     api.getPaymentQueue(token).then(setPayments).catch(console.error);
     api.getSupplierLogs(token).then(setSupplierLogs).catch(console.error);
     api.getAdminWithdrawals(token, "PENDING").then((rows) => setPendingWithdrawals(rows.length)).catch(console.error);
+    api.getAdminAgents(token, "PENDING").then((rows) => setPendingAgents(rows.length)).catch(console.error);
     api.getAdminOrders(token).then(setAllOrders).catch(console.error);
     loadCatalog(token, { offset: 0 });
     api.getKycQueue(token).then(setKycQueue).catch(console.error);
@@ -586,6 +589,7 @@ export default function AdminConsolePage() {
           { id: "sales", label: "Sales & Profit" },
           { id: "discounts", label: "Discount Codes" },
           { id: "referrals", label: "Referrals & Rewards" },
+          { id: "agents", label: `Agents (${pendingAgents})` },
           { id: "finance", label: "Finance & Reconciliation" },
           { id: "customer-wallet", label: "Customer Wallet" },
           ...(isSuperAdmin ? [{ id: "users", label: "Staff & Users" }] : []),
@@ -1094,6 +1098,7 @@ export default function AdminConsolePage() {
       {activeTab === "withdrawals" && <WithdrawalsTab isSuperAdmin={isSuperAdmin} onCountChange={setPendingWithdrawals} />}
       {activeTab === "discounts" && <DiscountsTab />}
       {activeTab === "referrals" && <ReferralsTab isSuperAdmin={isSuperAdmin} />}
+      {activeTab === "agents" && <AgentsTab isSuperAdmin={isSuperAdmin} />}
 
       {/* Tab: Catalog - selling profit % sets every price */}
       {activeTab === "catalog" && (

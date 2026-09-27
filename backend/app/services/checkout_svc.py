@@ -16,7 +16,7 @@ from app.models.catalog import Product
 from app.models.commission_tier import CommissionTier
 from app.models.wallet import Wallet, WalletType, LedgerRefType
 from app.services.ledger_svc import LedgerService
-from app.services import referral_svc
+from app.services import agent_svc, referral_svc
 from app.services.vivape_adapter import VivaPeAdapter
 from app.services.audit_svc import AuditService
 from app.core.logging import get_logger
@@ -299,10 +299,13 @@ async def get_effective_commission_rate(db: AsyncSession, merchant_user_id: str,
 
 async def distribute_commission(db: AsyncSession, order: Order, total_cost: Decimal, buyer: User) -> None:
     """Credits `buyer`'s COMMISSION wallet for a reseller order, at the
-    tiered/flat rate from get_effective_commission_rate. Shared between
-    the wallet-checkout path (orders.py) and the Partner API order path
-    (partner.py) so the two can't drift apart. No-op for non-merchant or
-    non-reseller orders. Caller commits."""
+    tiered/flat rate from get_effective_commission_rate, and then the agent
+    behind that merchant, if any. Shared between the wallet-checkout path
+    (orders.py) and the Partner API order path (partner.py) so the two can't
+    drift apart. No-op for non-merchant or non-reseller orders.
+
+    Called only for a delivered order (see order_fulfilment._finish), which is
+    what keeps a refunded sale from paying either party. Caller commits."""
     if buyer.role != UserRole.MERCHANT or not order.is_reseller_order:
         return
 
@@ -325,3 +328,33 @@ async def distribute_commission(db: AsyncSession, order: Order, total_cost: Deci
             idempotency_key=f"order-commission-{order.id}"
         )
         order.reseller_commission_amount = commission_amount
+
+    if merchant_profile:
+        await _pay_agent_commission(db, order, total_cost, merchant_profile)
+
+
+async def _pay_agent_commission(
+    db: AsyncSession, order: Order, total_cost: Decimal, merchant_profile: MerchantProfile
+) -> None:
+    """The agent's cut: a percentage of the sale price, paid on top of the
+    merchant's commission and recorded on the order. The agent id is
+    snapshotted here so re-pointing the merchant to a different agent later
+    can never rewrite who was paid for this sale."""
+    agent_user_id, agent_pct = await agent_svc.commission_rate_for_merchant(db, merchant_profile)
+    if not agent_user_id or agent_pct <= 0:
+        return
+
+    amount = (total_cost * (agent_pct / Decimal("100"))).quantize(Decimal("0.0001"))
+    if amount <= 0:
+        return
+
+    wallet = await LedgerService.ensure_commission_wallet(db, agent_user_id)
+    await LedgerService.credit(
+        db, wallet.id, amount,
+        LedgerRefType.AGENT_COMMISSION_EARNED,
+        ref_id=order.id,
+        description=f"Agent commission for order {order.order_no} ({agent_pct}%)",
+        idempotency_key=f"order-agent-commission-{order.id}",
+    )
+    order.agent_id = agent_user_id
+    order.agent_commission_amount = amount

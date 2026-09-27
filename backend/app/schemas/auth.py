@@ -51,3 +51,6 @@ class MerchantApplicationRequest(BaseModel):
     trade_license: Optional[str] = None
     contact_phone: str
     website: Optional[str] = None
+    # An agent's referral code, if an agent brought this partner in. Ignored
+    # if it doesn't match an approved agent.
+    agent_code: Optional[str] = None

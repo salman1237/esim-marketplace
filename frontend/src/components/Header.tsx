@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { Globe, DollarSign, User, Shield, Briefcase, Wifi, Menu, X, Gift } from "lucide-react";
+import { Globe, DollarSign, User, Shield, Briefcase, Wifi, Menu, X, Gift, Handshake } from "lucide-react";
 import { api, API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 
@@ -77,7 +77,12 @@ export default function Header() {
               <span>{t("common", "admin", "Admin Console")}</span>
             </Link>
           ) : null}
-          {userData?.role === "MERCHANT" ? (
+          {userData?.role === "AGENT" ? (
+            <Link href="/agent" className="text-brand-600 hover:text-brand-700 flex items-center space-x-1">
+              <Handshake className="w-4 h-4" />
+              <span>Agent Portal</span>
+            </Link>
+          ) : userData?.role === "MERCHANT" ? (
             <Link href="/reseller" className="text-merchant-600 hover:text-merchant-700 flex items-center space-x-1">
               <Briefcase className="w-4 h-4" />
               <span>{t("common", "merchant", "Partner Portal")}</span>
@@ -185,7 +190,9 @@ export default function Header() {
           {userData?.role === "SUPER_ADMIN" || userData?.role === "ADMIN" ? (
             <Link href="/admin" onClick={() => setIsMenuOpen(false)} className="block py-2 text-admin-600">{t("common", "admin", "Admin Console")}</Link>
           ) : null}
-          {userData?.role === "MERCHANT" ? (
+          {userData?.role === "AGENT" ? (
+            <Link href="/agent" onClick={() => setIsMenuOpen(false)} className="block py-2 text-brand-600 font-semibold">Agent Portal</Link>
+          ) : userData?.role === "MERCHANT" ? (
             <Link href="/reseller" onClick={() => setIsMenuOpen(false)} className="block py-2 text-merchant-600 font-semibold">{t("common", "merchant", "Partner Portal")}</Link>
           ) : (
             <Link href="/partners" onClick={() => setIsMenuOpen(false)} className="block py-2 text-merchant-600 font-semibold">For Business — Partner Program</Link>

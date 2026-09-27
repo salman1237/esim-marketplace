@@ -47,6 +47,11 @@ class Order(Base):
     status = Column(Enum(OrderStatus), default=OrderStatus.PENDING, nullable=False)
     is_reseller_order = Column(Boolean, default=False)
     reseller_commission_amount = Column(Numeric(18, 4), default=0.0000)
+    # The agent behind the selling merchant, and what they earned. Snapshotted
+    # onto the order so re-pointing a merchant to a different agent later
+    # never rewrites who was paid for a past sale.
+    agent_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    agent_commission_amount = Column(Numeric(18, 4), default=0.0000, server_default="0", nullable=False)
     external_trx_id = Column(String(100), nullable=True)
     # Partner Reseller API only — the partner's own identifier for this
     # order, echoed back in GET /partner/orders/{id} and the webhook

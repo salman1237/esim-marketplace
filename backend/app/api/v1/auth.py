@@ -18,6 +18,7 @@ from app.core.logging import get_logger
 from app.models.user import User, UserRole, UserStatus
 from app.models.merchant import MerchantProfile, MerchantStatus
 from app.models.referral import ReferralEvent
+from app.models.agent import AgentStatus
 from app.models.wallet import Wallet, WalletType
 from app.models.password_reset import PasswordResetToken
 from app.schemas.auth import (
@@ -26,7 +27,7 @@ from app.schemas.auth import (
 )
 from app.services.google_auth import GoogleTokenError, GoogleUnavailableError, verify_google_id_token
 from app.services.ledger_svc import LedgerService
-from app.services import referral_svc
+from app.services import agent_svc, referral_svc
 from app.services.email_svc import EmailService
 
 logger = get_logger(__name__)
@@ -308,14 +309,27 @@ async def apply_merchant(
     if res.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Merchant application already submitted")
 
+    # An agent's code on the application is how an agent gets credited for the
+    # partner they brought in. An unknown or unapproved code is ignored rather
+    # than refused - it must never block a partner application.
+    agent_profile = await agent_svc.find_by_code(db, req.agent_code)
+    agent_id = None
+    if agent_profile and agent_profile.status == AgentStatus.APPROVED and agent_profile.user_id != current_user.id:
+        agent_id = agent_profile.user_id
+
     profile = MerchantProfile(
         user_id=current_user.id,
         business_name=req.business_name,
         trade_license=req.trade_license,
         contact_phone=req.contact_phone,
         website=req.website,
+        agent_id=agent_id,
         status=MerchantStatus.PENDING
     )
     db.add(profile)
     await db.commit()
-    return {"status": "success", "message": "Application submitted for review"}
+    return {
+        "status": "success",
+        "message": "Application submitted for review",
+        "agent": agent_profile.company_name if agent_id else None,
+    }

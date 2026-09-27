@@ -24,6 +24,10 @@ class MerchantProfile(Base):
     contact_phone = Column(String(50), nullable=False)
     website = Column(String(255), nullable=True)
     commission_rate_pct = Column(Numeric(5, 2), default=5.00, nullable=False)
+    # The agent who recruited this merchant, if any: they earn a percentage of
+    # everything this merchant sells, on top of the merchant's own commission.
+    # Set from the agent code on the B2B application, and editable by an admin.
+    agent_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     # Partner Reseller API (see app/models/partner_api.py) - null until the
     # merchant/admin configures a webhook receiver for async order events.
     webhook_url = Column(String(500), nullable=True)
@@ -36,3 +40,4 @@ class MerchantProfile(Base):
 
     user = relationship("User", back_populates="merchant_profile", foreign_keys=[user_id])
     reviewer = relationship("User", foreign_keys=[reviewed_by_id])
+    agent = relationship("User", foreign_keys=[agent_id])
