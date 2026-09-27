@@ -14,6 +14,8 @@ type Props = {
   listPriceLabel?: string;
   discountLabel?: string;
   discountCode?: string;
+  // Reward credit that will be spent first on the wallet path, if any.
+  promoLabel?: string;
   onWallet: () => void;
   onGateway: () => void;
   onCancel: () => void;
@@ -23,7 +25,7 @@ type Props = {
 // Buy Now goes straight to the payment gateway and this never opens.
 export default function PaymentMethodChooser({
   open, summary, priceLabel, walletBalanceLabel, walletAfterLabel,
-  listPriceLabel, discountLabel, discountCode, onWallet, onGateway, onCancel,
+  listPriceLabel, discountLabel, discountCode, promoLabel, onWallet, onGateway, onCancel,
 }: Props) {
   if (!open) return null;
   return (
@@ -76,6 +78,11 @@ export default function PaymentMethodChooser({
               <span className="block text-[11px] text-slate-500">
                 {walletBalanceLabel} available · {walletAfterLabel} left after
               </span>
+              {promoLabel && (
+                <span className="block text-[11px] text-emerald-700 font-semibold">
+                  {promoLabel} of that is reward credit, used first
+                </span>
+              )}
             </span>
           </button>
 

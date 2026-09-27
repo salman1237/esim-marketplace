@@ -64,11 +64,12 @@ async def checkout_esim(
         raise HTTPException(status_code=400, detail=str(e))
     total_cost = list_price - discount_amount
 
-    w_res = await db.execute(
-        select(Wallet).where(Wallet.user_id == current_user.id, Wallet.wallet_type == WalletType.DEFAULT)
-    )
-    wallet = w_res.scalar_one_or_none()
-    if not wallet or Decimal(str(wallet.balance)) < total_cost:
+    # Promo credit counts towards paying for an eSIM (it just can't be
+    # withdrawn), so the affordability check is both wallets together.
+    funds = await LedgerService.spendable(db, current_user.id)
+    if funds["frozen"]:
+        raise HTTPException(status_code=400, detail="This wallet is frozen. Please contact support.")
+    if funds["total"] < total_cost:
         raise HTTPException(status_code=400, detail="Insufficient wallet balance. Please top up.")
 
     order_no = f"ORD-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
@@ -92,15 +93,17 @@ async def checkout_esim(
     if discount_code:
         await discount_svc.apply_to_order(db, order, discount_code, current_user.id, discount_amount)
 
-    # Debit wallet — raises ValueError (-> 400 below) on insufficient balance,
-    # rolling back the whole transaction including the Order row above.
+    # Debit — promo credit first, then the main wallet. Raises ValueError
+    # (-> 400 below) if the two can't cover it, rolling back the whole
+    # transaction including the Order row above. The promo share is recorded
+    # on the order so a refund goes back to the wallets that actually paid.
     try:
-        await LedgerService.debit(
-            db, wallet.id, total_cost,
+        order.reward_amount_used = await LedgerService.spend(
+            db, current_user.id, total_cost,
             LedgerRefType.ORDER_PURCHASE,
             ref_id=order.id,
             description=f"Purchase eSIM: {product.title_en}",
-            idempotency_key=f"order-debit-{order.id}"
+            idempotency_prefix=f"order-debit-{order.id}",
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

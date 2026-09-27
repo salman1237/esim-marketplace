@@ -12,6 +12,7 @@ from app.models.commission_tier import CommissionTier
 from app.models.partner_api import ApiKey, WebhookDeliveryLog
 from app.models.withdrawal import BankAccount, WithdrawalRequest, WithdrawalStatus, PayoutAccountType
 from app.models.discount import DiscountCode, DiscountRedemption, DiscountType, DiscountScope
+from app.models.referral import ReferralReward, ReferralEvent, ReferralRewardStatus
 
 __all__ = [
     "User", "UserRole", "UserStatus",
@@ -27,5 +28,6 @@ __all__ = [
     "CommissionTier",
     "ApiKey", "WebhookDeliveryLog",
     "BankAccount", "WithdrawalRequest", "WithdrawalStatus", "PayoutAccountType",
-    "DiscountCode", "DiscountRedemption", "DiscountType", "DiscountScope"
+    "DiscountCode", "DiscountRedemption", "DiscountType", "DiscountScope",
+    "ReferralReward", "ReferralEvent", "ReferralRewardStatus"
 ]

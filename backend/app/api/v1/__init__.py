@@ -12,6 +12,7 @@ from app.api.v1.merchant import router as merchant_router
 from app.api.v1.finance import router as finance_router
 from app.api.v1.withdrawals import router as withdrawals_router
 from app.api.v1.discounts import router as discounts_router
+from app.api.v1.referrals import router as referrals_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(auth_router)
@@ -27,3 +28,4 @@ api_v1_router.include_router(merchant_router)
 api_v1_router.include_router(finance_router)
 api_v1_router.include_router(withdrawals_router)
 api_v1_router.include_router(discounts_router)
+api_v1_router.include_router(referrals_router)

@@ -20,6 +20,7 @@ from app.core.logging import get_logger
 from app.models.catalog import Product
 from app.models.merchant import MerchantProfile
 from app.models.order import Order, OrderStatus
+from app.models.referral import ReferralEvent
 from app.models.user import User
 from app.services.checkout_svc import (
     provision_esim,
@@ -27,6 +28,7 @@ from app.services.checkout_svc import (
     complete_from_supplier_trx,
     _refund_failed_order,
 )
+from app.services import referral_svc
 from app.services.email_svc import EmailService
 from app.services.webhook_svc import deliver_webhook
 
@@ -56,10 +58,19 @@ async def _send_confirmation(db, order: Order, product: Product, profile) -> Non
 
 
 async def _finish(db, order: Order, product: Product, buyer: User, profile, *, email: bool = True) -> None:
-    # Commission only on a sale that actually delivered - a refunded order
-    # must not leave the merchant keeping commission on it.
+    # Commission and referral rewards only on a sale that actually delivered -
+    # a refunded order must not leave the merchant keeping commission, or a
+    # referrer keeping promo credit, on it.
     if profile:
         await distribute_commission(db, order, Decimal(str(order.total_amount)), buyer)
+        # Paid once per referred buyer: the unique constraint on
+        # (referred_id, event) means every later order is a no-op, so this is
+        # exactly "their first delivered purchase".
+        try:
+            await referral_svc.grant(db, buyer, ReferralEvent.FIRST_PURCHASE, order_id=order.id)
+        except Exception as e:
+            # A referral must never cost a customer their delivered eSIM.
+            logger.warning("referral_first_purchase_grant_failed", order_id=order.id, error=str(e))
     await db.commit()
     if profile and email:
         await _send_confirmation(db, order, product, profile)

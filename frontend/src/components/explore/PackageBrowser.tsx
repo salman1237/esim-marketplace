@@ -25,7 +25,7 @@ type Discount = { code: string; discount_amount: number; total: number };
 
 type Flow =
   | { stage: "checking"; product: Product }
-  | { stage: "choose"; product: Product; balance: number; discount: Discount | null }
+  | { stage: "choose"; product: Product; balance: number; promo: number; discount: Discount | null }
   | { stage: "working"; product: Product }
   | { stage: "redirecting"; product: Product }
   | { stage: "success"; product: Product; order: any }
@@ -144,16 +144,22 @@ export default function PackageBrowser({ country, products }: { country: any; pr
 
     const payable = discount ? discount.total : priceOf(product);
     let balance: number | null = null;
+    let promo = 0;
     try {
       const wallets = await api.getMyWallets(token);
       const def = (wallets || []).find((w: any) => w.wallet_type === "DEFAULT");
-      balance = def ? parseFloat(def.balance) : 0;
+      const reward = (wallets || []).find((w: any) => w.wallet_type === "REWARD");
+      // Reward credit pays for eSIMs (it just can't be withdrawn), so it
+      // counts towards covering the price - otherwise a customer holding
+      // enough promo credit would be sent to the card page anyway.
+      promo = reward ? parseFloat(reward.balance) : 0;
+      balance = (def ? parseFloat(def.balance) : 0) + promo;
     } catch {
       // Balance unknown - don't offer a wallet payment we can't vouch for.
       balance = null;
     }
     if (balance !== null && balance >= payable) {
-      setFlow({ stage: "choose", product, balance, discount });
+      setFlow({ stage: "choose", product, balance, promo, discount });
     } else {
       await payByGateway(product, discount?.code);
     }
@@ -234,6 +240,7 @@ export default function PackageBrowser({ country, products }: { country: any; pr
             discountCode={flow.discount?.code}
             walletBalanceLabel={formatPrice(flow.balance)}
             walletAfterLabel={formatPrice(flow.balance - payable)}
+            promoLabel={flow.promo > 0 ? formatPrice(Math.min(flow.promo, payable)) : undefined}
             onWallet={() => payByWallet(flow.product, flow.discount?.code)}
             onGateway={() => payByGateway(flow.product, flow.discount?.code)}
             onCancel={() => setFlow(null)}

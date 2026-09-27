@@ -29,6 +29,11 @@ class LedgerRefType(str, enum.Enum):
     # when a request is rejected or cancelled.
     WITHDRAWAL_HOLD = "WITHDRAWAL_HOLD"
     WITHDRAWAL_REVERSED = "WITHDRAWAL_REVERSED"
+    # Referral promo credit, which only ever lands in the REWARD wallet:
+    # spendable on eSIMs, never withdrawable. REVERSED claws it back when the
+    # purchase that earned it is refunded.
+    REWARD_EARNED = "REWARD_EARNED"
+    REWARD_REVERSED = "REWARD_REVERSED"
 
 class Wallet(Base):
     __tablename__ = "wallets"

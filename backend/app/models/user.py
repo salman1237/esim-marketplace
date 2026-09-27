@@ -30,6 +30,11 @@ class User(Base):
     preferred_currency = Column(String(10), default="EUR")
     preferred_language = Column(String(10), default="en")
     is_kyc_verified = Column(Boolean, default=False)
+    # Referrals. referral_code is this user's own code to share; referred_by_id
+    # is who brought them in, set once at sign-up and never changed - a reward
+    # that could be re-pointed later is a reward that can be paid twice.
+    referral_code = Column(String(16), unique=True, index=True, nullable=True)
+    referred_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     # Sign in with Google. google_sub is Google's stable account id (the ID
     # token's `sub`) - matched on first, since an email address can change.
     google_sub = Column(String(255), unique=True, index=True, nullable=True)

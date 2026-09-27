@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { Wallet, CheckCircle2, Copy, Check, Banknote } from "lucide-react";
+import { Wallet, CheckCircle2, Copy, Check, Banknote, Gift, Coins } from "lucide-react";
 import { animate } from "framer-motion";
 import { api, API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
@@ -15,6 +15,12 @@ type DepositMethod = {
   account_number?: string | null;
   branch?: string | null;
   instructions?: string | null;
+};
+
+const WALLET_COPY: Record<string, { title: string; note: string; icon: React.ComponentType<{ className?: string }>; tone: string }> = {
+  DEFAULT: { title: "Main balance", note: "Top up, spend on eSIMs, or withdraw", icon: Wallet, tone: "text-brand-600" },
+  REWARD: { title: "Reward credit", note: "Spends on eSIMs first · not withdrawable", icon: Gift, tone: "text-emerald-600" },
+  COMMISSION: { title: "Commission earned", note: "Move it to your main balance to use or withdraw", icon: Coins, tone: "text-merchant-600" },
 };
 
 function CopyValue({ value }: { value: string }) {
@@ -184,22 +190,30 @@ export default function WalletPage() {
         </div>
       )}
 
-      {/* Wallets Cards Grid */}
+      {/* Wallets Cards Grid — each balance says what it can actually do, since
+          reward credit buys eSIMs but can never be withdrawn. */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
-        {wallets.map((w) => (
-          <div key={w.id} className="glass-panel rounded-2xl p-6 border border-gray-200 relative overflow-hidden">
-            <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
-              <span className="font-semibold uppercase tracking-wider">{w.wallet_type} Wallet</span>
-              <Wallet className="w-4 h-4 text-brand-600" />
+        {wallets.map((w) => {
+          const meta = WALLET_COPY[w.wallet_type] || { title: `${w.wallet_type} Wallet`, note: `Currency: ${w.currency}`, icon: Wallet, tone: "text-brand-600" };
+          const Icon = meta.icon;
+          return (
+            <div key={w.id} className="glass-panel rounded-2xl p-6 border border-gray-200 relative overflow-hidden">
+              <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
+                <span className="font-semibold uppercase tracking-wider">{meta.title}</span>
+                <Icon className={`w-4 h-4 ${meta.tone}`} />
+              </div>
+              <div className="text-3xl font-extrabold text-slate-900">
+                <CountUpBalance value={parseFloat(w.balance)} formatPrice={formatPrice} />
+              </div>
+              <div className="text-[11px] text-slate-500 mt-2">{meta.note}</div>
+              {w.wallet_type === "REWARD" && (
+                <Link href="/refer" className="text-[11px] font-bold text-brand-600 hover:text-brand-700 mt-1.5 inline-block">
+                  Earn more →
+                </Link>
+              )}
             </div>
-            <div className="text-3xl font-extrabold text-slate-900">
-              <CountUpBalance value={parseFloat(w.balance)} formatPrice={formatPrice} />
-            </div>
-            <div className="text-[11px] text-emerald-600 mt-2 flex items-center space-x-1">
-              <span>Active Currency: {w.currency}</span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Top Up Options */}

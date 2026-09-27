@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import AuthBrandMark from "@/components/AuthBrandMark";
 import { api } from "@/lib/api";
@@ -11,15 +11,39 @@ export default function RegisterPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
+  const [referralCode, setReferralCode] = useState("");
+  const [referral, setReferral] = useState<{ valid: boolean; referrer_username?: string; joining_reward?: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // A shared link arrives as /auth/register?ref=CODE, so the field fills
+  // itself and the invite is confirmed by name before anyone types anything.
+  useEffect(() => {
+    const fromLink = new URLSearchParams(window.location.search).get("ref");
+    if (fromLink) setReferralCode(fromLink.toUpperCase());
+  }, []);
+
+  useEffect(() => {
+    const code = referralCode.trim();
+    if (code.length < 3) {
+      setReferral(null);
+      return;
+    }
+    const handle = setTimeout(() => {
+      api.validateReferralCode(code).then(setReferral).catch(() => setReferral(null));
+    }, 350);
+    return () => clearTimeout(handle);
+  }, [referralCode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
     try {
-      const res = await api.register({ email, username, password, phone });
+      const res = await api.register({
+        email, username, password, phone,
+        referral_code: referralCode.trim() || undefined,
+      });
       localStorage.setItem("esim_token", res.access_token);
       localStorage.setItem("esim_role", res.role);
       window.location.href = "/";
@@ -68,6 +92,27 @@ export default function RegisterPage() {
               onChange={(e) => setUsername(e.target.value)}
               className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900"
             />
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-700 font-semibold block mb-1">Referral code (Optional)</label>
+            <input
+              type="text"
+              value={referralCode}
+              onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+              placeholder="From a friend"
+              maxLength={16}
+              spellCheck={false}
+              className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs font-mono uppercase text-slate-900"
+            />
+            {referral?.valid ? (
+              <p className="mt-1 text-[11px] text-emerald-600 font-semibold">
+                Invited by {referral.referrer_username}
+                {Number(referral.joining_reward) > 0 ? ` — €${Number(referral.joining_reward).toFixed(2)} reward credit on sign-up` : ""}
+              </p>
+            ) : referralCode.trim().length >= 3 && referral && !referral.valid ? (
+              <p className="mt-1 text-[11px] text-slate-500">We don&apos;t recognise that code — you can still sign up without it.</p>
+            ) : null}
           </div>
 
           <div>

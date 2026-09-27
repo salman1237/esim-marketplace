@@ -38,6 +38,11 @@ class Order(Base):
     discount_code_id = Column(String(36), ForeignKey("discount_codes.id", ondelete="SET NULL"), nullable=True)
     # server_default so the NOT NULL holds for the orders that already exist.
     discount_amount = Column(Numeric(18, 4), default=0.0000, server_default="0", nullable=False)
+    # How much of total_amount came out of the REWARD (promo credit) wallet.
+    # Stored because a refund has to go back to the wallets that actually
+    # paid - crediting a promo-funded order wholly to the main wallet would
+    # turn non-withdrawable credit into withdrawable cash.
+    reward_amount_used = Column(Numeric(18, 4), default=0.0000, server_default="0", nullable=False)
     payment_method = Column(Enum(PaymentMethod), nullable=False)
     status = Column(Enum(OrderStatus), default=OrderStatus.PENDING, nullable=False)
     is_reseller_order = Column(Boolean, default=False)

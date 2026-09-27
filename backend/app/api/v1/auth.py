@@ -17,6 +17,7 @@ from app.core.deps import get_current_user
 from app.core.logging import get_logger
 from app.models.user import User, UserRole, UserStatus
 from app.models.merchant import MerchantProfile, MerchantStatus
+from app.models.referral import ReferralEvent
 from app.models.wallet import Wallet, WalletType
 from app.models.password_reset import PasswordResetToken
 from app.schemas.auth import (
@@ -25,6 +26,7 @@ from app.schemas.auth import (
 )
 from app.services.google_auth import GoogleTokenError, GoogleUnavailableError, verify_google_id_token
 from app.services.ledger_svc import LedgerService
+from app.services import referral_svc
 from app.services.email_svc import EmailService
 
 logger = get_logger(__name__)
@@ -56,6 +58,10 @@ async def register(request: Request, req: UserRegister, db: AsyncSession = Depen
     if res.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email or username already exists")
 
+    # An unknown code is ignored rather than refused: it must never be the
+    # reason someone can't create an account.
+    referrer = await referral_svc.find_referrer(db, req.referral_code)
+
     user = User(
         email=req.email,
         username=req.username,
@@ -63,14 +69,25 @@ async def register(request: Request, req: UserRegister, db: AsyncSession = Depen
         role=UserRole.USER,
         status=UserStatus.ACTIVE,
         phone=req.phone,
-        full_name=req.full_name
+        full_name=req.full_name,
+        referred_by_id=referrer.id if referrer else None,
     )
     db.add(user)
+    await db.flush()
+    await referral_svc.ensure_referral_code(db, user)
     await db.commit()
     await db.refresh(user)
 
     # Initialize Wallets
     await LedgerService.ensure_wallets_for_user(db, user.id, user.role)
+
+    if referrer:
+        try:
+            await referral_svc.grant(db, user, ReferralEvent.JOINING)
+            await db.commit()
+        except Exception as e:
+            await db.rollback()
+            logger.warning("referral_joining_grant_failed", user_id=user.id, error=str(e))
 
     asyncio.create_task(_send_welcome_email_background(user.email, user.username))
 
@@ -232,6 +249,11 @@ async def google_login(request: Request, req: GoogleLoginRequest, db: AsyncSessi
 
     if created:
         await LedgerService.ensure_wallets_for_user(db, user.id, user.role)
+        # Google sign-up carries no referral code (nothing in Google's token
+        # to put one in), so there is no JOINING reward here - the code can
+        # still be added later from the Refer & earn page.
+        await referral_svc.ensure_referral_code(db, user)
+        await db.commit()
         asyncio.create_task(_send_welcome_email_background(user.email, user.username))
     logger.info("google_login_succeeded", user_id=user.id, created=created)
 

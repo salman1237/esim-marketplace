@@ -105,6 +105,13 @@ export const api = {
   initiateShurjopayTopup: (token: string, amountUsd: number) =>
     fetchApi(`/api/v1/payments/shurjopay/topup?amount=${amountUsd}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
 
+  // Referrals. Reward credit lands in the REWARD wallet: spendable on
+  // eSIMs, never withdrawable.
+  validateReferralCode: (code: string) => fetchApi(`/api/v1/referrals/validate?code=${encodeURIComponent(code)}`),
+  getMyReferrals: (token: string) => fetchApi("/api/v1/referrals/me", { headers: { Authorization: `Bearer ${token}` } }),
+  claimReferralCode: (token: string, code: string) =>
+    fetchApi("/api/v1/referrals/claim", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ code }) }),
+
   // Discount codes — preview before paying; the real validation happens
   // again at checkout, under a row lock.
   previewDiscount: (token: string, code: string, productId: string) =>
@@ -223,6 +230,11 @@ export const api = {
   getAdminUsers: (token: string, q?: string) => fetchApi(`/api/v1/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   makeUserReseller: (token: string, userId: string, data: { business_name: string; contact_phone: string; commission_rate_pct?: number }) => fetchApi(`/api/v1/admin/users/${userId}/make-reseller`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
   createStaffAccount: (token: string, data: any) => fetchApi("/api/v1/admin/users", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  // Admin: referral programme
+  getAdminReferralSettings: (token: string) => fetchApi("/api/v1/admin/referral-settings", { headers: { Authorization: `Bearer ${token}` } }),
+  updateAdminReferralSettings: (token: string, data: any) => fetchApi("/api/v1/admin/referral-settings", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
+  getAdminReferralReport: (token: string) => fetchApi("/api/v1/admin/referrals", { headers: { Authorization: `Bearer ${token}` } }),
+
   // Admin: discount codes
   getAdminDiscounts: (token: string) => fetchApi("/api/v1/admin/discounts", { headers: { Authorization: `Bearer ${token}` } }),
   createAdminDiscount: (token: string, data: any) => fetchApi("/api/v1/admin/discounts", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),

@@ -8,6 +8,8 @@ class UserRegister(BaseModel):
     password: str
     phone: Optional[str] = None
     full_name: Optional[str] = None
+    # Someone else's referral code. Ignored if it doesn't match anyone.
+    referral_code: Optional[str] = None
 
 class UserLogin(BaseModel):
     email: str

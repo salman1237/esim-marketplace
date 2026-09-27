@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { Globe, DollarSign, User, Shield, Briefcase, Wifi, Menu, X } from "lucide-react";
+import { Globe, DollarSign, User, Shield, Briefcase, Wifi, Menu, X, Gift } from "lucide-react";
 import { api, API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 
@@ -65,6 +65,12 @@ export default function Header() {
           <Link href="/destinations" className="hover:text-slate-900 transition-colors">{t("nav", "countries", "Destinations")}</Link>
           <Link href="/my-esims" className="hover:text-slate-900 transition-colors">{t("common", "my_esims", "My eSIMs")}</Link>
           <Link href="/wallet" className="hover:text-slate-900 transition-colors">{t("common", "wallet", "Wallet")}</Link>
+          {token && (
+            <Link href="/refer" className="hover:text-slate-900 transition-colors flex items-center space-x-1">
+              <Gift className="w-4 h-4" />
+              <span>Refer</span>
+            </Link>
+          )}
           {userData?.role === "SUPER_ADMIN" || userData?.role === "ADMIN" ? (
             <Link href="/admin" className="text-admin-600 hover:text-admin-700 flex items-center space-x-1">
               <Shield className="w-4 h-4" />
@@ -173,6 +179,9 @@ export default function Header() {
           <Link href="/destinations" onClick={() => setIsMenuOpen(false)} className="block py-2 text-slate-600">{t("nav", "countries", "Destinations")}</Link>
           <Link href="/my-esims" onClick={() => setIsMenuOpen(false)} className="block py-2 text-slate-600">{t("common", "my_esims", "My eSIMs")}</Link>
           <Link href="/wallet" onClick={() => setIsMenuOpen(false)} className="block py-2 text-slate-600">{t("common", "wallet", "Wallet")}</Link>
+          {token && (
+            <Link href="/refer" onClick={() => setIsMenuOpen(false)} className="block py-2 text-slate-600">Refer &amp; Earn</Link>
+          )}
           {userData?.role === "SUPER_ADMIN" || userData?.role === "ADMIN" ? (
             <Link href="/admin" onClick={() => setIsMenuOpen(false)} className="block py-2 text-admin-600">{t("common", "admin", "Admin Console")}</Link>
           ) : null}

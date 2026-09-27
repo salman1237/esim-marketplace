@@ -14,12 +14,13 @@ import SalesReportTab from "@/components/admin/SalesReportTab";
 import FinanceTab from "@/components/admin/FinanceTab";
 import WithdrawalsTab from "@/components/admin/WithdrawalsTab";
 import DiscountsTab from "@/components/admin/DiscountsTab";
+import ReferralsTab from "@/components/admin/ReferralsTab";
 import OverviewTab from "@/components/admin/overview/OverviewTab";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { Trash2, Download } from "lucide-react";
 import { saveBlob } from "@/components/finance/StatementView";
 
-type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "withdrawals" | "discounts" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales" | "finance";
+type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "withdrawals" | "discounts" | "referrals" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales" | "finance";
 
 export default function AdminConsolePage() {
   const { formatPrice, languages: appLanguages } = useAppSettings();
@@ -584,6 +585,7 @@ export default function AdminConsolePage() {
           { id: "catalog", label: "Catalog" },
           { id: "sales", label: "Sales & Profit" },
           { id: "discounts", label: "Discount Codes" },
+          { id: "referrals", label: "Referrals & Rewards" },
           { id: "finance", label: "Finance & Reconciliation" },
           { id: "customer-wallet", label: "Customer Wallet" },
           ...(isSuperAdmin ? [{ id: "users", label: "Staff & Users" }] : []),
@@ -1091,6 +1093,7 @@ export default function AdminConsolePage() {
       {activeTab === "finance" && <FinanceTab />}
       {activeTab === "withdrawals" && <WithdrawalsTab isSuperAdmin={isSuperAdmin} onCountChange={setPendingWithdrawals} />}
       {activeTab === "discounts" && <DiscountsTab />}
+      {activeTab === "referrals" && <ReferralsTab isSuperAdmin={isSuperAdmin} />}
 
       {/* Tab: Catalog - selling profit % sets every price */}
       {activeTab === "catalog" && (

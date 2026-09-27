@@ -100,6 +100,7 @@ export default function Footer() {
             <li><Link href="/destinations" className={link}>All Destinations</Link></li>
             <li><Link href="/my-esims" className={link}>{t("common", "my_esims", "My eSIMs")}</Link></li>
             <li><Link href="/wallet" className={link}>{t("common", "wallet", "Wallet")} &amp; Top Up</Link></li>
+            <li><Link href="/refer" className={link}>Refer &amp; Earn</Link></li>
           </ul>
         </div>
 

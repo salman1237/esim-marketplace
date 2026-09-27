@@ -156,6 +156,13 @@ async def money_cycle_summary(db: AsyncSession, start: datetime, end: datetime) 
             # explain balance that left wallets without an order behind it.
             "withdrawals_held": cents(ledger_sum(LedgerRefType.WITHDRAWAL_HOLD, LedgerTxType.DEBIT)),
             "withdrawals_returned": cents(ledger_sum(LedgerRefType.WITHDRAWAL_REVERSED, LedgerTxType.CREDIT)),
+            # Referral promo credit issued and clawed back. Not cash out: it
+            # only ever becomes a discounted eSIM.
+            "reward_credit_granted": cents(ledger_sum(LedgerRefType.REWARD_EARNED, LedgerTxType.CREDIT)),
+            "reward_credit_reversed": cents(ledger_sum(LedgerRefType.REWARD_REVERSED, LedgerTxType.DEBIT)),
+            "reward_credit_spent_on_orders": cents(
+                ledger_sum(LedgerRefType.ORDER_PURCHASE, LedgerTxType.DEBIT, WalletType.REWARD)
+            ),
         },
         "withdrawals": await withdrawals_in_period(db, start, end),
         "sales": {
@@ -221,6 +228,7 @@ async def wallet_liabilities(db: AsyncSession) -> dict:
     )).all()
     groups: dict = {}
     total = Decimal("0")
+    promo = Decimal("0")
     for wallet_type, role, n, balance in rows:
         holder = "merchant" if role == UserRole.MERCHANT else "customer"
         key = f"{holder}_{wallet_type.value.lower()}"
@@ -228,6 +236,11 @@ async def wallet_liabilities(db: AsyncSession) -> dict:
         g["wallets"] += n
         g["balance"] += Decimal(str(balance))
         total += Decimal(str(balance))
+        # Referral promo credit. A liability in eSIMs, never in cash: it can
+        # buy a package but can never be withdrawn, so it must not be read as
+        # money we might have to pay out.
+        if wallet_type == WalletType.REWARD:
+            promo += Decimal(str(balance))
     # Pending withdrawals are no longer in any wallet balance (the hold was
     # taken at request time), but we still owe the money - so they are a
     # separate payable, not part of the wallet total.
@@ -242,6 +255,9 @@ async def wallet_liabilities(db: AsyncSession) -> dict:
         "as_of": datetime.now(timezone.utc).isoformat(),
         "groups": {k: {"wallets": v["wallets"], "balance": cents(v["balance"])} for k, v in sorted(groups.items())},
         "total": cents(total),
+        "promo_credit": cents(promo),
+        # What could actually be asked for in cash: everything except promo credit.
+        "cash_owed": cents(total - promo),
         "pending_withdrawals": {"requests": pending[0], "payable": cents(Decimal(str(pending[1])))},
         "total_including_pending_withdrawals": cents(total + Decimal(str(pending[1]))),
     }

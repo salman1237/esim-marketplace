@@ -16,6 +16,7 @@ from app.models.catalog import Product
 from app.models.commission_tier import CommissionTier
 from app.models.wallet import Wallet, WalletType, LedgerRefType
 from app.services.ledger_svc import LedgerService
+from app.services import referral_svc
 from app.services.vivape_adapter import VivaPeAdapter
 from app.services.audit_svc import AuditService
 from app.core.logging import get_logger
@@ -214,30 +215,57 @@ async def provision_esim(db: AsyncSession, order: Order, product: Product, benef
 
 
 async def _refund_failed_order(db: AsyncSession, order: Order, actor_id: str, actor_role: str) -> None:
-    """Marks `order` FAILED and credits its buyer's DEFAULT wallet for the
-    full order amount — the same compensation regardless of whether the
-    order was originally paid from the wallet (reverses the debit) or via
-    ShurjoPay gateway (no prior debit to reverse, so this is the customer's
-    only compensation since no payment-gateway refund integration exists)."""
+    """Marks `order` FAILED and refunds the full order amount — the same
+    compensation regardless of whether the order was originally paid from the
+    wallet (reverses the debit) or via ShurjoPay gateway (no prior debit to
+    reverse, so this is the customer's only compensation since no
+    payment-gateway refund integration exists).
+
+    The refund is split the way the payment was: whatever came out of promo
+    credit goes back to promo credit. Returning it all to the main wallet
+    would quietly convert non-withdrawable reward credit into cash the
+    customer could withdraw."""
     order.status = OrderStatus.FAILED
 
-    w_res = await db.execute(
-        select(Wallet).where(Wallet.user_id == order.buyer_id, Wallet.wallet_type == WalletType.DEFAULT)
-    )
-    wallet = w_res.scalar_one_or_none()
-    if wallet:
+    total = Decimal(str(order.total_amount))
+    reward_part = min(Decimal(str(order.reward_amount_used or 0)), total)
+    cash_part = total - reward_part
+
+    if reward_part > 0:
+        reward_wallet = await LedgerService.ensure_reward_wallet(db, order.buyer_id)
         await LedgerService.credit(
-            db, wallet.id, Decimal(str(order.total_amount)),
+            db, reward_wallet.id, reward_part,
             LedgerRefType.REFUND,
             ref_id=order.id,
-            description=f"Refund: eSIM provisioning failed for order {order.order_no}",
-            idempotency_key=f"order-refund-{order.id}"
+            description=f"Refund to reward credit: order {order.order_no} failed",
+            idempotency_key=f"order-refund-{order.id}-reward"
         )
+
+    if cash_part > 0:
+        w_res = await db.execute(
+            select(Wallet).where(Wallet.user_id == order.buyer_id, Wallet.wallet_type == WalletType.DEFAULT)
+        )
+        wallet = w_res.scalar_one_or_none()
+        if wallet:
+            await LedgerService.credit(
+                db, wallet.id, cash_part,
+                LedgerRefType.REFUND,
+                ref_id=order.id,
+                description=f"Refund: eSIM provisioning failed for order {order.order_no}",
+                idempotency_key=f"order-refund-{order.id}"
+            )
+
+    # The single refund funnel, so a first-purchase referral reward tied to
+    # this order is clawed back here rather than at each call site.
+    await referral_svc.reverse_for_order(db, order.id, f"order {order.order_no} refunded")
 
     await AuditService.log_action(
         db, actor_id=actor_id, actor_role=actor_role,
         action="ORDER_PROVISIONING_FAILED_REFUNDED",
-        after_state={"order_id": order.id, "product_id": order.product_id, "refund_amount": str(order.total_amount)}
+        after_state={
+            "order_id": order.id, "product_id": order.product_id,
+            "refund_amount": str(order.total_amount), "refunded_to_reward_credit": str(reward_part),
+        }
     )
 
 

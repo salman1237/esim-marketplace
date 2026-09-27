@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFil
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
+from sqlalchemy.orm import aliased
 from app.core.config import settings
 from app.core.database import get_db, AsyncSessionLocal
 from app.core.deps import require_admin, require_super_admin
@@ -28,6 +29,7 @@ from app.models.commission_tier import CommissionTier
 from app.models.partner_api import ApiKey
 from app.models.withdrawal import WithdrawalRequest, WithdrawalStatus
 from app.models.discount import DiscountCode, DiscountRedemption, DiscountScope, DiscountType
+from app.models.referral import ReferralEvent, ReferralReward, ReferralRewardStatus
 from datetime import date as Date, datetime, timedelta, timezone
 from app.core.seed_translations import EN_TRANSLATIONS, flatten
 from app.schemas.settings import (
@@ -37,7 +39,10 @@ from app.schemas.settings import (
 from app.services.ledger_svc import LedgerService
 from app.services.payment_methods_svc import get_payment_methods, set_payment_methods
 from app.services.legal_content_svc import LEGAL_TITLES, get_legal_document, save_legal_document
-from app.services import discount_svc, gateway_config_svc, topup_limits_svc, withdrawal_settings_svc, withdrawal_svc
+from app.services import (
+    discount_svc, gateway_config_svc, referral_settings_svc, referral_svc,
+    topup_limits_svc, withdrawal_settings_svc, withdrawal_svc,
+)
 from app.services.admin_overview_svc import build_overview
 from app.services.catalog_export_svc import build_catalog_workbook
 from app.services.shurjopay_svc import ShurjoPayService
@@ -322,6 +327,12 @@ async def approve_merchant(
     if user:
         user.role = UserRole.MERCHANT
         await LedgerService.ensure_wallets_for_user(db, user.id, UserRole.MERCHANT)
+        # Whoever referred this account earns the new-partner reward, if the
+        # admin configured one. Never fails the approval.
+        try:
+            await referral_svc.grant(db, user, ReferralEvent.NEW_MERCHANT)
+        except Exception as e:
+            logger.warning("referral_new_merchant_grant_failed", user_id=user.id, error=str(e))
 
     await AuditService.log_action(
         db, actor_id=admin_user.id, actor_role=admin_user.role.value,
@@ -2338,3 +2349,144 @@ async def list_discount_redemptions(
         }
         for r, o, u in rows
     ]
+
+
+# --- Referral programme (Admin + Super Admin can see it; only a Super Admin
+# changes the amounts, matching the other money settings) ---
+
+class ReferralEventAmounts(BaseModel):
+    referrer: Decimal = Field(Decimal("0"), ge=0)
+    referred: Decimal = Field(Decimal("0"), ge=0)
+    enabled: bool = False
+
+
+class ReferralSettingsRequest(BaseModel):
+    is_enabled: bool = False
+    events: dict[str, ReferralEventAmounts] = {}
+    max_rewarded_referrals: Optional[int] = Field(None, ge=1)
+
+
+@router.get("/referral-settings", dependencies=[Depends(require_admin)])
+async def get_referral_settings_endpoint(db: AsyncSession = Depends(get_db)):
+    cfg = await referral_settings_svc.get_referral_settings(db)
+    return {
+        **referral_settings_svc.serialize(cfg),
+        "event_labels": referral_settings_svc.EVENT_LABELS,
+        "base_currency": settings.BASE_CURRENCY,
+        "max_reward": str(referral_settings_svc.ABSOLUTE_MAX_REWARD),
+    }
+
+
+@router.put("/referral-settings", dependencies=[Depends(require_super_admin)])
+async def update_referral_settings(
+    req: ReferralSettingsRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    payload = {
+        "is_enabled": req.is_enabled,
+        "events": {k: v.model_dump() for k, v in req.events.items()},
+        "max_rewarded_referrals": req.max_rewarded_referrals,
+    }
+    try:
+        change = await referral_settings_svc.set_referral_settings(db, payload, admin_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_REFERRAL_SETTINGS",
+        before_state=change["before"], after_state=change["after"],
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return change["after"]
+
+
+@router.get("/referrals", dependencies=[Depends(require_admin)])
+async def referral_report(
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db)
+):
+    """Who is bringing people in, what it cost in promo credit, and how much
+    of that credit is still an outstanding liability."""
+    referrer = aliased(User)
+    referred = aliased(User)
+
+    rows = (await db.execute(
+        select(ReferralReward, referrer.username, referred.username)
+        .join(referrer, ReferralReward.referrer_id == referrer.id)
+        .join(referred, ReferralReward.referred_id == referred.id)
+        .order_by(ReferralReward.created_at.desc())
+        .limit(limit)
+    )).all()
+
+    granted = ReferralReward.status == ReferralRewardStatus.GRANTED
+    totals = (await db.execute(
+        select(
+            func.count(ReferralReward.id),
+            func.coalesce(func.sum(ReferralReward.referrer_amount).filter(granted), 0),
+            func.coalesce(func.sum(ReferralReward.referred_amount).filter(granted), 0),
+            func.count(ReferralReward.id).filter(ReferralReward.status == ReferralRewardStatus.REVERSED),
+        )
+    )).one()
+
+    # Top referrers by credit earned, ignoring reversed rewards.
+    leaders = (await db.execute(
+        select(
+            referrer.username,
+            func.count(func.distinct(ReferralReward.referred_id)),
+            func.coalesce(func.sum(ReferralReward.referrer_amount), 0),
+        )
+        .join(referrer, ReferralReward.referrer_id == referrer.id)
+        .where(granted)
+        .group_by(referrer.username)
+        .order_by(func.sum(ReferralReward.referrer_amount).desc())
+        .limit(20)
+    )).all()
+
+    # Promo credit still sitting in REWARD wallets - what we owe in eSIMs, not
+    # in cash, since it can never be withdrawn.
+    outstanding = (await db.execute(
+        select(func.coalesce(func.sum(Wallet.balance), 0)).where(Wallet.wallet_type == WalletType.REWARD)
+    )).scalar() or 0
+
+    # Signed up with a code but nothing granted yet (the programme was off, or
+    # the event they qualify for isn't configured).
+    referred_users = (await db.execute(
+        select(func.count(User.id)).where(User.referred_by_id.isnot(None))
+    )).scalar() or 0
+
+    return {
+        "currency": settings.BASE_CURRENCY,
+        "totals": {
+            "rewards": totals[0],
+            "paid_to_referrers": _cents(Decimal(str(totals[1]))),
+            "paid_to_referred": _cents(Decimal(str(totals[2]))),
+            "total_granted": _cents(Decimal(str(totals[1])) + Decimal(str(totals[2]))),
+            "reversed": totals[3],
+            "referred_users": referred_users,
+            "promo_credit_outstanding": _cents(Decimal(str(outstanding))),
+        },
+        "leaders": [
+            {"username": name, "referrals": n, "earned": _cents(Decimal(str(amount)))}
+            for name, n, amount in leaders
+        ],
+        "rewards": [
+            {
+                "id": r.id,
+                "event": r.event.value,
+                "referrer": referrer_name,
+                "referred": referred_name,
+                "referrer_amount": _cents(Decimal(str(r.referrer_amount))),
+                "referred_amount": _cents(Decimal(str(r.referred_amount))),
+                "status": r.status.value,
+                "order_id": r.order_id,
+                "reversal_reason": r.reversal_reason,
+                "created_at": r.created_at,
+            }
+            for r, referrer_name, referred_name in rows
+        ],
+    }
