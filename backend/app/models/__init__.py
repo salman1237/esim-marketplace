@@ -14,6 +14,7 @@ from app.models.withdrawal import BankAccount, WithdrawalRequest, WithdrawalStat
 from app.models.discount import DiscountCode, DiscountRedemption, DiscountType, DiscountScope
 from app.models.referral import ReferralReward, ReferralEvent, ReferralRewardStatus
 from app.models.agent import AgentProfile, AgentStatus
+from app.models.esim_telemetry import ESIMTelemetry
 
 __all__ = [
     "User", "UserRole", "UserStatus",
@@ -31,5 +32,6 @@ __all__ = [
     "BankAccount", "WithdrawalRequest", "WithdrawalStatus", "PayoutAccountType",
     "DiscountCode", "DiscountRedemption", "DiscountType", "DiscountScope",
     "ReferralReward", "ReferralEvent", "ReferralRewardStatus",
-    "AgentProfile", "AgentStatus"
+    "AgentProfile", "AgentStatus",
+    "ESIMTelemetry"
 ]

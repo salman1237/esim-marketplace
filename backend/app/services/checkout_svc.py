@@ -5,7 +5,6 @@ provisioning behavior can't drift between them.
 import uuid
 import json
 from decimal import Decimal
-from datetime import datetime, timezone, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.core.security import get_password_hash
@@ -133,7 +132,11 @@ def _attach_profile(db: AsyncSession, order: Order, product: Product, beneficiar
         supplier_reference=str(trx_id),
         status=ESIMStatus.RELEASED,
         is_mock_fallback=False,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=product.validity_days),
+        # activated_at/expires_at are deliberately left unset: the plan's
+        # validity starts when the customer installs the profile, not now.
+        # esim_telemetry_svc fills both in from VivaPe once that happens.
+        # Setting them here dated a 3-day eSIM from the purchase, so anyone
+        # who bought before their trip saw it as expired on arrival.
     )
     db.add(profile)
     order.status = OrderStatus.COMPLETED

@@ -236,6 +236,50 @@ function OrderDetail({ orderId, formatPrice, onClose }: { orderId: string; forma
               <DetailRow label="Created" value={formatDateTime(order.created_at)} />
             </div>
 
+            {/* Live carrier status, so a partner can answer their own
+                customer's "it isn't working" without going through us. */}
+            {order.live_status && (
+              <div>
+                <h4 className="font-bold text-slate-900 mb-2">Live status</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">SIM status</div>
+                    <div className={`font-bold ${order.live_status.status.is_activated ? "text-emerald-600" : "text-slate-700"}`}>
+                      {order.live_status.status.label}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Data used</div>
+                    <div className="font-bold text-slate-900">{order.live_status.usage.formatted || "0 MB"}</div>
+                    {!order.live_status.usage.is_unlimited && order.live_status.usage.remaining_formatted && (
+                      <div className="text-[10px] text-slate-500">{order.live_status.usage.remaining_formatted} left</div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Handset</div>
+                    <div className="text-slate-700">
+                      {order.live_status.status.is_installed
+                        ? (order.live_status.status.device_model || "Installed")
+                        : "Not installed"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Expires</div>
+                    <div className="text-slate-700">
+                      {order.live_status.validity.expires_at
+                        ? formatDateTime(order.live_status.validity.expires_at)
+                        : `On install +${order.live_status.validity.days}d`}
+                    </div>
+                  </div>
+                </div>
+                {order.live_status.telemetry.error && (
+                  <p className="mt-2 text-[11px] text-amber-700">
+                    Carrier unreachable — showing the last known figures.
+                  </p>
+                )}
+              </div>
+            )}
+
             {order.source === "api" && (
               <div>
                 <h4 className="font-bold text-slate-900 mb-2">Webhook deliveries</h4>

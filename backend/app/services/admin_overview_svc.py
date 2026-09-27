@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.catalog import Country, Product
 from app.models.kyc import KYCStatus, KYCSubmission
 from app.models.merchant import MerchantProfile, MerchantStatus
-from app.models.order import Order, OrderStatus
+from app.models.esim_telemetry import ESIMTelemetry
+from app.models.order import ESIMProfile, Order, OrderStatus
 from app.models.payment import ManualPaymentRequest, ManualPaymentStatus
 from app.models.user import User, UserRole
 from app.models.wallet import LedgerRefType, LedgerTxType, WalletLedgerEntry
@@ -21,6 +22,8 @@ from app.services.finance_svc import cents, ledger_integrity, wallet_liabilities
 
 STUCK_AFTER = timedelta(minutes=30)
 TOP_DESTINATIONS = 8
+# A customer who hasn't installed within this long has probably hit a problem.
+NOT_INSTALLED_AFTER = timedelta(hours=48)
 RECENT_ORDERS = 8
 _ZERO = Decimal("0")
 
@@ -182,6 +185,19 @@ async def build_overview(db: AsyncSession, days: int) -> dict:
         "pending_deposits": await count(select(func.count(ManualPaymentRequest.id)).where(ManualPaymentRequest.status == ManualPaymentStatus.PENDING)),
         "pending_kyc": await count(select(func.count(KYCSubmission.id)).where(KYCSubmission.status == KYCStatus.PENDING)),
         "pending_withdrawals": await count(select(func.count(WithdrawalRequest.id)).where(WithdrawalRequest.status == WithdrawalStatus.PENDING)),
+        # eSIMs we have actually checked with the carrier that are still not
+        # installed two days after delivery - the population most likely to
+        # turn into "it doesn't work" tickets. Counted only from eSIMs with
+        # telemetry, so it never inflates itself with ones nobody has looked
+        # at; it grows as status pages get opened.
+        "delivered_not_installed": await count(
+            select(func.count(ESIMTelemetry.id))
+            .join(ESIMProfile, ESIMTelemetry.esim_profile_id == ESIMProfile.id)
+            .where(
+                ESIMTelemetry.is_installed == False,  # noqa: E712
+                ESIMProfile.created_at < now - NOT_INSTALLED_AFTER,
+            )
+        ),
         "stuck_orders": await count(select(func.count(Order.id)).where(
             Order.status.in_([OrderStatus.PAID, OrderStatus.PROCESSING]), Order.updated_at < now - STUCK_AFTER,
         )),

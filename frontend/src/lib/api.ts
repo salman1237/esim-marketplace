@@ -138,6 +138,10 @@ export const api = {
   // beneficiary_email, auto_create_user) - same shape as the wallet checkout.
   initiateOrderPayment: (token: string, productId: string, extra: Record<string, any> = {}) => fetchApi("/api/v1/payments/shurjopay/order-initiate", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ product_id: productId, payment_method: "SHURJOPAY", ...extra }) }),
   getMyESIMs: (token: string) => fetchApi("/api/v1/orders/my-esims", { headers: { Authorization: `Bearer ${token}` } }),
+  // Live carrier telemetry for one eSIM. The GET is cache-backed; the POST
+  // asks the carrier for fresh numbers and is cooled down server-side.
+  getEsimStatus: (token: string, esimId: string) => fetchApi(`/api/v1/esims/${esimId}/status`, { headers: { Authorization: `Bearer ${token}` } }),
+  refreshEsimStatus: (token: string, esimId: string) => fetchApi(`/api/v1/esims/${esimId}/refresh`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
   getOrder: (token: string, orderId: string) => fetchApi(`/api/v1/orders/${orderId}`, { headers: { Authorization: `Bearer ${token}` } }),
   getResellerOrders: (token: string) => fetchApi("/api/v1/orders/reseller-orders", { headers: { Authorization: `Bearer ${token}` } }),
 
@@ -246,6 +250,7 @@ export const api = {
   makeUserReseller: (token: string, userId: string, data: { business_name: string; contact_phone: string; commission_rate_pct?: number }) => fetchApi(`/api/v1/admin/users/${userId}/make-reseller`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
   createStaffAccount: (token: string, data: any) => fetchApi("/api/v1/admin/users", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
   // Admin: agents
+  getSupplierAccount: (token: string, refresh = false) => fetchApi(`/api/v1/admin/supplier/account${refresh ? "?refresh=true" : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   getAdminAgents: (token: string, status?: string) => fetchApi(`/api/v1/admin/agents${status ? `?status=${status}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   getAgentMarginCheck: (token: string, merchantPct: string, agentPct: string) =>
     fetchApi(`/api/v1/admin/agents/margin-check?merchant_pct=${merchantPct}&agent_pct=${agentPct}`, { headers: { Authorization: `Bearer ${token}` } }),

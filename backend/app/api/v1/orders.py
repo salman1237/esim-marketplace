@@ -153,7 +153,12 @@ async def list_my_esims(current_user: User = Depends(get_current_user), db: Asyn
             "status": profile.status.value,
             "is_mock_fallback": profile.is_mock_fallback,
             "created_at": profile.created_at,
+            # Both stay null until the eSIM is installed - validity runs from
+            # activation, so the list says "starts on install" rather than
+            # counting down from the purchase date.
+            "activated_at": profile.activated_at,
             "expires_at": profile.expires_at,
+            "validity_days": product.validity_days,
             "is_beneficiary": profile.beneficiary_id == current_user.id
         })
     return results

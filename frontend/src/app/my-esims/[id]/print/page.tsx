@@ -69,9 +69,14 @@ export default function PrintEsimPage() {
     ["Data", item.is_unlimited ? "Unlimited" : `${item.data_amount_gb} GB`],
     ["Plan Validity", `${item.validity_days} Days`],
   ];
-  if (item.expires_at) {
-    rows.push(["Expires", new Date(item.expires_at).toLocaleDateString()]);
-  }
+  // Validity starts on install, so an un-installed eSIM has no date to print.
+  // Saying so is the point of printing this at all - the customer may be
+  // carrying it for weeks before they land.
+  rows.push(
+    item.expires_at
+      ? ["Expires", new Date(item.expires_at).toLocaleDateString()]
+      : ["Expires", `${item.validity_days} days after you install it`]
+  );
 
   return (
     <div className="print-sheet">

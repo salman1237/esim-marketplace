@@ -14,6 +14,7 @@ from app.api.v1.withdrawals import router as withdrawals_router
 from app.api.v1.discounts import router as discounts_router
 from app.api.v1.referrals import router as referrals_router
 from app.api.v1.agent import router as agent_router
+from app.api.v1.esims import router as esims_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(auth_router)
@@ -31,3 +32,4 @@ api_v1_router.include_router(withdrawals_router)
 api_v1_router.include_router(discounts_router)
 api_v1_router.include_router(referrals_router)
 api_v1_router.include_router(agent_router)
+api_v1_router.include_router(esims_router)

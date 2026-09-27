@@ -16,6 +16,7 @@ import WithdrawalsTab from "@/components/admin/WithdrawalsTab";
 import DiscountsTab from "@/components/admin/DiscountsTab";
 import ReferralsTab from "@/components/admin/ReferralsTab";
 import AgentsTab from "@/components/admin/AgentsTab";
+import EsimLiveStatus from "@/components/admin/EsimLiveStatus";
 import OverviewTab from "@/components/admin/overview/OverviewTab";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { Trash2, Download } from "lucide-react";
@@ -1648,11 +1649,20 @@ export default function AdminConsolePage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4" onClick={() => setInspectingLog(null)}>
           <div className="glass-panel rounded-2xl max-w-2xl w-full p-6 border border-gray-300 shadow-2xl max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold text-slate-900">Log Entry Detail</h3>
+              <h3 className="text-sm font-bold text-slate-900">
+                {inspectingLog.esim_id ? `eSIM support — ${inspectingLog.order_no}` : "Log Entry Detail"}
+              </h3>
               <button onClick={() => setInspectingLog(null)} aria-label="Close" className="p-1 rounded-lg text-slate-500 hover:text-slate-900">
                 <X className="w-5 h-5" />
               </button>
             </div>
+            {/* An order row carries an esim_id, so "it isn't working" can be
+                answered with the carrier's own view instead of guesswork. */}
+            {inspectingLog.esim_id && (
+              <div className="mb-4">
+                <EsimLiveStatus esimId={inspectingLog.esim_id} />
+              </div>
+            )}
             <pre className="text-[11px] font-mono text-slate-700 bg-gray-50 p-4 rounded-xl overflow-x-auto whitespace-pre-wrap break-all">
               {JSON.stringify(inspectingLog, null, 2)}
             </pre>

@@ -87,8 +87,15 @@ class ESIMProfile(Base):
     supplier_reference = Column(String(100), nullable=True)
     status = Column(Enum(ESIMStatus), default=ESIMStatus.ALLOCATED, nullable=False)
     is_mock_fallback = Column(Boolean, default=False)
+    # Validity runs from FIRST ACTIVATION, not from purchase — confirmed
+    # against VivaPe's own status page and their usage API. Both stay NULL
+    # until the customer installs the profile and telemetry tells us when
+    # the clock actually started; computing them at purchase time made an
+    # un-activated eSIM look expired while it was still perfectly usable.
+    activated_at = Column(DateTime(timezone=True), nullable=True)
     expires_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     order = relationship("Order", back_populates="esim_profile")
+    telemetry = relationship("ESIMTelemetry", uselist=False, back_populates="esim_profile", cascade="all, delete-orphan")

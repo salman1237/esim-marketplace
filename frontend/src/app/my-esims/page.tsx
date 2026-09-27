@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { QrCode, Copy, Check, Smartphone, Sparkles, Clock, Printer } from "lucide-react";
+import { QrCode, Copy, Check, Smartphone, Sparkles, Clock, Printer, Activity } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
@@ -39,6 +39,13 @@ function EsimCard({ item }: { item: any }) {
         <div>
           <h3 className="text-lg font-bold text-slate-900">{item.product_title}</h3>
           <p className="text-xs text-slate-500">{item.is_unlimited ? "Unlimited" : `${item.data_amount_gb} GB`} &bull; {item.validity_days} Days</p>
+          {/* Validity runs from installation, so an un-installed eSIM has no
+              expiry date to show yet - saying so beats an invented one. */}
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            {item.expires_at
+              ? `Expires ${new Date(item.expires_at).toLocaleDateString()}`
+              : `${item.validity_days} days start when you install it`}
+          </p>
         </div>
         {item.is_mock_fallback ? (
           <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
@@ -120,13 +127,22 @@ function EsimCard({ item }: { item: any }) {
                   );
                 })()}
 
-                <a
-                  href={`/my-esims/${item.id}/print`}
-                  className="w-full flex items-center justify-center space-x-2 bg-white hover:bg-gray-50 text-slate-700 text-xs font-semibold py-2 px-3 rounded-lg border border-gray-300 transition-colors"
-                >
-                  <Printer className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Print / Save as PDF</span>
-                </a>
+                <div className="grid grid-cols-2 gap-2">
+                  <a
+                    href={`/my-esims/${item.id}`}
+                    className="flex items-center justify-center space-x-2 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors"
+                  >
+                    <Activity className="w-3.5 h-3.5" />
+                    <span>Live status &amp; data</span>
+                  </a>
+                  <a
+                    href={`/my-esims/${item.id}/print`}
+                    className="flex items-center justify-center space-x-2 bg-white hover:bg-gray-50 text-slate-700 text-xs font-semibold py-2 px-3 rounded-lg border border-gray-300 transition-colors"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Print / PDF</span>
+                  </a>
+                </div>
 
                 {item.lpa_string && (
                   <button

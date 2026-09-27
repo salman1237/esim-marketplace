@@ -35,7 +35,7 @@ from app.models.wallet import LedgerRefType, Wallet, WalletType
 from app.services.audit_svc import AuditService
 from app.services.checkout_svc import get_effective_commission_rate
 from app.services.esim_links import esim_install_links
-from app.services import finance_svc
+from app.services import esim_telemetry_svc, finance_svc
 from app.services.ledger_svc import LedgerService
 from app.services.webhook_svc import send_test_webhook
 
@@ -283,6 +283,14 @@ async def get_order(order_id: str, ctx: MerchantContext = Depends(get_current_me
         {"attempt": d.attempt, "success": d.success, "response_status": d.response_status, "created_at": _iso(d.created_at)}
         for d in deliveries
     ]
+
+    # Live status for the partner's own customer support: has the customer
+    # installed it, on what handset, how much data have they used. Same shape
+    # and same cache the customer sees, so the two never disagree.
+    order, product, _iso2, _beneficiary, profile = row
+    if profile:
+        telemetry = await esim_telemetry_svc.get_telemetry(db, profile, order)
+        data["live_status"] = esim_telemetry_svc.serialize(telemetry, profile, product, order)
     return data
 
 

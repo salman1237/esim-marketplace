@@ -207,3 +207,41 @@ class VivaPeAdapter:
     @classmethod
     async def get_esim_by_trx(cls, db: AsyncSession, trx_id: int) -> dict:
         return await cls.call_api(db, "POST", "get-esim-by-trx", data={"trx_id": str(trx_id)})
+
+    @staticmethod
+    def _esim_lookup(trx_id, iccid) -> dict:
+        """VivaPe's diagnostics endpoints accept either identifier. The
+        transaction id is preferred because it is what VivaPe's own status
+        page keys on; the ICCID is the fallback for a profile whose order
+        somehow has no supplier reference."""
+        if trx_id:
+            return {"transaction_id": str(trx_id)}
+        if iccid:
+            return {"iccid": str(iccid)}
+        raise ValueError("Need a transaction id or an ICCID to look up an eSIM")
+
+    @classmethod
+    async def get_esim_usage(cls, db: AsyncSession, trx_id=None, iccid=None, refresh: bool = False) -> dict:
+        """Live data usage. `refresh=true` makes VivaPe poll the upstream
+        carrier instead of serving its own cache, so it is only sent when a
+        human asked for fresh numbers."""
+        payload = cls._esim_lookup(trx_id, iccid)
+        if refresh:
+            payload["refresh"] = "true"
+        return await cls.call_api(db, "POST", "esim/usage", data=payload)
+
+    @classmethod
+    async def get_esim_device_info(cls, db: AsyncSession, trx_id=None, iccid=None) -> dict:
+        """Whether the profile is installed, on which handset, and the
+        carrier's provisioning event history. Its `history` is a superset of
+        what esim/installation-progress returns, so only this is called."""
+        return await cls.call_api(db, "POST", "esim/device-info", data=cls._esim_lookup(trx_id, iccid))
+
+    @classmethod
+    async def get_account_profile(cls, db: AsyncSession) -> dict:
+        """Our own VivaPe account, including the prepaid balance every
+        purchase is drawn from. A stale/invalid token or an empty account
+        both surface as an HTTP 200 with a generic business error from
+        create-transaction, so being able to read the balance directly is
+        the only honest early warning."""
+        return await cls.call_api(db, "GET", "user/profile")

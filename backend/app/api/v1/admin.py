@@ -50,6 +50,7 @@ from app.services.shurjopay_svc import ShurjoPayService
 from app.services.pricing_svc import MAX_SELLING_PROFIT_PCT, get_selling_profit_pct, retail_price_for, set_selling_profit_pct
 from app.services.audit_svc import AuditService
 from app.services.catalog_sync_svc import sync_vivape_catalog
+from app.services.vivape_adapter import VivaPeAdapter
 from app.services.currency_svc import CurrencyService
 from app.services.checkout_svc import provision_esim
 from app.services.email_svc import EmailService
@@ -1142,6 +1143,11 @@ async def get_all_orders(limit: int = 100, db: AsyncSession = Depends(get_db)):
             "smdp_address": profile.smdp_address if profile else None,
             "esim_status": profile.status.value if profile else None,
             "is_mock_fallback": profile.is_mock_fallback if profile else None,
+            # So the row can pull live carrier telemetry on demand via
+            # GET /esims/{id}/status, which staff are allowed to read.
+            "esim_id": profile.id if profile else None,
+            "activated_at": profile.activated_at if profile else None,
+            "expires_at": profile.expires_at if profile else None,
         }
         for o, u, p, profile in res.all()
     ]
@@ -2714,3 +2720,63 @@ async def update_merchant_agent(
         _, agent_pct = await agent_svc.commission_rate_for_merchant(db, merchant)
         margin = await agent_svc.margin_check(db, Decimal(str(merchant.commission_rate_pct)), agent_pct)
     return {"status": "success", "agent_user_id": new_agent_id, "margin": margin}
+
+
+# --- Supplier account (Admin + Super Admin) ---
+# The prepaid balance every eSIM purchase is drawn from. Worth its own card
+# because an empty VivaPe account does NOT fail loudly: create-transaction
+# answers HTTP 200 with a generic "Insufficient Balance." that is
+# indistinguishable from an ordinary decline, so the first sign is customers
+# with failed orders. Cached briefly - it is a live supplier call.
+_SUPPLIER_BALANCE_CACHE: dict = {"at": 0.0, "value": None}
+SUPPLIER_BALANCE_TTL = 300.0
+# Under this many EUR, the console warns. Roughly a handful of eSIMs.
+SUPPLIER_BALANCE_WARN_BELOW = Decimal("25.00")
+
+
+@router.get("/supplier/account", dependencies=[Depends(require_admin)])
+async def get_supplier_account(refresh: bool = False, db: AsyncSession = Depends(get_db)):
+    import time as _time
+
+    fresh = (_time.time() - _SUPPLIER_BALANCE_CACHE["at"]) < SUPPLIER_BALANCE_TTL
+    if fresh and not refresh and _SUPPLIER_BALANCE_CACHE["value"]:
+        return {**_SUPPLIER_BALANCE_CACHE["value"], "cached": True}
+
+    try:
+        raw = await VivaPeAdapter.get_account_profile(db)
+    except Exception as e:
+        logger.warning("supplier_account_fetch_failed", error=str(e))
+        stale = _SUPPLIER_BALANCE_CACHE["value"]
+        if stale:
+            return {**stale, "cached": True, "error": str(e)[:200]}
+        raise HTTPException(status_code=502, detail=f"Could not reach the supplier: {e}")
+
+    data = raw.get("data") if isinstance(raw, dict) else None
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=502, detail="The supplier returned an unexpected profile response")
+
+    balance = Decimal(str(data.get("balance") or 0))
+    payload = {
+        "account": data.get("email"),
+        "name": data.get("name"),
+        "supplier_id": data.get("vivape_id"),
+        "user_type": data.get("user_type"),
+        "balance": _cents(balance),
+        "currency": data.get("currency") or settings.BASE_CURRENCY,
+        "wallets": [
+            {
+                "type": w.get("type"),
+                "balance": _cents(Decimal(str(w.get("balance") or 0))),
+                "currency": w.get("currency"),
+                "status": w.get("status"),
+            }
+            for w in (data.get("wallets") or [])
+            if isinstance(w, dict)
+        ],
+        "low_balance": balance < SUPPLIER_BALANCE_WARN_BELOW,
+        "warn_below": _cents(SUPPLIER_BALANCE_WARN_BELOW),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "cached": False,
+    }
+    _SUPPLIER_BALANCE_CACHE.update(at=_time.time(), value=payload)
+    return payload
