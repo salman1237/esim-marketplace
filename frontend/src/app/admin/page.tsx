@@ -492,6 +492,20 @@ export default function AdminConsolePage() {
     setKycQueue(kycQueue.map(k => k.id === id ? { ...k, status: "REJECTED", rejection_reason: reason } : k));
   };
 
+  const handleRequestReverification = async (userId: string, email: string) => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    const reason = window.prompt(`Why does ${email} need to verify again? (shown to them):`);
+    if (reason === null || !reason.trim()) return;
+    try {
+      const res = await api.requestKycReverification(token, userId, reason.trim());
+      setKycQueue(await api.getKycQueue(token));
+      alert(res.message);
+    } catch (err: any) {
+      alert(err.message || "Couldn't request re-verification");
+    }
+  };
+
   const handleViewKycDocument = async (submissionId: string, side: "front" | "back") => {
     const token = localStorage.getItem("esim_token");
     if (!token) return;
@@ -1610,12 +1624,21 @@ export default function AdminConsolePage() {
                     </td>
                     <td className="py-2.5 text-slate-500">{new Date(k.submitted_at).toLocaleDateString()}</td>
                     <td className="py-2.5 space-x-2">
-                      {k.status === "PENDING" && (
+                      {k.status === "PENDING" ? (
                         <>
                           <button onClick={() => handleApproveKyc(k.id)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded text-[11px] font-bold">Approve</button>
                           <button onClick={() => handleRejectKyc(k.id)} className="bg-rose-600 hover:bg-rose-500 text-white px-2.5 py-1 rounded text-[11px] font-bold">Reject</button>
                         </>
-                      )}
+                      ) : k.status === "APPROVED" ? (
+                        // Sends them back through verification. It also blocks
+                        // withdrawals until they pass again, which is the point.
+                        <button
+                          onClick={() => handleRequestReverification(k.user_id, k.email)}
+                          className="bg-white hover:bg-amber-50 border border-gray-300 text-amber-700 px-2.5 py-1 rounded text-[11px] font-bold"
+                        >
+                          Verify again
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 ))}

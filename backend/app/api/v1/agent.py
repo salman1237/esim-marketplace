@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.agent import AgentProfile, AgentStatus, DEFAULT_AGENT_COMMISSION_PCT
+from app.models.agent_bonus import MAX_AGENT_BONUS_PCT, AgentBonusRequest, AgentBonusStatus
 from app.models.catalog import Country, Product
 from app.models.merchant import MerchantProfile, MerchantStatus
 from app.models.order import Order, OrderStatus
@@ -61,6 +62,12 @@ class AgentApplicationRequest(BaseModel):
 class AddMerchantRequest(BaseModel):
     # Email or username of an existing partner who has no agent yet.
     merchant: str = Field(..., min_length=3, max_length=255)
+
+
+class BonusRequestBody(BaseModel):
+    merchant_profile_id: str
+    requested_pct: Decimal = Field(..., ge=0, le=Decimal(MAX_AGENT_BONUS_PCT))
+    reason: Optional[str] = Field(None, max_length=500)
 
 
 @router.get("/status")
@@ -114,11 +121,13 @@ async def agent_overview(ctx: AgentContext = Depends(get_current_agent), db: Asy
     completed = Order.status == OrderStatus.COMPLETED
     # Earnings are read from the orders, not from the wallet: the wallet also
     # holds this user's own merchant commission if they are a merchant too.
+    earned = Order.agent_commission_amount + Order.agent_bonus_amount
     totals = (await db.execute(
         select(
             func.count(Order.id).filter(completed),
             func.coalesce(func.sum(Order.total_amount).filter(completed), 0),
-            func.coalesce(func.sum(Order.agent_commission_amount).filter(completed), 0),
+            func.coalesce(func.sum(earned).filter(completed), 0),
+            func.coalesce(func.sum(Order.agent_bonus_amount).filter(completed), 0),
         ).where(Order.agent_id == ctx.user.id)
     )).one()
 
@@ -126,9 +135,16 @@ async def agent_overview(ctx: AgentContext = Depends(get_current_agent), db: Asy
     this_month = (await db.execute(
         select(
             func.count(Order.id).filter(completed),
-            func.coalesce(func.sum(Order.agent_commission_amount).filter(completed), 0),
+            func.coalesce(func.sum(earned).filter(completed), 0),
         ).where(Order.agent_id == ctx.user.id, Order.created_at >= month_start)
     )).one()
+
+    pending_bonus = (await db.execute(
+        select(func.count(AgentBonusRequest.id)).where(
+            AgentBonusRequest.agent_id == ctx.user.id,
+            AgentBonusRequest.status == AgentBonusStatus.PENDING,
+        )
+    )).scalar() or 0
 
     commission_wallet = await LedgerService.get_wallet(db, ctx.user.id, WalletType.COMMISSION)
     default_wallet = await LedgerService.get_wallet(db, ctx.user.id, WalletType.DEFAULT)
@@ -139,14 +155,21 @@ async def agent_overview(ctx: AgentContext = Depends(get_current_agent), db: Asy
             "agent_code": ctx.agent.agent_code,
             "commission_rate_pct": str(ctx.agent.commission_rate_pct),
             "status": ctx.agent.status.value,
+            # Send this to a travel agency and their B2B application arrives
+            # already attributed to this agent.
+            "invite_url": f"{settings.FRONTEND_BASE_URL}/reseller?agent={ctx.agent.agent_code}",
+            "max_bonus_pct": MAX_AGENT_BONUS_PCT,
         },
         "merchants": len(merchant_ids),
         "sales": {
             "orders": totals[0],
             "volume": _money(totals[1]),
+            # Their own percentage of the sale price plus any partner bonus.
             "commission": _money(totals[2]),
+            "bonus": _money(totals[3]),
         },
         "this_month": {"orders": this_month[0], "commission": _money(this_month[1])},
+        "pending_bonus_requests": pending_bonus,
         "wallets": {
             "commission_balance": _money(commission_wallet.balance if commission_wallet else 0),
             "wallet_balance": _money(default_wallet.balance if default_wallet else 0),
@@ -164,15 +187,27 @@ async def my_merchants(ctx: AgentContext = Depends(get_current_agent), db: Async
         .order_by(MerchantProfile.created_at.desc())
     )).all()
 
+    pending = {
+        r.merchant_profile_id: r
+        for r in (await db.execute(
+            select(AgentBonusRequest).where(
+                AgentBonusRequest.agent_id == ctx.user.id,
+                AgentBonusRequest.status == AgentBonusStatus.PENDING,
+            )
+        )).scalars().all()
+    }
+
     out = []
     for profile, user in rows:
         stats = (await db.execute(
             select(
                 func.count(Order.id).filter(completed),
                 func.coalesce(func.sum(Order.total_amount).filter(completed), 0),
-                func.coalesce(func.sum(Order.agent_commission_amount).filter(completed), 0),
+                func.coalesce(func.sum(Order.agent_commission_amount + Order.agent_bonus_amount).filter(completed), 0),
+                func.coalesce(func.sum(Order.agent_bonus_amount).filter(completed), 0),
             ).where(Order.buyer_id == user.id, Order.is_reseller_order == True)  # noqa: E712
         )).one()
+        waiting = pending.get(profile.id)
         out.append({
             "merchant_id": profile.id,
             "business_name": profile.business_name,
@@ -183,6 +218,11 @@ async def my_merchants(ctx: AgentContext = Depends(get_current_agent), db: Async
             "orders": stats[0],
             "volume": _money(stats[1]),
             "my_commission": _money(stats[2]),
+            "bonus_earned": _money(stats[3]),
+            # The agent sees their own bonus figure, never the partner's
+            # underlying commission rate - that is the admin's business.
+            "bonus_pct": str(profile.agent_bonus_pct or 0),
+            "pending_bonus_pct": str(waiting.requested_pct) if waiting else None,
         })
     return out
 
@@ -394,3 +434,61 @@ async def transfer_commission(
     )
     await db.commit()
     return {"status": "success", "transferred": _money(amount)}
+
+
+@router.get("/bonus-requests")
+async def my_bonus_requests(
+    ctx: AgentContext = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = (await db.execute(
+        select(AgentBonusRequest, MerchantProfile)
+        .join(MerchantProfile, AgentBonusRequest.merchant_profile_id == MerchantProfile.id)
+        .where(AgentBonusRequest.agent_id == ctx.user.id)
+        .order_by(AgentBonusRequest.created_at.desc())
+        .limit(100)
+    )).all()
+    return [agent_svc.serialize_bonus_request(r, merchant=m) for r, m in rows]
+
+
+@router.post("/bonus-requests")
+async def request_bonus(
+    req: BonusRequestBody,
+    request: Request,
+    ctx: AgentContext = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Asks an admin to change the share this agent takes from one of their
+    partners' commission. Nothing moves until it is approved."""
+    merchant = (await db.execute(
+        select(MerchantProfile).where(MerchantProfile.id == req.merchant_profile_id)
+    )).scalar_one_or_none()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="Partner not found")
+
+    try:
+        created = await agent_svc.request_bonus_change(
+            db, ctx.user.id, merchant, req.requested_pct, req.reason
+        )
+    except agent_svc.AgentError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+    await AuditService.log_action(
+        db, actor_id=ctx.user.id, actor_role=ctx.user.role.value,
+        action="AGENT_REQUESTED_BONUS_CHANGE",
+        after_state={
+            "request_id": created.id, "merchant_id": merchant.id,
+            "business_name": merchant.business_name,
+            "from_pct": str(created.current_pct), "to_pct": str(created.requested_pct),
+        },
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    await db.commit()
+    await db.refresh(created)
+    return {
+        "status": "success",
+        "message": "Sent for approval. It takes effect once an admin approves it.",
+        "request": agent_svc.serialize_bonus_request(created, merchant=merchant),
+    }

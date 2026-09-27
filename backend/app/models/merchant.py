@@ -28,6 +28,13 @@ class MerchantProfile(Base):
     # everything this merchant sells, on top of the merchant's own commission.
     # Set from the agent code on the B2B application, and editable by an admin.
     agent_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Percentage points the agent takes OUT of this merchant's commission, set
+    # by the agent and approved by an admin. The merchant's effective rate is
+    # commission_rate_pct minus this, and the merchant is never shown either
+    # this number or the pre-deduction rate - business confidentiality is the
+    # client's explicit requirement, so it is enforced in every merchant-facing
+    # serializer rather than left to the UI.
+    agent_bonus_pct = Column(Numeric(5, 2), default=0, server_default="0", nullable=False)
     # Partner Reseller API (see app/models/partner_api.py) - null until the
     # merchant/admin configures a webhook receiver for async order events.
     webhook_url = Column(String(500), nullable=True)

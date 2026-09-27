@@ -31,6 +31,7 @@ from app.models.withdrawal import WithdrawalRequest, WithdrawalStatus
 from app.models.discount import DiscountCode, DiscountRedemption, DiscountScope, DiscountType
 from app.models.referral import ReferralEvent, ReferralReward, ReferralRewardStatus
 from app.models.agent import AgentProfile, AgentStatus
+from app.models.agent_bonus import AgentBonusRequest, AgentBonusStatus
 from datetime import date as Date, datetime, timedelta, timezone
 from app.core.seed_translations import EN_TRANSLATIONS, flatten
 from app.schemas.settings import (
@@ -2781,3 +2782,173 @@ async def get_supplier_account(refresh: bool = False, db: AsyncSession = Depends
     }
     _SUPPLIER_BALANCE_CACHE.update(at=_time.time(), value=payload)
     return payload
+
+
+# --- Agent bonus approvals (Admin + Super Admin) ---
+# An agent's bonus is a slice of a merchant's commission, so nothing they ask
+# for takes effect until it is approved here. The queue shows the merchant's
+# real rate and what approving would leave them on - the merchant themselves
+# never sees either figure.
+
+class BonusDecisionRequest(BaseModel):
+    note: Optional[str] = Field(None, max_length=500)
+
+
+@router.get("/agent-bonus-requests", dependencies=[Depends(require_admin)])
+async def list_agent_bonus_requests(status: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    agent_user = aliased(User)
+    query = (
+        select(AgentBonusRequest, MerchantProfile, agent_user.username)
+        .join(MerchantProfile, AgentBonusRequest.merchant_profile_id == MerchantProfile.id)
+        .join(agent_user, AgentBonusRequest.agent_id == agent_user.id)
+        .order_by(AgentBonusRequest.created_at.desc())
+        .limit(200)
+    )
+    if status:
+        try:
+            query = query.where(AgentBonusRequest.status == AgentBonusStatus(status.upper()))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Unknown request status")
+
+    rows = (await db.execute(query)).all()
+    return [
+        agent_svc.serialize_bonus_request(r, merchant=m, agent_name=agent_name, for_admin=True)
+        for r, m, agent_name in rows
+    ]
+
+
+@router.post("/agent-bonus-requests/{request_id}/approve", dependencies=[Depends(require_admin)])
+async def approve_agent_bonus_request(
+    request_id: str,
+    request: Request,
+    req: Optional[BonusDecisionRequest] = None,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """The only place a merchant's agent_bonus_pct is ever written."""
+    row = (await db.execute(
+        select(AgentBonusRequest, MerchantProfile)
+        .join(MerchantProfile, AgentBonusRequest.merchant_profile_id == MerchantProfile.id)
+        .where(AgentBonusRequest.id == request_id)
+    )).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Request not found")
+    bonus_request, merchant = row
+    if bonus_request.status != AgentBonusStatus.PENDING:
+        raise HTTPException(status_code=400, detail=f"Already {bonus_request.status.value.lower()}")
+
+    before = str(merchant.agent_bonus_pct or 0)
+    merchant.agent_bonus_pct = bonus_request.requested_pct
+    bonus_request.status = AgentBonusStatus.APPROVED
+    bonus_request.decision_note = req.note if req else None
+    bonus_request.reviewed_by_id = admin_user.id
+    bonus_request.reviewed_at = datetime.now(timezone.utc)
+
+    merchant_rate = Decimal(str(merchant.commission_rate_pct))
+    resulting = max(Decimal("0"), merchant_rate - Decimal(str(bonus_request.requested_pct))).quantize(Decimal("0.01"))
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="APPROVE_AGENT_BONUS",
+        before_state={"agent_bonus_pct": before},
+        after_state={
+            "request_id": bonus_request.id, "merchant_id": merchant.id,
+            "business_name": merchant.business_name, "agent_user_id": bonus_request.agent_id,
+            "agent_bonus_pct": str(bonus_request.requested_pct),
+            "merchant_rate_pct": str(merchant_rate),
+            "merchant_keeps_pct": str(resulting),
+        },
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {
+        "status": "success",
+        "agent_bonus_pct": str(bonus_request.requested_pct),
+        "merchant_keeps_pct": str(resulting),
+        "zeroes_merchant": resulting <= 0,
+    }
+
+
+@router.post("/agent-bonus-requests/{request_id}/reject", dependencies=[Depends(require_admin)])
+async def reject_agent_bonus_request(
+    request_id: str,
+    request: Request,
+    req: Optional[BonusDecisionRequest] = None,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    bonus_request = (await db.execute(
+        select(AgentBonusRequest).where(AgentBonusRequest.id == request_id)
+    )).scalar_one_or_none()
+    if not bonus_request:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if bonus_request.status != AgentBonusStatus.PENDING:
+        raise HTTPException(status_code=400, detail=f"Already {bonus_request.status.value.lower()}")
+
+    bonus_request.status = AgentBonusStatus.REJECTED
+    bonus_request.decision_note = req.note if req else None
+    bonus_request.reviewed_by_id = admin_user.id
+    bonus_request.reviewed_at = datetime.now(timezone.utc)
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="REJECT_AGENT_BONUS",
+        after_state={"request_id": bonus_request.id, "requested_pct": str(bonus_request.requested_pct)},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success"}
+
+
+class KycReverificationRequest(BaseModel):
+    user_id: str
+    reason: str = Field(..., min_length=3, max_length=500)
+
+
+@router.post("/kyc/request-reverification", dependencies=[Depends(require_admin)])
+async def request_kyc_reverification(
+    req: KycReverificationRequest,
+    request: Request,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Sends any user back through KYC.
+
+    Deliberately reuses the rejection path rather than inventing a new state:
+    the user already sees a "resubmit" screen for a rejected submission, and
+    POST /kyc/submit already resets it to PENDING. Clearing is_kyc_verified is
+    what gives this teeth - withdrawals check it, so the account cannot cash
+    out until the documents are re-approved.
+    """
+    user = (await db.execute(select(User).where(User.id == req.user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    submission = (await db.execute(
+        select(KYCSubmission).where(KYCSubmission.user_id == user.id)
+    )).scalar_one_or_none()
+
+    was_verified = bool(user.is_kyc_verified)
+    user.is_kyc_verified = False
+    if submission:
+        submission.status = KYCStatus.REJECTED
+        submission.rejection_reason = req.reason
+        submission.reviewed_by_id = admin_user.id
+        submission.reviewed_at = datetime.now(timezone.utc)
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="REQUEST_KYC_REVERIFICATION",
+        before_state={"is_kyc_verified": was_verified},
+        after_state={"user_id": user.id, "username": user.username, "reason": req.reason},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {
+        "status": "success",
+        "message": f"{user.username} must verify again before they can withdraw.",
+        "had_submission": submission is not None,
+    }

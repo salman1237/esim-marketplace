@@ -53,6 +53,8 @@ export default function AgentsTab({ isSuperAdmin }: { isSuperAdmin: boolean }) {
   const [rejectTarget, setRejectTarget] = useState<any | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [bonusRequests, setBonusRequests] = useState<any[]>([]);
+  const [bonusNote, setBonusNote] = useState("");
   // Standalone calculator, so a rate can be sanity-checked before anyone is approved.
   const [checkMerchant, setCheckMerchant] = useState("5");
   const [checkAgent, setCheckAgent] = useState("2");
@@ -63,9 +65,14 @@ export default function AgentsTab({ isSuperAdmin }: { isSuperAdmin: boolean }) {
     if (!token) return;
     setLoading(true);
     try {
-      const [list, queue] = await Promise.all([api.getAdminAgents(token), api.getMerchantQueue(token)]);
+      const [list, queue, bonuses] = await Promise.all([
+        api.getAdminAgents(token),
+        api.getMerchantQueue(token),
+        api.getAdminAgentBonusRequests(token).catch(() => []),
+      ]);
       setAgents(list);
       setMerchants(queue);
+      setBonusRequests(bonuses);
       setRates(Object.fromEntries(list.map((a: any) => [a.id, String(Number(a.commission_rate_pct))])));
     } catch (err: any) {
       setNotice({ kind: "error", text: err.message || "Couldn't load agents" });
@@ -73,6 +80,33 @@ export default function AgentsTab({ isSuperAdmin }: { isSuperAdmin: boolean }) {
       setLoading(false);
     }
   }, []);
+
+  const decideBonus = async (request: any, approve: boolean) => {
+    const token = getToken();
+    if (!token) return;
+    setBusy(request.id);
+    setNotice(null);
+    try {
+      if (approve) {
+        const res = await api.approveAgentBonus(token, request.id);
+        setNotice({
+          kind: res.zeroes_merchant ? "error" : "ok",
+          text: res.zeroes_merchant
+            ? `Approved — but ${request.business_name} now earns 0% commission. They are not told why.`
+            : `Approved. ${request.business_name} keeps ${res.merchant_keeps_pct}% and the agent takes ${res.agent_bonus_pct}%.`,
+        });
+      } else {
+        await api.rejectAgentBonus(token, request.id, bonusNote.trim() || undefined);
+        setNotice({ kind: "ok", text: "Rejected — nothing changed for that partner." });
+      }
+      setBonusNote("");
+      await load();
+    } catch (err: any) {
+      setNotice({ kind: "error", text: err.message || "Couldn't record that decision" });
+    } finally {
+      setBusy(null);
+    }
+  };
 
   useEffect(() => {
     load();
@@ -205,6 +239,86 @@ export default function AgentsTab({ isSuperAdmin }: { isSuperAdmin: boolean }) {
       {notice && (
         <p className={`text-xs font-medium ${notice.kind === "ok" ? "text-emerald-600" : "text-rose-600"}`}>{notice.text}</p>
       )}
+
+      {/* Bonus approvals. An agent's bonus comes out of the partner's own
+          commission, so nothing they ask for is live until it is approved
+          here - and the partner is never told, which is why this screen spells
+          out what they will be left on. */}
+      <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+        <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 mb-1">
+          <Percent className="w-4 h-4 text-admin-600" /> Partner bonus requests
+          {bonusRequests.filter((r) => r.status === "PENDING").length > 0 && (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+              {bonusRequests.filter((r) => r.status === "PENDING").length} waiting
+            </span>
+          )}
+        </h3>
+        <p className="text-xs text-slate-500 mb-4 max-w-2xl">
+          The agent takes this share out of the partner&apos;s commission — it costs you nothing, but the partner earns less
+          and is not told why. Their remaining rate is shown below before you decide.
+        </p>
+
+        {bonusRequests.length === 0 ? (
+          <div className="py-8 text-center text-xs text-slate-500">No bonus requests.</div>
+        ) : (
+          <div className="space-y-3">
+            {bonusRequests.map((r) => (
+              <div key={r.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-slate-900">{r.business_name}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      Agent <strong className="text-slate-700">{r.agent}</strong> ·{" "}
+                      {Number(r.current_pct).toFixed(2)}% → <strong className="text-slate-900">{Number(r.requested_pct).toFixed(2)}%</strong>
+                    </div>
+                    {r.reason && <div className="text-[11px] text-slate-500 mt-1 italic">&ldquo;{r.reason}&rdquo;</div>}
+                  </div>
+                  <div className="text-end shrink-0 text-xs">
+                    <div className="text-slate-500">Partner is on {Number(r.merchant_rate_pct).toFixed(2)}%</div>
+                    <div className={`font-bold ${r.zeroes_merchant ? "text-rose-600" : "text-slate-900"}`}>
+                      Would keep {Number(r.resulting_merchant_pct).toFixed(2)}%
+                    </div>
+                    <span className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded border ${
+                      r.status === "APPROVED" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : r.status === "REJECTED" ? "bg-rose-50 text-rose-700 border-rose-200"
+                      : "bg-amber-50 text-amber-700 border-amber-200"
+                    }`}>{r.status}</span>
+                  </div>
+                </div>
+
+                {r.zeroes_merchant && r.status === "PENDING" && (
+                  <p className="mt-2 text-[11px] text-rose-700 flex items-start gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    This would leave {r.business_name} earning nothing on their sales.
+                  </p>
+                )}
+
+                {r.status === "PENDING" && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <input
+                      className={`${inputCls} flex-1 min-w-[180px]`}
+                      value={bonusNote}
+                      onChange={(e) => setBonusNote(e.target.value)}
+                      placeholder="Note for the agent (optional)"
+                    />
+                    <button onClick={() => decideBonus(r, true)} disabled={busy === r.id}
+                      className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold px-3 py-2 rounded-lg">
+                      <Check className="w-3.5 h-3.5" /> Approve
+                    </button>
+                    <button onClick={() => decideBonus(r, false)} disabled={busy === r.id}
+                      className="flex items-center gap-1.5 bg-white hover:bg-rose-50 border border-gray-300 text-rose-600 text-xs font-bold px-3 py-2 rounded-lg">
+                      <X className="w-3.5 h-3.5" /> Reject
+                    </button>
+                  </div>
+                )}
+                {r.decision_note && r.status !== "PENDING" && (
+                  <p className="mt-2 text-[11px] text-slate-500">Note: {r.decision_note}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Agents */}
       <div className="glass-panel rounded-2xl p-6 border border-gray-200">

@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent import AgentProfile, AgentStatus
+from app.models.agent_bonus import MAX_AGENT_BONUS_PCT, AgentBonusRequest, AgentBonusStatus
 from app.models.merchant import MerchantProfile
 from app.models.user import User, UserRole
 from app.services.pricing_svc import get_selling_profit_pct
@@ -66,6 +67,33 @@ async def commission_rate_for_merchant(db: AsyncSession, merchant: MerchantProfi
     if not profile:
         return None, Decimal("0")
     return merchant.agent_id, Decimal(str(profile.commission_rate_pct))
+
+
+def bonus_pct_for(merchant: Optional[MerchantProfile], merchant_rate_pct: Decimal) -> Decimal:
+    """The percentage points the agent actually takes out of this sale's
+    merchant commission.
+
+    Capped at the merchant's own rate: the client's range is 0-10%, but most
+    merchants are on 5%, so an uncapped 10% bonus would make their commission
+    negative. Capping means a generous bonus can reduce a merchant to zero but
+    never past it. The admin sees the resulting net before approving.
+    """
+    if not merchant or not merchant.agent_id:
+        return Decimal("0")
+    bonus = Decimal(str(merchant.agent_bonus_pct or 0))
+    if bonus <= 0:
+        return Decimal("0")
+    return min(bonus, max(Decimal("0"), Decimal(str(merchant_rate_pct))))
+
+
+async def effective_merchant_rate(db: AsyncSession, merchant: MerchantProfile, gross_rate_pct: Decimal) -> Decimal:
+    """What the merchant is actually paid, and the only rate they are ever
+    shown. An approved agent is required for the deduction to apply, so
+    suspending an agent hands the full rate straight back to the merchant."""
+    agent_user_id, _ = await commission_rate_for_merchant(db, merchant)
+    if not agent_user_id:
+        return Decimal(str(gross_rate_pct))
+    return Decimal(str(gross_rate_pct)) - bonus_pct_for(merchant, gross_rate_pct)
 
 
 async def margin_check(db: AsyncSession, merchant_pct: Decimal, agent_pct: Decimal) -> dict:
@@ -124,6 +152,77 @@ async def merchant_count(db: AsyncSession, agent_user_id: str) -> int:
         select(func.count(MerchantProfile.id)).where(MerchantProfile.agent_id == agent_user_id)
     )
     return res.scalar() or 0
+
+
+async def request_bonus_change(
+    db: AsyncSession, agent_user_id: str, merchant: MerchantProfile, requested_pct: Decimal, reason: Optional[str]
+) -> AgentBonusRequest:
+    """Files a bonus change for admin approval. Nothing about the merchant's
+    commission moves here - approval is the only thing that writes it. Caller
+    commits."""
+    if merchant.agent_id != agent_user_id:
+        raise AgentError("That partner isn't mapped to you.")
+
+    requested = Decimal(str(requested_pct)).quantize(Decimal("0.01"))
+    if requested < 0 or requested > Decimal(MAX_AGENT_BONUS_PCT):
+        raise AgentError(f"The bonus must be between 0% and {MAX_AGENT_BONUS_PCT}%.")
+
+    current = Decimal(str(merchant.agent_bonus_pct or 0))
+    if requested == current:
+        raise AgentError(f"That partner is already on {current}%.")
+
+    pending = (await db.execute(
+        select(AgentBonusRequest).where(
+            AgentBonusRequest.merchant_profile_id == merchant.id,
+            AgentBonusRequest.status == AgentBonusStatus.PENDING,
+        )
+    )).scalar_one_or_none()
+    if pending:
+        raise AgentError("There's already a request waiting for a decision on this partner.")
+
+    request = AgentBonusRequest(
+        agent_id=agent_user_id,
+        merchant_profile_id=merchant.id,
+        current_pct=current,
+        requested_pct=requested,
+        merchant_rate_pct=Decimal(str(merchant.commission_rate_pct)),
+        reason=(reason or None),
+        status=AgentBonusStatus.PENDING,
+    )
+    db.add(request)
+    await db.flush()
+    return request
+
+
+def serialize_bonus_request(
+    request: AgentBonusRequest, *, merchant: Optional[MerchantProfile] = None, agent_name: Optional[str] = None,
+    for_admin: bool = False,
+) -> dict:
+    merchant_rate = Decimal(str(request.merchant_rate_pct or 0))
+    # Quantized so the console never shows "0" next to "5.00".
+    resulting = max(Decimal("0"), merchant_rate - Decimal(str(request.requested_pct))).quantize(Decimal("0.01"))
+    data = {
+        "id": request.id,
+        "merchant_profile_id": request.merchant_profile_id,
+        "business_name": merchant.business_name if merchant else None,
+        "current_pct": str(request.current_pct),
+        "requested_pct": str(request.requested_pct),
+        "reason": request.reason,
+        "status": request.status.value,
+        "decision_note": request.decision_note,
+        "created_at": request.created_at,
+        "reviewed_at": request.reviewed_at,
+    }
+    if for_admin:
+        # Only the admin sees the merchant's real rate and what approving
+        # would leave them on; the agent sees just their own bonus figure.
+        data.update({
+            "agent": agent_name,
+            "merchant_rate_pct": str(merchant_rate),
+            "resulting_merchant_pct": str(resulting),
+            "zeroes_merchant": resulting <= 0,
+        })
+    return data
 
 
 async def can_become_agent(db: AsyncSession, user: User) -> None:

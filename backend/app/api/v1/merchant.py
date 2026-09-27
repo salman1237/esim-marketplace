@@ -35,7 +35,7 @@ from app.models.wallet import LedgerRefType, Wallet, WalletType
 from app.services.audit_svc import AuditService
 from app.services.checkout_svc import get_effective_commission_rate
 from app.services.esim_links import esim_install_links
-from app.services import esim_telemetry_svc, finance_svc
+from app.services import agent_svc, esim_telemetry_svc, finance_svc
 from app.services.ledger_svc import LedgerService
 from app.services.webhook_svc import send_test_webhook
 
@@ -116,21 +116,40 @@ async def _order_stats(db: AsyncSession, user_id: str, since: Optional[datetime]
 
 
 async def _commission_info(db: AsyncSession, merchant: MerchantProfile, completed_volume: Decimal) -> dict:
-    flat = Decimal(str(merchant.commission_rate_pct))
-    effective = Decimal(str(await get_effective_commission_rate(db, merchant.user_id, flat)))
+    """Everything here is the merchant's NET rate - what they are actually
+    paid, after any agent bonus.
+
+    The pre-deduction rate and the bonus itself are deliberately absent from
+    this response and from every other merchant-facing one: the client's rule
+    is that a merchant must not learn their agent takes a share. The number
+    below is therefore the single rate the merchant sees anywhere, and it is
+    the same one distribute_commission pays them.
+    """
+    gross_flat = Decimal(str(merchant.commission_rate_pct))
+    gross_effective = Decimal(str(await get_effective_commission_rate(db, merchant.user_id, gross_flat)))
+    effective = await agent_svc.effective_merchant_rate(db, merchant, gross_effective)
+    # The headline flat rate must move with the deduction too, or the two
+    # numbers on the dashboard would not agree and would give it away.
+    flat = max(Decimal("0"), gross_flat - (gross_effective - effective))
+
     tiers = (await db.execute(select(CommissionTier).order_by(CommissionTier.min_volume_usd.asc()))).scalars().all()
     next_tier = next(
         (t for t in tiers
-         if Decimal(str(t.min_volume_usd)) > completed_volume and Decimal(str(t.rate_pct)) > effective),
+         if Decimal(str(t.min_volume_usd)) > completed_volume and Decimal(str(t.rate_pct)) > gross_effective),
         None,
     )
+    next_tier_net = None
+    if next_tier:
+        tier_rate = Decimal(str(next_tier.rate_pct))
+        next_tier_net = max(Decimal("0"), tier_rate - agent_svc.bonus_pct_for(merchant, tier_rate))
+
     return {
         "flat_rate_pct": str(flat),
         "effective_rate_pct": str(effective),
         "completed_volume": _money(completed_volume),
         "next_tier": {
             "min_volume": _money(next_tier.min_volume_usd),
-            "rate_pct": str(next_tier.rate_pct),
+            "rate_pct": str(next_tier_net),
             "volume_remaining": _money(Decimal(str(next_tier.min_volume_usd)) - completed_volume),
         } if next_tier else None,
     }

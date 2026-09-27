@@ -19,6 +19,7 @@ from app.models.user import User
 from app.models.wallet import Wallet, WalletType, LedgerRefType
 from app.models.order import Order, OrderStatus, PaymentMethod
 from app.schemas.catalog import CountryResponse, ProductResponse
+from app.services import agent_svc
 from app.services.checkout_svc import get_effective_commission_rate, resolve_beneficiary, provision_esim, distribute_commission
 from app.services.ledger_svc import LedgerService
 from app.services.webhook_svc import deliver_webhook, build_partner_order_payload
@@ -104,7 +105,12 @@ async def get_partner_profile(
     ctx: PartnerContext = Depends(get_current_partner),
     db: AsyncSession = Depends(get_db)
 ):
-    rate = await get_effective_commission_rate(db, ctx.user.id, ctx.merchant.commission_rate_pct)
+    # The NET rate, after any agent bonus - the same number the partner
+    # dashboard shows and the same one they are actually paid. Returning the
+    # pre-deduction rate here would expose the agent's share through the API,
+    # which is exactly what the merchant must not see.
+    gross = await get_effective_commission_rate(db, ctx.user.id, ctx.merchant.commission_rate_pct)
+    rate = await agent_svc.effective_merchant_rate(db, ctx.merchant, Decimal(str(gross)))
 
     w_res = await db.execute(
         select(Wallet).where(Wallet.user_id == ctx.user.id, Wallet.wallet_type == WalletType.DEFAULT)

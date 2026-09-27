@@ -119,6 +119,11 @@ export const api = {
   getAgentCommissionLedger: (token: string) => fetchApi("/api/v1/agent/commission-ledger", { headers: { Authorization: `Bearer ${token}` } }),
   getAgentStatement: (token: string, month: string) => fetchApi(`/api/v1/agent/statement?month=${month}`, { headers: { Authorization: `Bearer ${token}` } }),
   transferAgentCommission: (token: string) => fetchApi("/api/v1/agent/commission/transfer", { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+  // Bonus = the share an agent takes out of a partner's commission. Requested
+  // here, but only an admin approval makes it real.
+  getAgentBonusRequests: (token: string) => fetchApi("/api/v1/agent/bonus-requests", { headers: { Authorization: `Bearer ${token}` } }),
+  requestAgentBonus: (token: string, data: { merchant_profile_id: string; requested_pct: string; reason?: string }) =>
+    fetchApi("/api/v1/agent/bonus-requests", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
 
   // Referrals. Reward credit lands in the REWARD wallet: spendable on
   // eSIMs, never withdrawable.
@@ -263,6 +268,12 @@ export const api = {
     fetchApi(`/api/v1/admin/agents/${id}/commission`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ rate_pct: ratePct }) }),
   updateMerchantAgent: (token: string, merchantId: string, agentCode: string | null) =>
     fetchApi(`/api/v1/admin/merchants/${merchantId}/agent`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(agentCode ? { agent_code: agentCode } : {}) }),
+
+  getAdminAgentBonusRequests: (token: string, status?: string) => fetchApi(`/api/v1/admin/agent-bonus-requests${status ? `?status=${status}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
+  approveAgentBonus: (token: string, id: string, note?: string) => fetchApi(`/api/v1/admin/agent-bonus-requests/${id}/approve`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ note }) }),
+  rejectAgentBonus: (token: string, id: string, note?: string) => fetchApi(`/api/v1/admin/agent-bonus-requests/${id}/reject`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ note }) }),
+  requestKycReverification: (token: string, userId: string, reason: string) =>
+    fetchApi("/api/v1/admin/kyc/request-reverification", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ user_id: userId, reason }) }),
 
   // Admin: referral programme
   getAdminReferralSettings: (token: string) => fetchApi("/api/v1/admin/referral-settings", { headers: { Authorization: `Bearer ${token}` } }),

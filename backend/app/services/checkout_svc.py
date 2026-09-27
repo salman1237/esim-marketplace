@@ -324,7 +324,20 @@ async def distribute_commission(db: AsyncSession, order: Order, total_cost: Deci
     m_res = await db.execute(select(MerchantProfile).where(MerchantProfile.user_id == buyer.id))
     merchant_profile = m_res.scalar_one_or_none()
     flat_rate_pct = Decimal(str(merchant_profile.commission_rate_pct)) if merchant_profile else Decimal("5.0")
-    rate_pct = await get_effective_commission_rate(db, buyer.id, flat_rate_pct)
+    gross_rate_pct = await get_effective_commission_rate(db, buyer.id, flat_rate_pct)
+
+    # Resolve the agent FIRST, because the deduction is only legitimate if
+    # somebody is actually receiving it. Deducting for a suspended agent would
+    # take the slice off the merchant and pay it to nobody - the money would
+    # simply vanish - so both sides hang off the same approved-agent check.
+    agent_user_id, agent_pct = (
+        await agent_svc.commission_rate_for_merchant(db, merchant_profile)
+        if merchant_profile else (None, Decimal("0"))
+    )
+    # Capped at the merchant's own rate, so a generous bonus can zero a
+    # merchant out but can never make their commission negative.
+    bonus_pct = agent_svc.bonus_pct_for(merchant_profile, gross_rate_pct) if agent_user_id else Decimal("0")
+    rate_pct = gross_rate_pct - bonus_pct
     commission_amount = (total_cost * (rate_pct / Decimal("100"))).quantize(Decimal("0.0001"))
 
     cw_res = await db.execute(
@@ -336,37 +349,54 @@ async def distribute_commission(db: AsyncSession, order: Order, total_cost: Deci
             db, comm_wallet.id, commission_amount,
             LedgerRefType.COMMISSION_EARNED,
             ref_id=order.id,
+            # The NET rate: this line shows up in the merchant's own ledger,
+            # and naming the pre-deduction rate here would give the bonus away.
             description=f"Commission for order {order.order_no} ({rate_pct}%)",
             idempotency_key=f"order-commission-{order.id}"
         )
         order.reseller_commission_amount = commission_amount
 
-    if merchant_profile:
-        await _pay_agent_commission(db, order, total_cost, merchant_profile)
+    if agent_user_id:
+        await _pay_agent_commission(db, order, total_cost, agent_user_id, agent_pct, bonus_pct)
 
 
 async def _pay_agent_commission(
-    db: AsyncSession, order: Order, total_cost: Decimal, merchant_profile: MerchantProfile
+    db: AsyncSession, order: Order, total_cost: Decimal, agent_user_id: str, agent_pct: Decimal, bonus_pct: Decimal
 ) -> None:
-    """The agent's cut: a percentage of the sale price, paid on top of the
-    merchant's commission and recorded on the order. The agent id is
-    snapshotted here so re-pointing the merchant to a different agent later
-    can never rewrite who was paid for this sale."""
-    agent_user_id, agent_pct = await agent_svc.commission_rate_for_merchant(db, merchant_profile)
-    if not agent_user_id or agent_pct <= 0:
-        return
+    """The agent earns two separate things on a sale by one of their merchants:
 
-    amount = (total_cost * (agent_pct / Decimal("100"))).quantize(Decimal("0.0001"))
-    if amount <= 0:
+    1. their own percentage of the sale price, which comes out of our margin;
+    2. the bonus slice they take from the merchant's commission, which costs
+       us nothing because the merchant's share shrinks by the same amount.
+
+    Both are credited to the agent's commission wallet but recorded separately
+    on the order, because only the first one affects profit. The agent id is
+    snapshotted here so re-pointing the merchant to another agent later can
+    never rewrite who was paid for this sale.
+    """
+    own = (total_cost * (agent_pct / Decimal("100"))).quantize(Decimal("0.0001")) if agent_pct > 0 else Decimal("0")
+    bonus = (total_cost * (bonus_pct / Decimal("100"))).quantize(Decimal("0.0001")) if bonus_pct > 0 else Decimal("0")
+    if own <= 0 and bonus <= 0:
         return
 
     wallet = await LedgerService.ensure_commission_wallet(db, agent_user_id)
-    await LedgerService.credit(
-        db, wallet.id, amount,
-        LedgerRefType.AGENT_COMMISSION_EARNED,
-        ref_id=order.id,
-        description=f"Agent commission for order {order.order_no} ({agent_pct}%)",
-        idempotency_key=f"order-agent-commission-{order.id}",
-    )
+    if own > 0:
+        await LedgerService.credit(
+            db, wallet.id, own,
+            LedgerRefType.AGENT_COMMISSION_EARNED,
+            ref_id=order.id,
+            description=f"Agent commission for order {order.order_no} ({agent_pct}%)",
+            idempotency_key=f"order-agent-commission-{order.id}",
+        )
+    if bonus > 0:
+        await LedgerService.credit(
+            db, wallet.id, bonus,
+            LedgerRefType.AGENT_COMMISSION_EARNED,
+            ref_id=order.id,
+            description=f"Partner bonus for order {order.order_no} ({bonus_pct}%)",
+            idempotency_key=f"order-agent-bonus-{order.id}",
+        )
+
     order.agent_id = agent_user_id
-    order.agent_commission_amount = amount
+    order.agent_commission_amount = own
+    order.agent_bonus_amount = bonus

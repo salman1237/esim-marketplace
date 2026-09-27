@@ -72,12 +72,24 @@ export default function AgentPortalPage() {
   const [contactPhone, setContactPhone] = useState("");
   const [newMerchant, setNewMerchant] = useState("");
 
+  // Bonus request, per partner.
+  const [bonusFor, setBonusFor] = useState<any | null>(null);
+  const [bonusPct, setBonusPct] = useState("0");
+  const [bonusReason, setBonusReason] = useState("");
+  const [bonusRequests, setBonusRequests] = useState<any[]>([]);
+  const [copiedInvite, setCopiedInvite] = useState(false);
+
   const loadPortal = useCallback(async () => {
     const token = localStorage.getItem("esim_token");
     if (!token) return;
-    const [ov, ms] = await Promise.all([api.getAgentOverview(token), api.getAgentMerchants(token)]);
+    const [ov, ms, br] = await Promise.all([
+      api.getAgentOverview(token),
+      api.getAgentMerchants(token),
+      api.getAgentBonusRequests(token).catch(() => []),
+    ]);
     setOverview(ov);
     setMerchants(ms);
+    setBonusRequests(br);
   }, []);
 
   useEffect(() => {
@@ -140,6 +152,41 @@ export default function AgentPortalPage() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const submitBonus = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = localStorage.getItem("esim_token");
+    if (!token || !bonusFor) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const res = await api.requestAgentBonus(token, {
+        merchant_profile_id: bonusFor.merchant_id,
+        requested_pct: bonusPct.trim(),
+        reason: bonusReason.trim() || undefined,
+      });
+      setBonusFor(null);
+      setBonusReason("");
+      await loadPortal();
+      setNotice({ kind: "ok", text: res.message });
+    } catch (err: any) {
+      setNotice({ kind: "error", text: err.message || "Couldn't send that request" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyInvite = () => {
+    const url = overview?.agent?.invite_url;
+    if (!url) return;
+    if (navigator.share) {
+      navigator.share({ title: "Become a Triptel partner", url }).catch(() => {});
+      return;
+    }
+    navigator.clipboard?.writeText(url).catch(() => {});
+    setCopiedInvite(true);
+    setTimeout(() => setCopiedInvite(false), 1800);
   };
 
   const moveCommission = async () => {
@@ -315,13 +362,26 @@ export default function AgentPortalPage() {
           </div>
 
           <div className="glass-panel rounded-2xl p-6 border border-gray-200">
-            <h2 className="text-base font-bold text-slate-900 mb-1">How to grow your partners</h2>
-            <p className="text-xs text-slate-500">
-              Share your code <strong className="font-mono text-slate-900">{agent?.agent_code}</strong> with a travel agency.
-              They enter it on their <Link href="/partners" className="font-semibold text-merchant-600 underline">B2B application</Link>,
-              and every eSIM they sell from then on earns you commission. You can also add a partner who has already signed up
-              from the <button onClick={() => setTab("merchants")} className="font-semibold text-brand-600 underline">My partners</button> tab.
+            <h2 className="text-base font-bold text-slate-900 mb-1">Invite a travel agency</h2>
+            <p className="text-xs text-slate-500 mb-4">
+              Send this link. It opens the B2B application with your code already filled in, so every eSIM they sell earns
+              you commission from day one. You can also add a partner who signed up without it from{" "}
+              <button onClick={() => setTab("merchants")} className="font-semibold text-brand-600 underline">My partners</button>.
             </p>
+            <div className="flex flex-wrap gap-2">
+              <input
+                readOnly
+                value={agent?.invite_url || ""}
+                onFocus={(e) => e.currentTarget.select()}
+                className="flex-1 min-w-[220px] bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs font-mono text-slate-900"
+              />
+              <button
+                onClick={copyInvite}
+                className="inline-flex items-center gap-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold px-4 py-2 rounded-xl"
+              >
+                {copiedInvite ? <><Check className="w-3.5 h-3.5" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy invite link</>}
+              </button>
+            </div>
           </div>
         </>
       )}
@@ -359,7 +419,8 @@ export default function AgentPortalPage() {
                     <th className="py-2 pe-3 text-start">Status</th>
                     <th className="py-2 pe-3 text-end">Delivered sales</th>
                     <th className="py-2 pe-3 text-end">Volume</th>
-                    <th className="py-2 text-end">My commission</th>
+                    <th className="py-2 pe-3 text-end">My commission</th>
+                    <th className="py-2 text-end">Bonus</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -376,13 +437,112 @@ export default function AgentPortalPage() {
                       </td>
                       <td className="py-2.5 pe-3 text-end font-mono">{m.orders}</td>
                       <td className="py-2.5 pe-3 text-end font-mono text-slate-600">{eur(m.volume)}</td>
-                      <td className="py-2.5 text-end font-mono font-bold text-emerald-700">{eur(m.my_commission)}</td>
+                      <td className="py-2.5 pe-3 text-end font-mono font-bold text-emerald-700">
+                        {eur(m.my_commission)}
+                        {Number(m.bonus_earned) > 0 && (
+                          <div className="text-[10px] font-sans font-normal text-slate-400">
+                            incl. {eur(m.bonus_earned)} bonus
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-2.5 text-end">
+                        <div className="font-mono font-bold text-slate-900">{Number(m.bonus_pct).toFixed(2)}%</div>
+                        {m.pending_bonus_pct ? (
+                          <div className="text-[10px] text-amber-600">
+                            {Number(m.pending_bonus_pct).toFixed(2)}% awaiting approval
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => { setBonusFor(m); setBonusPct(String(Number(m.bonus_pct))); setBonusReason(""); }}
+                            className="text-[10px] font-semibold text-brand-600 hover:text-brand-700"
+                          >
+                            Change
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
+
+          {bonusRequests.length > 0 && (
+            <div className="mt-6 pt-5 border-t border-gray-200">
+              <h3 className="text-sm font-bold text-slate-900 mb-1">Bonus requests</h3>
+              <p className="text-[11px] text-slate-500 mb-3">
+                A bonus only takes effect once an admin approves it.
+              </p>
+              <ul className="space-y-2">
+                {bonusRequests.slice(0, 10).map((r) => (
+                  <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 text-xs rounded-lg border border-gray-200 bg-white px-3 py-2">
+                    <span className="text-slate-700">
+                      <strong className="text-slate-900">{r.business_name}</strong>
+                      {" · "}{Number(r.current_pct).toFixed(2)}% → {Number(r.requested_pct).toFixed(2)}%
+                    </span>
+                    <span className="flex items-center gap-2">
+                      {r.decision_note && <span className="text-[11px] text-slate-400">{r.decision_note}</span>}
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                        r.status === "APPROVED" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : r.status === "REJECTED" ? "bg-rose-50 text-rose-700 border-rose-200"
+                        : "bg-amber-50 text-amber-700 border-amber-200"
+                      }`}>{r.status}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Bonus request form. The agent picks a number between 0 and the
+          maximum; what it does to the partner's own rate is the admin's
+          business, so it isn't shown or implied here. */}
+      {bonusFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4" onClick={() => setBonusFor(null)}>
+          <form
+            onSubmit={submitBonus}
+            onClick={(e) => e.stopPropagation()}
+            className="glass-panel rounded-2xl max-w-md w-full p-6 border border-gray-200 shadow-xl space-y-4"
+          >
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">Partner bonus</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Your share from <strong className="text-slate-900">{bonusFor.business_name}</strong>&apos;s sales, on top of your
+                own commission. Goes to an admin for approval.
+              </p>
+            </div>
+            <div>
+              <label className="text-xs text-slate-700 font-semibold block mb-1">
+                Bonus % (0–{Number(overview?.agent?.max_bonus_pct || 10).toFixed(0)})
+              </label>
+              <input
+                type="number" step="0.01" min={0} max={Number(overview?.agent?.max_bonus_pct || 10)} required
+                value={bonusPct}
+                onChange={(e) => setBonusPct(e.target.value)}
+                className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-sm font-mono text-slate-900"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-700 font-semibold block mb-1">Reason <span className="text-slate-400 font-normal">(optional)</span></label>
+              <input
+                value={bonusReason}
+                onChange={(e) => setBonusReason(e.target.value)}
+                maxLength={500}
+                placeholder="Why this partner, for the admin reviewing it"
+                className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" disabled={busy} className="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-60 text-white text-xs font-bold">
+                {busy ? "Sending…" : "Send for approval"}
+              </button>
+              <button type="button" onClick={() => setBonusFor(null)} className="px-4 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-slate-700 text-xs font-bold">
+                Cancel
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

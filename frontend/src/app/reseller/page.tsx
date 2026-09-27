@@ -51,6 +51,14 @@ export default function ResellerPortalPage() {
   const [tradeLicense, setTradeLicense] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [agentCode, setAgentCode] = useState("");
+
+  // An agent's invite link arrives as /reseller?agent=AGXXXXXX, so the code is
+  // filled in for the applicant rather than being something they must be told
+  // to type.
+  useEffect(() => {
+    const fromLink = new URLSearchParams(window.location.search).get("agent");
+    if (fromLink) setAgentCode(fromLink.toUpperCase());
+  }, []);
   const [applying, setApplying] = useState(false);
   const [applySuccess, setApplySuccess] = useState(false);
 
