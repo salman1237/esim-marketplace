@@ -1,0 +1,606 @@
+=============================================
+TRIPTEL — COMPLETE BUSINESS & TECHNICAL BRIEF
+=============================================
+
+
+A single self-contained document. Written so that any language model
+(ChatGPT, Gemini, Claude, or another) can read this one file and understand
+the entire business and system without reading anything else. It repeats
+material from the other documents in this folder on purpose.
+
+Version 1.0 · Accurate as of 28 September 2026 · <https://triptel.co>
+
+---
+
+
+PART 1 — THE BUSINESS
+---------------------
+
+
+1.1 What Triptel is, in one paragraph
+
+Triptel is a travel eSIM marketplace. A traveller buys a prepaid mobile data
+plan for the country they are flying to, installs it on their phone by
+scanning a QR code or tapping a link, and lands with working internet — no
+physical SIM, no airport queue, no roaming bill. Triptel owns no network
+infrastructure: it buys eSIM profiles wholesale from a supplier called
+VivaPe, adds a markup, and sells them direct to consumers, through travel
+agencies, and through a machine API. Its home market is Bangladesh, so it
+accepts bKash, Nagad and bank transfer alongside cards, and can price in taka
+— but its catalogue covers 200+ destinations worldwide.
+
+
+1.2 The problem
+
+A traveller leaving Bangladesh has three bad options: international roaming
+(opaque per-megabyte pricing and bill shock), buying a local SIM on arrival
+(queues, passport registration, wasted time), or an existing global eSIM app
+(priced in USD, card-only, no local support, no presence in the travel
+agencies people actually book through). Triptel's opening is the combination
+of a global eSIM catalogue with **local payment rails, local currency and
+local distribution**.
+
+
+1.3 The product
+
+A prepaid travel eSIM: a digital SIM profile valid in one country, with a
+fixed data allowance and validity period — for example *"Thailand 3 GB / 15
+Days"*. Delivered instantly by email and in-account as a QR code plus an LPA
+activation string. Two properties matter commercially:
+
+1. Validity runs from first activation, not from purchase. Buying two
+   weeks before a trip does not shorten the plan.
+2. There is no inventory. Profiles are ordered from the supplier at the
+   moment of sale. A failed sale costs a refund, not a lost unit.
+
+
+1.4 The six kinds of user
+
+| Role | Who | What they do |
+|---|---|---|
+| Customer (USER) | A traveller | Buys eSIMs, holds a wallet, tracks usage, opens support tickets, refers friends |
+| Merchant (MERCHANT) | A travel agency / reseller | Sells eSIMs to their own customers from a portal or the API; earns commission; withdraws it |
+| Agent (AGENT) | A distributor | Recruits merchants; earns a cut of everything they sell; can request a bonus from a merchant's rate |
+| Admin (ADMIN) | Operations staff | Approves KYC, merchants, agents, deposits, withdrawals and bonuses; works the support queue; recharges wallets |
+| Super Admin (SUPER_ADMIN) | Platform owner | Everything an admin can do, plus staff accounts, roles, branding, languages, pricing, gateway credentials |
+| Partner system | A merchant's software | Authenticates with an API key and orders eSIMs over HTTP |
+
+A single account can hold more than one capability — an agent may also be a
+merchant. Capability is determined by the presence of an approved profile,
+not solely by the role field.
+
+
+1.5 Revenue model
+
+Retail price is derived from supplier cost by one configurable markup, the
+selling profit percentage, default 25%:
+
+    retail price = supplier cost × (1 + selling profit %)
+
+Changing it re-prices the whole catalogue. Individual products can be
+overridden.
+
+Where that margin goes:
+
+| Recipient | Basis | Default | Note |
+|---|---|---|---|
+| Triptel | Residual | — | Whatever is left |
+| Merchant | % of sale price | 5%, set per merchant | Optional volume tiers can override the flat rate |
+| Agent | % of sale price | 2% | Paid in addition to the merchant's commission |
+| Agent bonus | % of sale price | 0%, max 10% | Deducted from the merchant's commission. Requires admin approval. Never disclosed to the merchant |
+
+Worked example at default rates on a €20 sale with €16 supplier cost:
+
+    Revenue        €20.00
+    Supplier cost −€16.00
+    Merchant 5%    −€1.00
+    Agent 2%       −€0.40
+                   ───────
+    Triptel keeps   €2.60      (13% of revenue)
+
+Secondary levers: withdrawal fees (configurable, default zero) and float on
+wallet balances. Discounts and referral rewards are costs, both configurable
+and both defaulting to off.
+
+
+1.6 The three wallets — the core financial model
+
+This is the single most important concept in the system.
+
+| Wallet | Contains | Spendable on eSIMs | Withdrawable as cash |
+|---|---|---|---|
+| DEFAULT ("main balance") | Top-ups, refunds, transferred commission | Yes | Yes — the only withdrawable balance |
+| REWARD ("reward credit") | Referral rewards | Yes | Never, under any circumstance |
+| COMMISSION | Merchant and agent earnings | No — must be transferred to DEFAULT first | Only after transfer |
+
+Rules that follow:
+
+- Payment always draws reward credit first, then the main balance —
+  because reward credit is the balance a customer cannot get back as cash, so
+  spending it first is the outcome that favours them.
+- A refund returns funds in the same proportion they were paid. This is
+  what prevents a failed order from converting promotional credit into
+  withdrawable money.
+- Withdrawals only ever touch the DEFAULT wallet. There is no code path from
+  reward credit to cash.
+
+
+1.7 The distribution chain
+
+Merchant. A travel agency applies online with a business name, trade
+licence and contact phone, plus an optional agent code. An admin reviews it,
+sets the commission rate, confirms the agent mapping and approves. The
+merchant then gets a portal where they can sell to a walk-in traveller
+(creating that traveller's account if needed), see orders, collect commission,
+download statements and issue API keys.
+
+Agent. A distributor applies with a company name and phone. An admin sets
+their rate (default 2%) and approves, which issues a unique agent code and
+an invite link of the form https://triptel.co/reseller?agent=<CODE>. That
+link opens the B2B application with the code pre-filled, so every merchant
+recruited through it is attributed automatically. An agent can also add an
+existing merchant who has no agent.
+
+The agent bonus. Beyond their own 2%, an agent can request **0–10% out of
+a particular merchant's commission**. Five rules govern it:
+
+1. It takes effect only after an admin approves it.
+2. It is capped at the merchant's own rate — commission can reach zero but
+   never go negative.
+3. The merchant is never shown it; every merchant-facing figure reports
+   the net rate.
+4. If the agent is suspended, no deduction happens at all and the merchant
+   gets their full rate back — the slice is never taken from one party and
+   paid to nobody.
+5. It is paid on top of the agent's own percentage.
+
+Concretely: merchant on 20%, approved bonus 5% → merchant receives and sees
+15%; agent receives 2% + 5% = 7%.
+
+
+1.8 Payments
+
+Money in
+
+| Rail | Mechanics |
+|---|---|
+| ShurjoPay | Aggregator for cards, bKash, Nagad, Rocket. Settles BDT only. Browser callback plus server-to-server IPN; crediting is idempotent so a retried IPN cannot double-credit. Gateway minimum ৳10 |
+| Manual deposit | Customer sends money to a published bKash / Nagad / bank account and submits the transaction ID; staff approve and the wallet is credited at that day's rate. Independent of the gateway, so it keeps working if the gateway fails |
+| Admin recharge | Staff credit a wallet directly from the console, audit-logged |
+
+Customers type the amount in their own currency. Limits are configured in
+EUR and converted for display. A customer paying in taka is charged **exactly
+the taka shown** — no EUR round-trip, because any rounding difference destroys
+trust.
+
+Money out
+
+Withdrawals are paid by hand; there is no automated disbursement, which is
+why the payout currency list is deliberately narrow (BDT, EUR, USD). The flow:
+
+    Request → approved KYC + saved payout account required
+            → balance HELD immediately (not at approval)
+            → account details snapshotted onto the request
+            → staff approve: rate frozen, proof of payment uploaded, status PAID
+              or reject / user cancels: full amount returned
+            → email to user and admin at every stage
+
+
+1.9 Growth mechanics
+
+Discount codes — percent or fixed; scoped to everything, a country, or a
+product; optional date window, minimum order, maximum discount and
+first-order-only rule. One code per order, enforced by a unique database
+constraint. Usage is counted from actual redemptions joined to live orders
+(including a 30-minute pending hold), never from a counter that can drift.
+
+Referrals — every user has a code. Rewards are configurable per event
+(joining, first purchase, merchant conversion) and separately for the referrer
+and the referred. Paid as reward credit only, so never withdrawable. One
+reward per referred person per event, enforced by a unique database
+constraint. Reversed if the qualifying order is refunded.
+
+Both ship off or at zero.
+
+
+1.10 Support and notifications
+
+Customers raise tickets with up to five attachments of 5 MB each. Both Admin
+and Super Admin work the queue. Status follows the last speaker — a customer
+message sets OPEN, a staff reply sets ANSWERED — and a customer replying to a
+RESOLVED ticket reopens it. The conversation continues by email in both
+directions.
+
+Ten business events send automatic email, every one copied to
+system@triptel.co (configurable): account created; B2B application; agent
+application; referral code used; agent code used; agent approved; merchant
+approved; referred party became a merchant; transaction; withdrawal.
+
+---
+
+
+PART 2 — THE SYSTEM
+-------------------
+
+
+2.1 Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 15 App Router · React · TypeScript · Tailwind CSS |
+| Backend | FastAPI · Python 3.11 · async SQLAlchemy 2.0 · Pydantic |
+| Database | PostgreSQL 16 · Alembic (20 migrations) |
+| Jobs | APScheduler, in-process |
+| Auth | JWT HS256, 7-day expiry · bcrypt · Google ID token verification |
+| Deployment | Docker Compose · Dokploy on a VPS |
+| CI/CD | GitHub Actions: 382 tests → Dokploy API deploy |
+
+Scale: 178 REST endpoints, 34 database tables, 25 frontend routes,
+382 automated tests, all passing.
+
+
+2.2 Shape
+
+Three tiers, one database, one supplier integration. No microservices, no
+message broker, no event bus — deliberately. Every business operation is a
+database transaction, and correctness comes from transaction boundaries and
+database constraints rather than distributed coordination. The hard problem
+here is money, not traffic.
+
+    Browser / Partner system
+            ↓
+    Dokploy proxy (TLS)
+            ↓
+    esim-frontend (Next.js) ──HTTP──▶ esim-backend (FastAPI + schedulers)
+                                              ↓
+                           PostgreSQL · VivaPe API · ShurjoPay · SMTP
+                                              ↓
+                        volumes: uploads · kyc · withdrawal · support · logs
+
+
+2.3 Backend organisation
+
+    app/api/v1/    18 routers   — HTTP surface only, no business logic
+    app/services/  31 modules   — ALL business logic
+    app/models/    20 modules   — SQLAlchemy ORM, 34 tables
+    app/schemas/               — Pydantic request/response models
+    app/core/                  — config, database, security, deps, rate limiting, logging
+
+The governing rule: **routers validate and authorise; services decide and
+mutate; models describe.** Anything reached from two entry points lives in one
+service — distribute_commission() is called from both wallet checkout and
+the Partner API, and duplicating it would let the two drift apart.
+
+
+2.4 Data model, by purpose
+
+Identity — users (role, status, preferred currency and language,
+referral code, referred_by_id, Google subject, KYC flag), kyc_submissions,
+password_reset_tokens, audit_logs.
+
+Catalogue — countries, products (supplier ID, data, validity, **cost
+price and retail price**, coverage networks).
+
+Money — wallets (one per user per type), wallet_ledger_entries (type,
+amount, balance before and after, reference, unique idempotency key),
+manual_payment_requests, payment_logs, bank_accounts,
+withdrawal_requests (amount, fee, net, account snapshot, frozen
+conversion rate, payout proof).
+
+Selling — orders (buyer and beneficiary, product, totals, discount,
+reward used, agent commission and agent bonus, payment method, status),
+esim_profiles (ICCID, SM-DP+, matching ID, LPA string, QR, status,
+activated_at/expires_at null until installed, share_token),
+esim_telemetry (bytes used, install state, device model, daily breakdown,
+fetched_at, last_forced_at).
+
+Channel — merchant_profiles (business details, commission rate,
+agent_id, agent_bonus_pct, webhook config, status), agent_profiles
+(company, unique agent code, rate, status), agent_bonus_requests (the
+approval queue in front of agent_bonus_pct), commission_tiers, api_keys
+(hashed), webhook_delivery_logs.
+
+Growth & support — discount_codes, discount_redemptions,
+referral_rewards, support_tickets / support_messages /
+support_attachments.
+
+Platform — platform_settings (generic key/value JSON — branding, legal
+text, withdrawal rules, referral amounts, top-up limits, gateway config,
+system email; is_public gates what the storefront may read), currency_rates,
+languages / translations, supplier_transaction_logs.
+
+Three constraints carry much of the business logic:
+
+    UNIQUE (wallet_ledger_entries.idempotency_key)   -- no double-credit, ever
+    UNIQUE (discount_redemptions.order_id)           -- one code per order
+    UNIQUE (referral_rewards.referred_id, event)     -- one reward per event
+
+
+2.5 Core flows
+
+Wallet checkout
+
+    POST /orders/checkout
+      → resolve beneficiary (may create the traveller's account)
+      → validate and price the discount code
+      → LedgerService.spend()  — reward credit first, then main balance, row-locked
+      → Order created (PENDING), commit   ◀ money definitively accounted for
+      → background: provision_esim()
+           success → ESIMProfile written, COMPLETED, commission distributed,
+                     delivery email with QR + tracking link
+           failure → FAILED, automatic refund split by how it was paid
+
+Commission distribution — the agent is resolved first, and the bonus
+derived from that:
+
+    agent_user_id, agent_pct = commission_rate_for_merchant(merchant_profile)
+    bonus_pct = bonus_pct_for(merchant_profile, gross_rate_pct) if agent_user_id else 0
+    rate_pct  = gross_rate_pct - bonus_pct     # what the merchant actually gets
+
+This ordering is deliberate and was a real bug: with independent checks, a
+suspended agent's slice came off the merchant and was paid to nobody.
+
+Gateway top-up
+
+    POST /payments/shurjopay/topup { amount, currency }
+      → validate currency (11 supported)
+      → convert to base for the EUR-configured min/max check
+      → BDT? charge exactly that. Otherwise convert base → BDT
+      → checkout URL → customer pays → callback (browser) + IPN (server)
+      → credit with an idempotency key
+
+eSIM live status — cached 5 minutes; forced refresh throttled to 45
+seconds, tracked separately so viewing the page never disables the button.
+Activation is derived from install state only, never from supplier
+coupon-window timestamps.
+
+
+2.6 Endpoint inventory
+
+178 endpoints, all under /api/v1 except /health:
+
+| Group | Count | Group | Count |
+|---|---|---|---|
+| Admin & Super Admin | 85 | Payment Gateways | 5 |
+| Agent Portal | 12 | Finance & Reconciliation | 5 |
+| Support | 10 | Catalog | 4 |
+| Merchant Dashboard | 9 | Orders & eSIMs | 4 |
+| Withdrawals | 9 | Wallets & Ledger | 3 |
+| Authentication | 8 | Referrals | 3 |
+| Partner API | 8 | eSIM Status | 3 |
+| Public Settings | 6 | KYC | 2 |
+| | | Discount Codes + Health | 2 |
+
+Authoritative list: https://triptel.co/openapi.json.
+
+
+2.7 Frontend routes
+
+    Public    /  /destinations  /explore/[slug]  /partners  /api-docs
+              /legal/[slug]  /track/[token]
+    Auth      /auth/login  /auth/register  /auth/forgot-password  /auth/reset-password
+    Customer  /wallet  /wallet/withdraw  /wallet/withdraw/[id]
+              /my-esims  /my-esims/[id]  /my-esims/[id]/print
+              /profile  /refer  /support  /support/[id]
+    Merchant  /reseller   (6 tabs)
+    Agent     /agent      (5 tabs)
+    Admin     /admin      (18 tabs)
+
+
+2.8 Integrations
+
+VivaPe (supplier) — REST at https://app.vivape.net/api. **HTTP/2
+mandatory; HTTP/1.1 is rejected. Token auth cached 30 minutes. Returns
+HTTP 200 even for business errors**, so bodies are parsed rather than statuses
+trusted. Every call logged with payload, status and latency. Isolated in one
+adapter module, which makes a second supplier an additive change. Their
+-callback endpoints are inbound to them*, not available to us — hence
+polling. esim/apn-details is broken upstream.
+
+ShurjoPay (payments) — cards, bKash, Nagad, Rocket; settles BDT only.
+Callback plus IPN, idempotent crediting. Live credentials live in the admin
+console, encrypted at rest — never in code, git, tests or the deploy
+environment.
+
+SMTP — eight HTML templates. Port selects the encryption mode (465
+implicit TLS, 587 STARTTLS). Sending is backgrounded. Production sends as
+hello@triptel.co.
+
+
+2.9 Background jobs
+
+| Job | Interval | Purpose |
+|---|---|---|
+| Catalogue sync | 4 h + at startup | Pull supplier products, apply markup |
+| Stuck-order recovery | 2 min + at startup | Finish orders whose provisioning was interrupted — a deploy is exactly the event that kills in-flight work |
+| Webhook retry | 5 min | Re-deliver failed partner webhooks |
+
+Each swallows and logs its own exceptions so one bad supplier call cannot stop
+the scheduler.
+
+
+2.10 Security
+
+JWT HS256 bearer tokens with bcrypt passwords; SECRET_KEY required at boot
+and production refuses the development default. Google sign-in verifies the ID
+token server-side and does not use the OAuth client secret, which must not
+be stored anywhere. Partner API keys are stored hashed with a visible prefix.
+Rate limits: 5/min on login and password reset, 10–20/min on sensitive
+mutations, 60/min on status, 120/min per partner key. CORS is an explicit
+origin allowlist with no wildcard, because credentials are allowed.
+
+KYC documents, withdrawal proofs and support attachments live in their own
+Docker volumes and are served only through authenticated endpoints — never
+from the public /uploads mount. Public eSIM tracking links use
+secrets.token_hex(16) (128 bits), specifically to avoid the
+enumerable-sequential-ID exposure present on the supplier's own status page.
+Every administrative mutation is audit-logged with actor, IP, user agent and
+before/after state.
+
+
+2.11 Deployment
+
+Docker Compose under Dokploy on a VPS: esim-db, esim-backend,
+esim-frontend, plus Dokploy's proxy. Six named volumes must survive
+redeploys (postgres, uploads, kyc_uploads, withdrawal_uploads,
+support_uploads, logs).
+
+    git push origin main
+      → GitHub Actions: 382 backend tests against a Postgres service container
+      → if green: POST /api/compose.deploy to the Dokploy API (retried 3×)
+      → container rebuild → entrypoint runs `alembic upgrade head` → app starts
+
+The pipeline calls the Dokploy API rather than using its git webhook,
+because the webhook silently no-ops on a branch mismatch and reports it as a
+redirect that curl -f treats as success. That silent no-op caused a real
+outage on 3 September 2026. Hence the standing rule: **a green CI run is not
+proof that production changed** — verify against the live system directly.
+
+
+2.12 Configuration layers
+
+1. Environment variables — database URL, secret key, supplier and SMTP
+   credentials, upload paths, allowed origins. Requires a redeploy.
+2. platform_settings table — branding, legal text, withdrawal rules,
+   referral amounts, top-up limits, payment methods, system email, selling
+   profit percentage. Immediate.
+3. Admin console — the UI over (2), plus gateway credentials, catalogue
+   prices, languages and translations.
+
+The consequence is deliberate: the business can change its own text, prices,
+rules and rates without an engineer.
+
+---
+
+
+PART 3 — RULES, STATE AND CONTEXT
+---------------------------------
+
+
+3.1 Invariants that must never be broken
+
+| # | Rule |
+|---|---|
+| 1 | All persisted money is EUR. Other currencies exist only for display and at the point of payment |
+| 2 | The DEFAULT wallet is the only withdrawable balance |
+| 3 | Reward credit can never become cash — including through refunds |
+| 4 | Commission must be transferred to DEFAULT before it can be spent or withdrawn |
+| 5 | Payment order is always reward credit first, then main balance |
+| 6 | A refund returns funds in the same proportion they were paid |
+| 7 | Commission is calculated on the sale price after discount |
+| 8 | Commission is paid only on delivery, never on a refunded order |
+| 9 | One discount code per order |
+| 10 | One referral reward per referred person per event |
+| 11 | The agent bonus is deducted from the merchant, paid to the agent, capped at the merchant's rate, effective only after admin approval |
+| 12 | A merchant is never shown the agent bonus — only their net rate |
+| 13 | Withdrawal holds the balance at request time, not approval time |
+| 14 | The payout conversion rate is frozen at approval |
+| 15 | eSIM validity runs from first activation, not purchase |
+| 16 | Private uploads are never served from the public file mount |
+| 17 | Live gateway credentials never enter source, tests, git or the deploy environment |
+| 18 | Production database writes and secrets are handled by the platform owner |
+
+
+3.2 What is built and live
+
+Catalogue and storefront with supplier sync and automatic markup pricing ·
+multi-currency and six languages · email/password and Google accounts · KYC
+submission and review · three-wallet double-entry ledger with idempotency ·
+ShurjoPay and manual deposits · top-up in the customer's own currency ·
+checkout with discount codes and reward credit · automatic provisioning with
+refund-on-failure · live eSIM status with real carrier telemetry · public
+tracking links · merchant portal with statements, API keys and webhooks ·
+Partner API with idempotent ordering · agent portal with invite links and
+merchant bonus approval · withdrawals with holds, proofs and frozen rates ·
+referral programme · support ticketing with attachments and email threading ·
+ten automatic notification emails · an 18-tab admin console · audit and
+supplier logs · sales, profit and reconciliation reporting.
+
+
+3.3 What is outstanding
+
+Business tasks, not engineering ones:
+
+- Run one real ShurjoPay top-up end to end against the live gateway
+- Enter real bKash / Nagad / bank deposit account details
+- Replace placeholder support numbers (+880 1700-000000)
+- Fill in the Declaration's bracketed company details; legal review of all six
+  legal pages
+- Set withdrawal rules, referral reward amounts, top-up limits and launch
+  discount codes — all ship at zero or disabled
+- Create a test account to prove the system@triptel.co email round-trip
+- Raise VivaPe's enumerable status-page URL with the supplier
+- Record the legal entity name, registration number and registered address —
+  not held anywhere in the system today
+
+Engineering, none urgent: a second supplier behind the existing adapter;
+schedulers moved out of the web process before horizontal scaling; managed
+replicated PostgreSQL; JWT moved from localStorage to an httpOnly cookie
+with CSRF protection.
+
+
+3.4 Known risks
+
+| Risk | Exposure | Position |
+|---|---|---|
+| Single supplier | No eSIM without VivaPe | Adapter isolation makes a second supplier additive; orders fail honestly and refund automatically |
+| Payment gateway outage | No card top-ups | Manual deposit rail is fully independent |
+| Promo credit leaking into cash | Direct loss | Structurally impossible — reward wallet is never withdrawable; refunds split by payment source |
+| Supplier's public status page enumerable by sequential ID | Third-party privacy exposure of other customers' ICCIDs | Identified; Triptel's own tracking uses a random 128-bit token. To be raised with the supplier |
+| Schedulers in-process | Jobs double-run if a second replica is added | Move to a worker before scaling |
+| JWT in localStorage | XSS exposure if a script injection lands | httpOnly cookie + CSRF is the upgrade path |
+
+
+3.5 Bugs already found and fixed — context worth carrying
+
+1. The Dokploy git webhook silently no-op'd, so deploys looked green and
+   shipped nothing. Now the pipeline calls the API.
+2. A suspended agent's bonus was deducted from the merchant and paid to
+   nobody. Fixed by resolving the agent first and deriving the bonus from it.
+3. eSIM validity was dated from purchase, so a plan bought early showed as
+   expired on arrival. Now dated from first activation.
+4. is_activated read the supplier's coupon-window timestamps and
+   reported uninstalled eSIMs as active. Now derived from install state only.
+5. A refresh cooldown disabled the button for 45 s after any page view.
+   Forced refreshes are now tracked separately from cached reads.
+6. A "Live status" entry point sat inside a QR reveal panel, invisible to
+   anyone who had not tapped it. Moved to an always-visible row.
+7. Validation stricter than conversion rejected BDT because no rate row
+   existed, even though the converter has fallbacks. Fixed with an explicit
+   supported-currency list.
+
+
+3.6 Glossary
+
+| Term | Meaning |
+|---|---|
+| eSIM | Embedded SIM profile installed by QR code or activation string |
+| ICCID | Unique serial number identifying a SIM profile |
+| LPA string | LPA:1$<SM-DP+ address>$<matching ID> — what a phone consumes to install |
+| SM-DP+ | Carrier server that delivers the profile to the handset |
+| Base currency | EUR. Every stored monetary value is in it |
+| Beneficiary | The person who receives the eSIM, who may differ from the buyer |
+| Merchant | An approved reseller (travel agency) |
+| Agent | An approved distributor who recruits merchants |
+| Agent bonus | 0–10% taken from a merchant's commission and paid to their agent, admin-approved, never disclosed to the merchant |
+| Reward credit | Promotional balance — spendable on eSIMs, never withdrawable |
+| Idempotency key | A unique string that makes a credit or debit safe to retry |
+| VivaPe | The upstream eSIM supplier |
+| ShurjoPay | The Bangladeshi payment aggregator (cards, bKash, Nagad, Rocket) |
+| Dokploy | The self-hosted deployment platform running the containers |
+
+
+3.7 If you are being asked to work on this project
+
+Read 09_AI_Agent_Continuation_Guide.md (09_AI_Agent_Continuation_Guide.md)
+before writing any code. It has the exact commands to run the system locally,
+the conventions the codebase follows, and the list of mistakes already made.
+The short version:
+
+- Business logic goes in backend/app/services/, never in routers.
+- Schema changes are always Alembic migrations.
+- Use Decimal, never float, for money.
+- Run cd backend && python -m pytest -q (expect 382 passed) before
+  pushing.
+- Verify production directly after every deploy.
+- Do not write to the production database, and do not handle live secrets.

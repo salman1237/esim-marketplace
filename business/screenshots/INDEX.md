@@ -1,0 +1,120 @@
+# Screenshot index
+
+54 screenshots captured on **28 September 2026** from a local Triptel
+instance seeded with fictional demo data.
+
+**No production data appears in any image.** Every person, agency and
+transaction shown is invented for the purpose — "Rafiqul Islam", "Wanderlust
+Travels Ltd.", "SkyRoute Distribution" and so on. No production database was
+read.
+
+Two artefacts of the local environment are expected and are not defects:
+
+- the admin dashboard shows *"Supplier balance unavailable — VivaPe login
+  failed: 401"*, because the local instance is given dummy supplier
+  credentials deliberately;
+- links and tracking URLs show `localhost:3010` rather than `triptel.co`.
+
+Captured at 1440 × 950 (full page), except the three mobile shots at
+390 × 844.
+
+---
+
+## Public site
+
+| File | What it shows |
+|---|---|
+| `01-home-landing.png` | Landing page: hero, destinations, currency and language pickers |
+| `02-destinations.png` | Full destination catalogue |
+| `03-explore-thailand.png` | One destination — packages, data/day filters, discount code box |
+| `04-partners.png` | B2B / partner marketing page |
+| `05-api-docs.png` | Public Partner API reference |
+| `06-legal-terms.png` | A legal document (Terms & Conditions) |
+
+## Accounts
+
+| File | What it shows |
+|---|---|
+| `07-register.png` | Customer sign-up |
+| `08-login.png` | Sign in, including Google |
+| `09-forgot-password.png` | Password reset request |
+
+## Customer
+
+| File | What it shows |
+|---|---|
+| `10-customer-wallet.png` | Wallet: three balances, top-up in own currency, manual deposit, ledger |
+| `11-customer-my-esims.png` | My eSIMs list |
+| `12-customer-esim-live-status.png` | Live eSIM status — real usage, device, activation, expiry, install details, tracking link |
+| `13-customer-withdraw.png` | Withdrawal request form |
+| `14-customer-refer.png` | Referral code, share link and rewards |
+| `15-customer-profile.png` | Profile, preferences and KYC |
+| `16-customer-support-list.png` | Support tickets list |
+| `17-customer-support-thread.png` | Ticket thread with a staff reply, attachments and reply box |
+| `18-public-tracking-link.png` | The public tracking page — no login required |
+
+## Merchant portal
+
+| File | What it shows |
+|---|---|
+| `51-merchant-application-form.png` | B2B application form (applying directly) |
+| `52-merchant-application-agent-code.png` | The same form opened from an agent's invite link — agent code pre-filled |
+| `54-merchant-application-pending.png` | Application submitted, portal locked pending review |
+| `19-merchant-overview.png` | Merchant portal overview |
+| `20-merchant-provision.png` | Selling an eSIM to a traveller |
+| `21-merchant-orders.png` | Merchant order history |
+| `22-merchant-commission.png` | Commission wallet and transfer to main balance |
+| `23-merchant-statement.png` | Monthly statement with CSV export |
+| `24-merchant-api-access.png` | API keys and webhook configuration |
+
+## Agent portal
+
+| File | What it shows |
+|---|---|
+| `53-agent-application-form.png` | Agent application form |
+| `25-agent-overview.png` | Agent overview — partners, sales, commission, agent code, invite link |
+| `26-agent-merchants.png` | Partner network, per-partner bonus, pending bonus requests |
+| `27-agent-sales.png` | Sales made by the agent's partners |
+| `28-agent-commission.png` | Agent commission wallet |
+| `29-agent-statement.png` | Agent monthly statement |
+
+## Admin console
+
+| File | What it shows |
+|---|---|
+| `30-admin-overview.png` | Dashboard — KPIs, trend charts, needs-attention panel, recent orders |
+| `31-admin-merchants.png` | Merchant approval queue |
+| `32-admin-manual-deposits.png` | Manual deposit approval queue |
+| `33-admin-withdrawals.png` | Withdrawal payout queue |
+| `34-admin-orders.png` | All orders on the platform |
+| `35-admin-catalog.png` | Catalogue, supplier sync and pricing |
+| `36-admin-sales-profit.png` | Sales and profit report |
+| `37-admin-discounts.png` | Discount codes and redemptions |
+| `38-admin-referrals.png` | Referral settings and granted rewards |
+| `39-admin-agents.png` | Agent approvals, rates and bonus requests |
+| `40-admin-finance.png` | Finance and supplier reconciliation |
+| `41-admin-customer-wallet.png` | Recharge a wallet or buy an eSIM for a customer |
+| `42-admin-users.png` | Staff and users, roles and status (Super Admin) |
+| `43-admin-branding.png` | Branding, currencies and rate overrides (Super Admin) |
+| `44-admin-translations.png` | Languages and translations (Super Admin) |
+| `45-admin-logs.png` | 360° audit log and supplier call log |
+| `46-admin-support.png` | Support queue, staff side |
+| `47-admin-kyc.png` | KYC review queue |
+
+## Mobile
+
+| File | What it shows |
+|---|---|
+| `48-mobile-home.png` | Landing page at 390 px |
+| `49-mobile-wallet.png` | Wallet with the mobile bottom navigation |
+| `50-mobile-my-esims.png` | eSIM list at 390 px |
+
+---
+
+## Regenerating these
+
+See [`../09_AI_Agent_Continuation_Guide.md`](../09_AI_Agent_Continuation_Guide.md)
+§3 for the local instance and §8 for the capture method. Two things that will
+otherwise waste time: dashboards need roughly six seconds to finish loading
+before the shot (at two seconds you capture skeleton loaders), and admin tab
+selectors must match the button label without its live count.

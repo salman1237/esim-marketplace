@@ -1,0 +1,265 @@
+# Business Requirements Specification (BRS) — Triptel
+
+Version 1.0 · 28 September 2026
+
+This document states what the **business** needs the system to do and why.
+It deliberately avoids implementation detail; for how each requirement is
+satisfied in software, see `04_Software_Requirements_Specification.md`.
+
+Requirement IDs are stable: `BR-<area>-<n>`. Status is one of
+**Implemented**, **Implemented, needs configuration** (the software is
+finished but a business value must be entered before it does anything), or
+**Open**.
+
+---
+
+## 1. Business objectives
+
+| # | Objective | Measure of success |
+|---|---|---|
+| O1 | Sell prepaid travel eSIMs profitably in Bangladesh and abroad | Net profit per month, visible on the admin dashboard |
+| O2 | Accept the payment methods the home market actually uses | Share of top-ups via bKash / Nagad / ShurjoPay |
+| O3 | Build a distribution channel that grows without marketing spend | Share of sales from merchant portal and Partner API |
+| O4 | Never lose money to a failed supplier delivery | Failed-order rate; refunded-order count reconciles to zero loss |
+| O5 | Keep promotional credit from ever becoming cash | Reward wallet withdrawals: structurally impossible |
+| O6 | Run the whole operation with a small team | Time to clear each approval queue |
+
+## 2. Stakeholders
+
+| Stakeholder | Interest in the system |
+|---|---|
+| Platform owner (Super Admin) | Profitability, pricing control, staff control, brand |
+| Operations staff (Admin) | Fast, unambiguous queues; no manual arithmetic |
+| Customer | Buy quickly, pay locally, know the eSIM works |
+| Merchant | Clear commission, simple selling, reliable payout |
+| Agent | Recruit merchants, see earnings, request a bonus |
+| Software partner | A stable API with idempotent ordering |
+| Supplier (VivaPe) | Correct, authenticated ordering; prepaid balance maintained |
+| Payment providers | Correct callback handling, reconciliation |
+
+## 3. Scope
+
+**In scope.** Catalogue, storefront, accounts and KYC, wallets and ledger,
+payments in and out, eSIM ordering and lifecycle, merchant and agent
+programmes, Partner API, discounts and referrals, support ticketing,
+administration, reporting, notifications, multi-currency and
+multi-language.
+
+**Out of scope.** Owning network infrastructure; issuing physical SIMs;
+handset sales; a native mobile app (the site is mobile-first and responsive);
+accounting/ERP integration; automated tax filing.
+
+---
+
+## 4. Requirements
+
+### 4.1 Catalogue and pricing
+
+| ID | Requirement | Rationale | Status |
+|---|---|---|---|
+| BR-CAT-1 | The catalogue must mirror the supplier's live products without manual re-entry | Supplier adds and retires plans continuously | Implemented — sync every 4 h |
+| BR-CAT-2 | Retail price must derive from supplier cost by a single configurable markup | Margin must stay predictable as costs move | Implemented — default 25% |
+| BR-CAT-3 | Changing the markup must re-price the whole catalogue at once | A pricing decision is a business decision, not 1,000 edits | Implemented |
+| BR-CAT-4 | An individual plan's price must be overridable | Competitive response on a specific route | Implemented |
+| BR-CAT-5 | A plan must be hideable without deleting it | Retire a plan while keeping order history intact | Implemented |
+| BR-CAT-6 | Prices must display in the customer's currency | The home market does not think in euros | Implemented |
+| BR-CAT-7 | The catalogue must be exportable | Offline pricing discussions with partners | Implemented — XLSX export |
+
+### 4.2 Customers and accounts
+
+| ID | Requirement | Rationale | Status |
+|---|---|---|---|
+| BR-ACC-1 | A customer must be able to register with email or Google | Remove signup friction | Implemented |
+| BR-ACC-2 | A customer must be able to recover a lost password | Basic hygiene | Implemented |
+| BR-ACC-3 | Identity must be verified before any money leaves the platform | Payout compliance and fraud control | Implemented — KYC required for withdrawal |
+| BR-ACC-4 | An admin must be able to require a customer to re-verify | Documents expire; suspicion arises | Implemented |
+| BR-ACC-5 | Identity documents must never be publicly reachable | Privacy obligation | Implemented — private storage, authenticated access only |
+| BR-ACC-6 | Each account must carry its own preferred currency and language | A returning customer should not re-choose on every device | Implemented |
+
+### 4.3 Money in
+
+| ID | Requirement | Rationale | Status |
+|---|---|---|---|
+| BR-PAY-1 | Customers must be able to top up by card and mobile banking | Primary payment rails | Implemented — ShurjoPay |
+| BR-PAY-2 | Customers must be able to top up by bKash / Nagad / bank transfer with a receipt | Many customers have no card | Implemented, needs configuration — real account details must be entered |
+| BR-PAY-3 | A manual deposit must require explicit staff approval | It is an unverified claim until checked | Implemented |
+| BR-PAY-4 | A customer must be able to type the amount in their own currency | Mental arithmetic loses sales | Implemented |
+| BR-PAY-5 | A customer paying in taka must be charged exactly the taka shown | Any rounding difference destroys trust | Implemented — no EUR round-trip for BDT |
+| BR-PAY-6 | Top-up minimum and maximum must be configurable | Risk and gateway limits | Implemented, needs configuration |
+| BR-PAY-7 | Every movement of money must be individually traceable | Audit and dispute resolution | Implemented — double-entry ledger with before/after balances |
+| BR-PAY-8 | A repeated or duplicated payment callback must never double-credit | Gateways retry | Implemented — idempotency keys |
+
+### 4.4 Buying an eSIM
+
+| ID | Requirement | Rationale | Status |
+|---|---|---|---|
+| BR-ORD-1 | A customer must be able to pay from wallet or go straight to the gateway | Both journeys exist in practice | Implemented |
+| BR-ORD-2 | Promotional credit must be spent before the customer's own money | It is the balance they cannot get back; using it first favours them | Implemented |
+| BR-ORD-3 | The eSIM must be delivered immediately on payment | The product is instant or it is nothing | Implemented |
+| BR-ORD-4 | The eSIM must also arrive by email | Customers buy on one device and install on another | Implemented |
+| BR-ORD-5 | If the supplier fails, the customer must be refunded automatically | Never hold money for an undelivered product | Implemented |
+| BR-ORD-6 | A refund must return each balance to where it came from | Otherwise a failed order converts promo credit into cash | Implemented |
+| BR-ORD-7 | No commission may be paid on a refunded sale | It was never revenue | Implemented |
+| BR-ORD-8 | An order interrupted by a deploy or crash must recover itself | Deploys happen mid-purchase | Implemented — recovery sweep every 2 min |
+
+### 4.5 Using an eSIM
+
+| ID | Requirement | Rationale | Status |
+|---|---|---|---|
+| BR-SIM-1 | A customer must see real remaining data, not an estimate | The single most common support question | Implemented — live carrier telemetry |
+| BR-SIM-2 | Validity must be counted from first activation, not purchase | Buying early must not shorten the plan | Implemented |
+| BR-SIM-3 | A customer must be able to refresh status on demand, within reason | Impatience is legitimate; hammering the supplier is not | Implemented — 5-minute cache, 45-second forced-refresh cooldown |
+| BR-SIM-4 | The status page must be shareable without a login | The buyer is often not the traveller | Implemented — random 128-bit token link, also sent in the delivery email |
+| BR-SIM-5 | A shared link must not expose other customers' eSIMs | Privacy | Implemented — unguessable token, not a sequential ID |
+
+### 4.6 Merchants
+
+| ID | Requirement | Rationale | Status |
+|---|---|---|---|
+| BR-MER-1 | A travel agency must be able to apply to become a reseller online | Self-service onboarding | Implemented |
+| BR-MER-2 | An application must require business documents and admin approval | Quality and fraud control | Implemented |
+| BR-MER-3 | A merchant must earn a commission percentage set per merchant | Negotiated terms differ | Implemented — default 5% |
+| BR-MER-4 | Commission may optionally scale with volume | Reward growth | Implemented — volume tiers override the flat rate |
+| BR-MER-5 | A merchant must be able to sell to a walk-in customer who has no account | Counter sales | Implemented — account created for the traveller |
+| BR-MER-6 | A merchant must see their own orders, earnings and statements | Trust in the numbers | Implemented — statements with CSV export |
+| BR-MER-7 | A merchant must be able to integrate their own system | Scale beyond manual selling | Implemented — API keys + webhooks |
+| BR-MER-8 | A merchant must never see the agent bonus deducted from their rate | Business confidentiality, explicitly required | Implemented — merchant-facing figures show the net rate only |
+
+### 4.7 Agents
+
+| ID | Requirement | Rationale | Status |
+|---|---|---|---|
+| BR-AGT-1 | An agent must be able to apply, and be approved by an admin | Controlled distribution | Implemented |
+| BR-AGT-2 | An agent must have a shareable invite link that attributes a new merchant to them | Frictionless recruitment | Implemented — link pre-fills the B2B form with the agent code |
+| BR-AGT-3 | An agent must be able to add an existing merchant who has no agent | Recruitment after the fact | Implemented |
+| BR-AGT-4 | An agent must earn a percentage of everything their merchants sell | The distribution incentive | Implemented — default 2%, on top of the merchant's own |
+| BR-AGT-5 | An agent must be able to request a 0–10% bonus from a merchant's commission | Agreed commercial arrangement between agent and their recruit | Implemented |
+| BR-AGT-6 | A bonus must take effect only after admin approval | Prevents an agent unilaterally cutting a merchant's rate | Implemented |
+| BR-AGT-7 | A bonus must never push a merchant's commission below zero | Arithmetic safety | Implemented — capped at the merchant's own rate |
+| BR-AGT-8 | If an agent is suspended, the merchant must get their full rate back | The deduction is only legitimate if someone receives it | Implemented |
+| BR-AGT-9 | An agent may simultaneously be a merchant | Common in practice | Implemented — capability is the approved profile, not the role |
+
+### 4.8 Money out
+
+| ID | Requirement | Rationale | Status |
+|---|---|---|---|
+| BR-WDR-1 | Any user must be able to withdraw their main balance | It is their money | Implemented |
+| BR-WDR-2 | Withdrawal must require approved KYC and a saved payout account | Compliance | Implemented |
+| BR-WDR-3 | The balance must be held the moment a request is made | Otherwise it can be spent twice | Implemented |
+| BR-WDR-4 | A rejected or cancelled request must return the money in full | Fairness | Implemented |
+| BR-WDR-5 | Payout is made in a chosen currency at the rate on the day of approval | The admin pays out in taka, on a known rate | Implemented — rate frozen at approval |
+| BR-WDR-6 | Payout account details must be recorded as they were at request time | They may change later; the record must not | Implemented — snapshotted onto the request |
+| BR-WDR-7 | An approval must require proof of payment | Evidence that money actually left | Implemented — proof upload required |
+| BR-WDR-8 | Both user and admin must receive an email at each stage | Transparency | Implemented |
+| BR-WDR-9 | Minimum, maximum, fee and payout currency must be configurable | Commercial policy | Implemented, needs configuration |
+| BR-WDR-10 | Promotional credit must never be withdrawable | Core financial rule | Implemented — withdrawals only ever touch the main wallet |
+| BR-WDR-11 | Commission must be moved to the main balance before payout | Keeps earned and spendable money distinct | Implemented |
+
+### 4.9 Growth
+
+| ID | Requirement | Rationale | Status |
+|---|---|---|---|
+| BR-GRO-1 | Admin must be able to issue discount codes, percent or fixed | Campaigns | Implemented, needs configuration |
+| BR-GRO-2 | A code must be limitable by date, minimum order, cap, country, product and first-order-only | Control cost | Implemented |
+| BR-GRO-3 | Only one code may apply per order | Prevent stacking | Implemented — enforced at the database level |
+| BR-GRO-4 | Discounts must reduce revenue but not cost, and must flow through to commission and refunds | Reports must stay truthful | Implemented — discount stored per order |
+| BR-GRO-5 | Sales reports must be filterable by discount code | Measure campaign effectiveness | Implemented |
+| BR-GRO-6 | Customers must be able to refer others and both sides be rewarded | Word-of-mouth acquisition | Implemented, needs configuration |
+| BR-GRO-7 | Rewards must be configurable per event: joining, first purchase, merchant conversion | Different events have different value | Implemented |
+| BR-GRO-8 | A referral reward must be granted once per referred person per event | Anti-abuse | Implemented — enforced at the database level |
+
+### 4.10 Support
+
+| ID | Requirement | Rationale | Status |
+|---|---|---|---|
+| BR-SUP-1 | A customer must be able to raise a support ticket with attachments | Screenshots are the fastest diagnosis | Implemented — up to 5 files, 5 MB each |
+| BR-SUP-2 | Both Admin and Super Admin must be able to work the support queue | Agreed access decision | Implemented |
+| BR-SUP-3 | The conversation must continue by email in both directions | Customers reply to email, not portals | Implemented |
+| BR-SUP-4 | A ticket must show clearly who spoke last | Queue discipline | Implemented — status follows the last speaker |
+| BR-SUP-5 | A customer replying to a resolved ticket must reopen it | The problem was not actually solved | Implemented |
+| BR-SUP-6 | Attachments must not be publicly reachable | They often contain personal data | Implemented — private storage, authenticated access |
+
+### 4.11 Notifications
+
+| ID | Requirement | Rationale | Status |
+|---|---|---|---|
+| BR-NOT-1 | Ten business events must trigger automatic email: account created, B2B application, agent application, referral code used, agent code used, agent approved, merchant approved, referred merchant, transaction, withdrawal | Nobody should have to check a dashboard to learn something happened | Implemented |
+| BR-NOT-2 | Every one of them must be copied to a system mailbox | A single operational record of all money events | Implemented — `system@triptel.co`, configurable |
+| BR-NOT-3 | The system mailbox address must be editable without a deploy | Operational flexibility | Implemented |
+
+### 4.12 Administration
+
+| ID | Requirement | Rationale | Status |
+|---|---|---|---|
+| BR-ADM-1 | One console must cover every queue and setting | Small team, no context switching | Implemented — 18 tabs with live queue counts |
+| BR-ADM-2 | Every administrative action must be logged with before and after state | Accountability | Implemented — audit log |
+| BR-ADM-3 | Supplier calls must be logged with payload, status and latency | Dispute evidence and debugging | Implemented |
+| BR-ADM-4 | Staff accounts and role changes must be Super Admin only | Separation of duties | Implemented |
+| BR-ADM-5 | Admin must be able to recharge any customer's wallet directly | Goodwill gestures, offline payments | Implemented |
+| BR-ADM-6 | Admin must be able to buy an eSIM on a customer's behalf, charged to that customer's wallet | Phone support | Implemented |
+| BR-ADM-7 | Branding, legal text, languages and gateway credentials must be editable without a deploy | The business must not need an engineer to change its own text | Implemented |
+| BR-ADM-8 | Live payment credentials must never be stored in code or version control | Security | Implemented — admin console only, encrypted at rest |
+| BR-ADM-9 | Financial reports must reconcile platform sales against supplier cost | Verify the supplier is charging correctly | Implemented — finance and reconciliation reports with CSV |
+
+---
+
+## 5. Business rules
+
+These are the invariants. Any change to the system must preserve them.
+
+| # | Rule |
+|---|---|
+| R1 | All stored monetary values are in EUR, the base currency. Other currencies exist only for display and at the point of payment. |
+| R2 | The **main (DEFAULT)** wallet is the only withdrawable balance. |
+| R3 | The **reward (REWARD)** wallet is spendable on eSIMs and never withdrawable, under any circumstance, including refunds. |
+| R4 | The **commission** wallet must be transferred to the main wallet before it can be spent or withdrawn. |
+| R5 | Payment order is always: reward credit first, then main balance. |
+| R6 | A refund returns funds in the same proportion they were paid. |
+| R7 | Commission is calculated on the sale price **after** discount. |
+| R8 | Commission is paid only when an eSIM is actually delivered. |
+| R9 | One discount code per order. |
+| R10 | One referral reward per referred person per event. |
+| R11 | An agent bonus is deducted from the merchant's commission, paid to the agent, capped at the merchant's own rate, and effective only after admin approval. |
+| R12 | A merchant is never shown the agent bonus, only their net rate. |
+| R13 | Withdrawal holds the balance at request time, not at approval time. |
+| R14 | The conversion rate for a payout is frozen at the moment of approval. |
+| R15 | eSIM validity runs from first activation, not from purchase. |
+| R16 | Identity documents, payout proofs and support attachments are never served from the public file mount. |
+
+---
+
+## 6. Assumptions and constraints
+
+**Assumptions**
+
+- The supplier (VivaPe) remains available and its prepaid balance is kept
+  funded; there is no second supplier today.
+- Customers' handsets support eSIM. The storefront states compatibility but
+  cannot enforce it.
+- Manual deposits are reconciled by a human who can actually see the bKash /
+  Nagad / bank account.
+
+**Constraints**
+
+- Supplier pricing is in EUR, which fixes the base currency.
+- ShurjoPay settles in BDT only, so any card top-up is a BDT transaction
+  regardless of what the customer was shown.
+- Withdrawals are paid by hand; the payout currency list is deliberately
+  narrow (BDT, EUR, USD) because an admin must be able to actually send it.
+- Production database writes, live payment credentials and deployment
+  environment variables are handled by the platform owner, not by engineering
+  automation.
+
+## 7. Outstanding business decisions
+
+| # | Decision needed | Blocking |
+|---|---|---|
+| D1 | Legal entity name, registration number, registered address | Publishing the Declaration and Terms pages |
+| D2 | Real bKash / Nagad / bank account details | BR-PAY-2 going live |
+| D3 | Withdrawal minimum, maximum, fee and payout currency | BR-WDR-9 |
+| D4 | Referral reward amounts per event | BR-GRO-6 |
+| D5 | Launch discount codes | BR-GRO-1 |
+| D6 | Top-up minimum and maximum | BR-PAY-6 |
+| D7 | Real support phone / WhatsApp numbers | Placeholder `+880 1700-000000` is live |
+| D8 | Legal review of all six legal pages | Publication |
+| D9 | Whether to raise VivaPe's enumerable status-page URL with the supplier | Third-party privacy exposure |

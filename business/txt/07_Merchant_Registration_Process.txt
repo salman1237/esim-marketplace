@@ -1,0 +1,319 @@
+=======================================
+MERCHANT REGISTRATION PROCESS — TRIPTEL
+=======================================
+
+
+Version 1.0 · 28 September 2026
+
+How a travel agency becomes an approved Triptel reseller, what it earns, and
+what staff do at each step. Screenshots are from a local demo instance.
+
+---
+
+
+1. Who this is for
+------------------
+
+Travel agencies, tour operators, ticketing counters and online travel
+platforms that want to sell eSIMs to their own customers and earn a
+commission on each sale. A merchant can sell from a web portal, or integrate
+Triptel's Partner API into their own system.
+
+What a merchant gets
+
+- A partner dashboard with sales, earnings and statements
+- The ability to sell an eSIM to a walk-in traveller — including creating the
+  traveller's account for them
+- A commission percentage on every delivered sale, credited automatically
+- API keys and webhooks for their own system
+- Monthly statements with CSV export
+
+What a merchant needs
+
+- A registered business name
+- A trade licence or corporate ID
+- A business contact phone number
+- A Triptel account (any ordinary customer account will do)
+
+---
+
+
+2. The process at a glance
+--------------------------
+
+    1. Sign up as a customer            (self-service)
+            ↓
+    2. Submit the B2B application       (self-service)
+            ↓  emails → applicant, agent if quoted, admin, system@
+    3. Admin reviews the application    (staff)
+            ↓
+    4. Admin sets the commission rate and, if applicable, the agent
+            ↓
+    5. Admin approves                   (staff)
+            ↓  email → merchant, system@
+    6. Merchant Portal appears; selling can begin
+            ↓
+    7. (optional) Complete KYC + add a payout account to withdraw earnings
+
+Typical elapsed time is bounded by step 3, which is a human decision. Every
+other step is immediate.
+
+---
+
+
+3. Step by step
+---------------
+
+
+Step 1 — Create an ordinary account
+
+The applicant registers like any customer, with email and password or with
+Google.
+
+[screenshot: screenshots/07-register.png — Registration]
+
+There is no separate "business sign-up". A merchant profile is attached to an
+existing account, which is why an agency can browse and buy as a customer
+before applying, and why an agent can also be a merchant.
+
+
+Step 2 — Open the B2B application
+
+Two routes lead to the same form:
+
+| Route | When it is used |
+|---|---|
+| For Business in the header, or Become a partner in the footer banner | The agency found Triptel themselves |
+| An agent's invite link, https://triptel.co/reseller?agent=<CODE> | An agent recruited them |
+
+Applying directly:
+
+[screenshot: screenshots/51-merchant-application-form.png — B2B application form]
+
+Arriving via an agent's invite link — note that the **Agent Code field is
+already filled in**:
+
+[screenshot: screenshots/52-merchant-application-agent-code.png — B2B application with agent code pre-filled]
+
+
+Step 3 — Fill in and submit
+
+| Field | Required | Notes |
+|---|---|---|
+| Registered Business Name | Yes | As it appears on the trade licence |
+| Trade License / Corporate ID | Yes | Used by staff to verify the business exists |
+| Business Contact Phone | Yes | How staff reach the agency about the application |
+| Agent Code | No | Pre-filled when arriving from an invite link. Credits the agent who brought them in — it does not change the merchant's own commission |
+
+Press Submit B2B Application. The account immediately shows a pending
+state and the portal stays locked until a decision is made:
+
+[screenshot: screenshots/54-merchant-application-pending.png — Application pending]
+
+Emails sent automatically at this point:
+
+| To | Content |
+|---|---|
+| The applicant | Confirmation that the application was received |
+| The agent, if a code was quoted | Your agent code was used by <business> |
+| Admin | A new B2B application is waiting |
+| system@triptel.co | A copy, for the operational record |
+
+
+Step 4 — Staff review
+
+An admin opens Admin Console → Merchants. The tab label carries the count
+of pending applications, so nothing sits unnoticed.
+
+[screenshot: screenshots/31-admin-merchants.png — Merchant approval queue]
+
+The reviewer sees the business name, trade licence, contact phone, the
+applicant's account and the agent (if any). Before approving they:
+
+1. Set the commission rate. The default is 5%. It is set per merchant, so
+   negotiated terms are honoured.
+2. Confirm or change the agent mapping. An admin can attach, change or
+   remove the agent at any time, not only at approval.
+3. Check the margin. If an agent is attached, the margin check shows
+   whether the combined merchant rate plus agent rate still leaves the
+   platform a margin at the current selling-profit percentage.
+
+They then press Approve — or Reject with a reason, which is emailed to
+the applicant.
+
+> Approval is required from staff. Nothing an applicant types changes
+> their commission or their status by itself.
+
+
+Step 5 — Approved
+
+Emails sent automatically:
+
+| To | Content |
+|---|---|
+| The merchant | Approved, with their commission rate |
+| system@triptel.co | A copy |
+
+The Merchant Portal now appears in the header and the agency can start
+selling immediately.
+
+[screenshot: screenshots/19-merchant-overview.png — Merchant portal]
+
+---
+
+
+4. What the merchant does next
+------------------------------
+
+
+Sell an eSIM
+
+Buy for customer — choose a destination and a package, enter the
+traveller's email or username. If they have no account one is created for
+them, and the eSIM plus QR code is emailed to them directly.
+
+[screenshot: screenshots/20-merchant-provision.png — Sell to a customer]
+
+The sale is paid from the merchant's wallet, so the merchant tops up in
+advance (bKash, Nagad, bank transfer, or card via ShurjoPay) and draws down
+as they sell.
+
+
+Track orders
+
+[screenshot: screenshots/21-merchant-orders.png — Merchant orders]
+
+
+Collect commission
+
+Commission is credited to the merchant's commission wallet **when the eSIM is
+delivered** — never on a refunded order — and is calculated on the sale price
+after any discount.
+
+[screenshot: screenshots/22-merchant-commission.png — Commission]
+
+To use or withdraw it, press the transfer button to move it into the main
+balance.
+
+
+Reconcile
+
+[screenshot: screenshots/23-merchant-statement.png — Statements]
+
+Monthly statements on screen and as CSV.
+
+
+Integrate
+
+[screenshot: screenshots/24-merchant-api-access.png — API access]
+
+Issue an API key, set a webhook URL, and test the webhook from the same
+screen. The API is documented at /api-docs and in
+PARTNER_API_DOCUMENTATION.md (../PARTNER_API_DOCUMENTATION.md). Orders are
+idempotent on the partner's own customer_reference, so a retry cannot
+double-charge.
+
+---
+
+
+5. Getting paid out
+-------------------
+
+Commission is money in the platform. To take it out:
+
+1. Move commission → main balance from the Commission tab.
+2. Complete KYC — submit NID and document photographs, and wait for
+   approval.
+3. Save a payout account — a bank account or a mobile wallet such as
+   bKash or Nagad.
+4. Request a withdrawal. The amount is held from the main balance
+   immediately.
+5. Staff pay it, upload proof, and the conversion rate is frozen at that
+   moment. Both sides get an email.
+
+[screenshot: screenshots/13-customer-withdraw.png — Withdrawal request]
+
+---
+
+
+6. Commission explained
+-----------------------
+
+| Component | Who sets it | Default | Basis |
+|---|---|---|---|
+| Merchant rate | Admin, per merchant | 5% | Sale price after discount |
+| Volume tiers | Admin, platform-wide | none | If configured, cumulative delivered volume can override the flat rate |
+| Agent bonus | Agent requests, admin approves | 0% | Deducted from the merchant's rate |
+
+What the merchant sees is always the net rate. If a merchant is on 20% and
+an agent has an approved 5% bonus, the merchant's dashboard, statement, ledger
+line and API response all report 15% — the arrangement between Triptel and
+the agent is not disclosed to the merchant. This is a deliberate business
+rule.
+
+Two protections apply:
+
+- A bonus can never push a merchant's commission below zero; it is capped at
+  the merchant's own rate.
+- If the agent is suspended, no deduction is taken at all and the merchant
+  receives their full rate.
+
+---
+
+
+7. Merchant states
+------------------
+
+| State | What it means | Who changes it |
+|---|---|---|
+| PENDING | Application submitted, awaiting review. Portal locked | — |
+| APPROVED | Selling enabled, commission accruing | Admin |
+| REJECTED | Declined with a reason, emailed to the applicant | Admin |
+| SUSPENDED | Selling disabled; existing eSIMs unaffected | Admin |
+
+---
+
+
+8. Staff checklist
+------------------
+
+For the admin handling an application:
+
+- [ ] Business name and trade licence look genuine and consistent
+- [ ] Contact phone reachable
+- [ ] Commission rate set deliberately — not left at the default by accident
+- [ ] Agent mapping correct (present if they came via an invite link, absent
+      if not)
+- [ ] Margin check run if an agent is attached — merchant rate + agent rate
+      must still leave the platform a margin
+- [ ] Approve, or reject with a reason the applicant can act on
+
+Every one of these actions is recorded in the audit log with actor, IP and
+before/after state.
+
+---
+
+
+9. Frequently asked
+-------------------
+
+Can a merchant also be an agent?
+Yes. The two are separate profiles on the same account; holding one does not
+affect the other.
+
+Can an agency apply without an agent code?
+Yes — the field is optional. An agent can also be attached later by an admin,
+or an agent can add a merchant who has no agent from their own portal.
+
+Does quoting an agent code reduce the merchant's commission?
+Not by itself. The agent's own 2% is paid on top of the merchant's rate.
+Only a separately approved bonus reduces the merchant's rate, and the
+merchant sees only the resulting net figure.
+
+What happens if the eSIM fails to be delivered?
+The order is marked FAILED, the merchant's wallet is refunded automatically,
+and no commission is paid to anyone.
+
+Can a merchant sell to someone who has no Triptel account?
+Yes — the account is created as part of the sale and the eSIM is emailed to
+the traveller.

@@ -1,0 +1,205 @@
+# Triptel — Project Overview
+
+**The entire project in one document.**
+Version 1.0 · 28 September 2026 · Live at <https://triptel.co>
+
+---
+
+## 1. What Triptel is
+
+Triptel is a **travel eSIM marketplace**. A traveller buys a prepaid mobile
+data plan for the country they are flying to, installs it on their phone as a
+QR code or a one-tap link, and lands with working internet — no physical SIM,
+no airport kiosk, no roaming bill.
+
+Triptel does not own mobile network infrastructure. It buys eSIM profiles
+wholesale from **VivaPe**, a supplier with carrier relationships in 200+
+destinations, marks them up, and sells them through three channels at once:
+
+1. **Direct to travellers** on triptel.co,
+2. **Through travel agencies** ("merchants") who resell to their own
+   customers and earn commission,
+3. **Through a machine API** that lets a partner's own website or booking
+   system order eSIMs programmatically.
+
+A fourth role, the **agent**, recruits and supports merchants and earns a
+percentage of everything those merchants sell.
+
+The platform's home market is **Bangladesh** — it accepts bKash, Nagad and
+bank transfer, settles card payments through ShurjoPay, and can price
+everything in taka — but its catalogue and customer base are global.
+
+## 2. Why it exists
+
+Roaming is the default way travellers stay connected and it is the worst
+option available: opaque per-megabyte pricing, bill shock on return, and no
+way to know what you will pay until you have already paid it. Local SIM cards
+are cheaper but demand airport queues, passport registration and a spare SIM
+tray. eSIM removes the hardware problem entirely — every phone sold since
+roughly 2019 supports it — but the eSIM market is fragmented, mostly
+dollar-priced and mostly card-only, which locks out a large part of South
+Asia.
+
+Triptel's opening is the combination: a **global eSIM catalogue** sold with
+**local payment rails and local currency**, distributed through the travel
+agents that Bangladeshi travellers already book flights with.
+
+## 3. Who uses it
+
+| Role | Who they are | What they do |
+|---|---|---|
+| **Customer** | A traveller | Buys an eSIM, tops up a wallet, tracks data usage, opens support tickets, refers friends |
+| **Merchant** | A travel agency or reseller | Sells eSIMs to their own customers from a portal or the API, earns commission, withdraws it |
+| **Agent** | A distributor | Recruits merchants, earns a cut of their sales, can take an approved bonus from a merchant's rate |
+| **Admin** | Operations staff | Approves KYC, merchants, deposits and withdrawals; handles support; recharges wallets |
+| **Super Admin** | Platform owner | Everything an admin can do, plus staff accounts, roles, branding, pricing, languages and gateway credentials |
+| **Partner (machine)** | A merchant's software | Authenticates with an API key, browses the catalogue and places orders over HTTP |
+
+## 4. How money moves
+
+Every account has up to three wallets, and the distinction between them is
+the backbone of the whole financial model:
+
+- **Main balance (DEFAULT)** — real money. Topped up, spent, and the *only*
+  balance that can ever be withdrawn as cash.
+- **Reward credit (REWARD)** — promotional credit from referrals. Spendable
+  on eSIMs, **never withdrawable**. It is a marketing liability, not cash, and
+  the system is built so it can never be converted into one.
+- **Commission (COMMISSION)** — what a merchant or agent has earned. Must be
+  moved into the main balance before it can be spent or paid out.
+
+A sale flows like this:
+
+```
+Customer pays  →  reward credit first, then main balance
+                       ↓
+              Order created, VivaPe charged
+                       ↓
+        eSIM delivered  →  commission distributed
+                       ↓
+   Merchant's net %   +   Agent's own %   +   Agent's approved bonus
+   (paid to merchant)     (paid to agent)     (taken off the merchant,
+                                               paid to the agent)
+```
+
+If VivaPe fails to deliver, the order is marked FAILED and the customer is
+refunded **in the same proportions they paid** — promo credit back to promo
+credit, cash back to cash — so a failed order can never launder reward credit
+into withdrawable money. Nobody earns commission on a refunded sale.
+
+All stored money is in **EUR**, the base currency, because that is what the
+supplier prices in. Customers may view and pay in their own currency;
+conversion happens at the edges, never in storage.
+
+## 5. What has been built
+
+The platform is **live and complete** across the following areas. Everything
+listed below exists in production today.
+
+**Storefront & catalogue** — country and destination pages, package browser
+with filters, live supplier catalogue sync every 4 hours, automatic markup
+pricing (default 25% over cost), multi-currency display, six languages with
+an admin translation editor.
+
+**Accounts** — email/password and Sign in with Google, password reset, KYC
+document submission and review, role-based access control, per-account
+preferred currency and language.
+
+**Wallet & payments** — three-wallet ledger with full double-entry accounting
+and idempotency keys, ShurjoPay card/mobile-banking top-up, manual
+bKash/Nagad/bank deposits with admin approval, top-up in the customer's own
+currency, configurable minimum and maximum.
+
+**eSIM lifecycle** — checkout from wallet or gateway, automatic provisioning
+through VivaPe, QR code and LPA activation string, delivery by email, a live
+status page showing real data usage, device model, activation and expiry
+pulled from the carrier, and a **public tracking link** (128-bit random token)
+that can be forwarded to whoever is actually travelling.
+
+**Merchant tools** — partner dashboard, sell-to-customer flow that can create
+the traveller's account for them, order history, commission wallet and
+transfer, monthly statements with CSV export, API keys and webhooks.
+
+**Agent tools** — agent portal, invite link that pre-fills the B2B
+application with the agent's code, merchant network view, commission ledger,
+statements, and a merchant bonus of 0–10% that only takes effect once an
+admin approves it and is never revealed to the merchant.
+
+**Money out** — saved bank and mobile payout accounts, withdrawal requests
+that hold the balance at request time, admin approval with a payout proof
+upload, conversion rate frozen at approval, email receipts to both sides.
+
+**Growth** — discount codes (percent or fixed, scoped to all/country/product,
+first-order-only, capped, one per order) and a referral programme paying
+configurable rewards on joining, first purchase and merchant conversion.
+
+**Support** — customer ticketing with attachments, staff queue, assignment,
+resolve/close, and email threading in both directions.
+
+**Operations** — an admin console with 18 tabs covering every queue and
+setting, a full audit log of administrative actions, supplier call logs,
+sales and profit reporting, supplier reconciliation, and automatic
+notification emails on ten business events, all copied to a system mailbox.
+
+## 6. How it is built
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 15 (App Router), React, TypeScript, Tailwind CSS |
+| Backend | FastAPI, Python 3.11, async SQLAlchemy 2.0, Pydantic |
+| Database | PostgreSQL 16, schema managed by Alembic (20 migrations) |
+| Scheduling | APScheduler in-process (catalogue sync, webhook retries, stuck-order recovery) |
+| Supplier | VivaPe REST API over HTTP/2 |
+| Payments | ShurjoPay (cards, bKash, Nagad, Rocket) + manual bank/mobile deposits |
+| Email | SMTP with HTML templates |
+| Hosting | Docker Compose on a VPS, orchestrated by Dokploy |
+| CI/CD | GitHub Actions — full test suite, then a Dokploy API deploy |
+
+The numbers, as of this document: **178 REST endpoints**, **34 database
+tables**, **25 frontend routes**, **382 automated backend tests**, all
+passing.
+
+## 7. How it is operated
+
+Every push to `main` runs the full backend suite in GitHub Actions. Only if
+it passes does the pipeline call the Dokploy API to redeploy. Database
+migrations run automatically from the container entrypoint before the
+application starts.
+
+A standing rule governs releases: **a green CI run is not proof that
+production changed.** Deploys are confirmed by querying the live system
+directly.
+
+## 8. What is not finished
+
+These are business decisions and data-entry tasks, not missing software:
+
+- A real end-to-end ShurjoPay top-up has not yet been run against the live
+  gateway.
+- Real bKash / Nagad / bank deposit account details still need to be entered
+  in the admin console.
+- Placeholder support phone numbers (`+880 1700-000000`) are still in the
+  seeded settings.
+- The Declaration legal page still contains bracketed company details, and
+  all six legal pages need review by a lawyer.
+- Withdrawal limits, referral reward amounts and launch discount codes ship
+  at zero or disabled, and must be configured before they do anything.
+- VivaPe's own public eSIM status page is unauthenticated on a sequential ID,
+  which exposes other customers' ICCIDs. This has been identified and should
+  be raised with the supplier. Triptel's equivalent page uses a random
+  128-bit token specifically to avoid this.
+
+## 9. Where the detail lives
+
+| Document | Covers |
+|---|---|
+| `01_Business_Profile.md` | Identity, market, positioning, revenue model |
+| `02_Business_Requirements_Specification.md` | Business objectives, stakeholders, requirements, rules |
+| `03_System_Architecture.md` | Components, data model, flows, deployment, security |
+| `04_Software_Requirements_Specification.md` | Functional and non-functional requirements, full API inventory |
+| `05_Business_Ecosystem.md` | Supplier, channels, payments, money flow, dependencies |
+| `06_System_User_Guideline.md` | Step-by-step user guide with screenshots |
+| `07_Merchant_Registration_Process.md` | Merchant onboarding with screenshots |
+| `08_Agent_Registration_Process.md` | Agent onboarding with screenshots |
+| `09_AI_Agent_Continuation_Guide.md` | Resuming development on another machine |
+| `10_Business_Complete_Details.md` | Everything, in one file, for an LLM |

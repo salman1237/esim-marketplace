@@ -1,0 +1,296 @@
+# Business Ecosystem — Triptel
+
+Version 1.0 · 28 September 2026
+
+How Triptel sits between its supplier, its payment rails, its distribution
+channel and its customers — who depends on whom, and where the money goes.
+
+---
+
+## 1. The map
+
+```
+                        ┌──────────────────────────┐
+                        │        VivaPe            │
+                        │   eSIM supplier          │
+                        │   carrier relationships  │
+                        │   in 200+ destinations   │
+                        └────────────┬─────────────┘
+                     prepaid balance │ wholesale cost (EUR)
+                                     ▼
+   ┌───────────────────────────────────────────────────────────────┐
+   │                          TRIPTEL                              │
+   │   catalogue · pricing · wallet ledger · provisioning          │
+   │   commission engine · support · administration                │
+   └───┬──────────────────┬──────────────────┬────────────────┬────┘
+       │                  │                  │                │
+       ▼                  ▼                  ▼                ▼
+┌─────────────┐   ┌──────────────┐   ┌──────────────┐  ┌──────────────┐
+│  Traveller  │   │   Merchant   │   │   Agent      │  │  Partner     │
+│  (direct)   │   │  travel      │   │  distributor │  │  system      │
+│             │   │  agency      │   │              │  │  (API)       │
+└─────────────┘   └──────┬───────┘   └──────┬───────┘  └──────────────┘
+                         │   recruits ▲     │
+                         └────────────┘─────┘
+                                     
+       ▲                                            ▲
+       │ payment                                    │ payout
+┌──────┴──────────────────────┐          ┌──────────┴──────────────┐
+│ ShurjoPay (cards, bKash,    │          │ Manual payout by staff  │
+│ Nagad, Rocket) · settles BDT│          │ bKash / Nagad / bank    │
+│ Manual bank & mobile deposit│          │ with proof of payment   │
+└─────────────────────────────┘          └─────────────────────────┘
+```
+
+---
+
+## 2. Upstream: the supplier
+
+### VivaPe
+
+Triptel's entire inventory comes from one supplier. VivaPe holds the carrier
+relationships; Triptel holds the customer relationship.
+
+| Aspect | Detail |
+|---|---|
+| **Relationship** | Prepaid merchant account. Triptel maintains a balance with VivaPe; each order draws it down |
+| **Pricing** | Wholesale, in EUR — which is why EUR is Triptel's base currency |
+| **Catalogue** | Pulled automatically every 4 hours; new plans appear and retired plans disappear without manual work |
+| **Ordering** | One API call per sale, at the moment of sale. No stock, no pre-purchase |
+| **Delivery** | ICCID, SM-DP+ address, matching ID, LPA activation string and QR returned synchronously |
+| **Telemetry** | Data usage, install state and device model polled per eSIM |
+| **Integration** | HTTP/2 mandatory; returns HTTP 200 even for business errors, so bodies are parsed rather than statuses trusted |
+| **Visibility** | Every call logged with payload, status, latency and cost; supplier balance shown on the admin dashboard |
+
+### What this dependency means commercially
+
+- **Cost floor.** Triptel's margin is whatever it can add above VivaPe's
+  price. The default markup is 25%.
+- **Single point of failure.** If VivaPe is down, no eSIM can be sold. The
+  platform degrades honestly — the order fails and the customer is refunded —
+  rather than selling something it cannot deliver.
+- **Reconciliation matters.** The admin console has a dedicated VivaPe
+  reconciliation report so the supplier's charges can be checked against
+  Triptel's own order records rather than taken on trust.
+- **Replaceable, by design.** Every supplier call goes through one adapter
+  module. Adding a second supplier is an additive change, not a rewrite. That
+  is the mitigation for the concentration risk, and it is already in place
+  structurally even though only one supplier is wired up.
+
+### A third-party risk worth naming
+
+VivaPe's own public eSIM status page is reachable without authentication on a
+**sequential numeric ID**, which means any customer's ICCID, SM-DP+ address
+and activation string can be enumerated. This affects VivaPe's customers, not
+Triptel's own tracking page — Triptel's equivalent deliberately uses a random
+128-bit token. It should be raised with the supplier.
+
+---
+
+## 3. Downstream: the four channels
+
+### 3.1 Direct (traveller buys on triptel.co)
+
+The simplest path and the highest margin, since no commission is paid. The
+customer either tops up a wallet and spends from it, or pays for a single
+order through the gateway.
+
+**Economics:** Triptel keeps the full markup.
+
+### 3.2 Merchant (travel agency sells at the counter)
+
+A travel agency applies, is approved, and gets a portal. They sell to a
+walk-in traveller — the system will create the traveller's account for them —
+and earn a commission percentage of the sale price, credited to their
+commission wallet on delivery.
+
+| Property | Value |
+|---|---|
+| Default commission | 5%, set per merchant by an admin |
+| Volume tiers | Optional; when configured, a merchant's cumulative delivered volume can override the flat rate |
+| Paid | On delivery only. A refunded sale pays nothing |
+| Basis | The sale price **after** discount |
+| Settlement | Commission wallet → main wallet → withdrawal |
+
+**Why the agency wants it:** the eSIM is an add-on sold against a ticket
+they were already issuing, with no stock and no fulfilment work.
+
+**Why Triptel wants it:** customer acquisition at zero marketing cost, in a
+market where a large share of international travel is still booked in person.
+
+### 3.3 Agent (distributor recruits agencies)
+
+An agent's job is to bring merchants onto the platform and keep them selling.
+They do not sell eSIMs themselves — they earn from everything their merchants
+sell.
+
+| Property | Value |
+|---|---|
+| Default commission | 2% of the sale price |
+| Relationship to merchant commission | **On top of it** — the agent's own percentage does not come out of the merchant's |
+| Recruitment | A share link (`/reseller?agent=<CODE>`) that pre-fills the B2B application with the agent's code, or adding an existing merchant who has no agent |
+| Bonus | 0–10%, per merchant, **taken from that merchant's commission** |
+| Bonus approval | Required from an admin. Nothing changes until approved |
+| Confidentiality | The merchant is never shown the bonus — every merchant-facing figure reports the net rate |
+
+**The bonus, concretely.** A merchant on 20% with a 5% agent bonus approved
+receives 15%. They see 15% everywhere — dashboard, statement, ledger line,
+API. The agent receives their own 2% plus the 5% bonus. Two safeguards apply:
+the bonus is capped at the merchant's own rate, so commission can reach zero
+but never go negative; and if the agent is suspended, no deduction happens at
+all and the merchant gets their full rate back, rather than the slice being
+taken from one party and paid to nobody.
+
+### 3.4 Partner API (software integration)
+
+A merchant's own website or booking system orders eSIMs over HTTP. Same
+commission economics as the portal, but the volume ceiling is much higher
+because no human is in the loop.
+
+| Property | Value |
+|---|---|
+| Auth | API key exchanged for a bearer token |
+| Idempotency | Orders are idempotent on the partner's own `customer_reference`, so a retry cannot double-charge |
+| Notification | Webhook on delivery, retried automatically, every attempt logged |
+| Rate limit | 120 requests/minute per key |
+
+---
+
+## 4. Payment rails
+
+### Money in
+
+| Rail | How it works | Who it serves |
+|---|---|---|
+| **ShurjoPay** | Aggregator covering cards, bKash, Nagad and Rocket. Settles in BDT only. Browser callback plus server-to-server IPN, credited idempotently | The majority of Bangladeshi customers |
+| **Manual deposit** | Customer sends money to a published bKash / Nagad / bank account, submits the transaction ID, staff approve and the wallet is credited at that day's rate | Customers without a card, and larger B2B top-ups |
+| **Admin recharge** | Staff credit a wallet directly from the console, audit-logged | Goodwill gestures, offline settlements, corrections |
+
+The manual route matters more than it looks: it is the only rail that keeps
+working if the gateway fails, and it is how most merchant float arrives.
+
+### Money out
+
+Withdrawals are paid **by hand** — there is no automated disbursement — which
+is why the payout currency list is deliberately narrow (BDT, EUR, USD): an
+admin has to be able to actually send it.
+
+```
+Request → balance held immediately → staff review
+   → approve: rate frozen, proof of payment uploaded, status PAID
+   → reject or user cancels: full amount returned
+```
+
+Requirements before a withdrawal can even be requested: **approved KYC** and a
+**saved payout account**. The account details are snapshotted onto the request
+so that later edits cannot rewrite history.
+
+---
+
+## 5. The three wallets
+
+This is the financial backbone and the thing most likely to be
+misunderstood by anyone new.
+
+| Wallet | Holds | Spendable on eSIMs | Withdrawable |
+|---|---|---|---|
+| **Main (DEFAULT)** | Real money — top-ups, refunds, transferred commission | Yes | **Yes** |
+| **Reward (REWARD)** | Referral promo credit | Yes | **Never** |
+| **Commission (COMMISSION)** | Merchant and agent earnings | No — transfer first | Only after transfer to main |
+
+Rules that follow from the table:
+
+- Spending always draws **reward credit first**, then the main balance —
+  because reward credit is the balance a customer cannot get back as cash, so
+  using it up first is the outcome that favours them.
+- A refund returns money **in the same proportion it was paid**. Pay €3 promo
+  + €7 cash, get €3 promo + €7 cash back. This is what stops a failed order
+  from laundering promotional credit into withdrawable money.
+- Withdrawals only ever touch the main wallet. There is no code path from
+  reward credit to cash.
+
+---
+
+## 6. Money flow, end to end
+
+A €20 sale through a merchant who has an agent with an approved 5% bonus,
+where the merchant's rate is 20% and the agent's own rate is 2%:
+
+```
+Customer pays                                      €20.00
+  └─ supplier cost                                 €16.00   → VivaPe
+  └─ gross margin                                   €4.00
+
+Commission distribution (on delivery only)
+  ├─ merchant: 20% − 5% bonus = 15% of €20          €3.00   → merchant commission wallet
+  ├─ agent, own rate: 2% of €20                     €0.40   → agent commission wallet
+  └─ agent, bonus:    5% of €20                     €1.00   → agent commission wallet
+                                                   ───────
+  Total paid out to the channel                     €4.40
+  Triptel retains                                  −€0.40
+```
+
+That worked example is deliberately unflattering: at a 25% markup, a 20%
+merchant rate plus a 2% agent rate is **not profitable**. It illustrates why
+the admin console includes a **margin check** for agents, and why merchant
+rates and the selling-profit percentage have to be set together rather than
+independently. A sustainable configuration keeps total channel payout below
+the markup.
+
+At the default rates (5% merchant, 2% agent, 0% bonus, 25% markup):
+
+```
+Customer pays  €20.00 · cost €16.00 · margin €4.00
+  merchant 5%   €1.00
+  agent    2%   €0.40
+  Triptel       €2.60      ← 13% of revenue
+```
+
+---
+
+## 7. Growth mechanics
+
+| Mechanism | How it works | Cost control |
+|---|---|---|
+| **Discount codes** | Percent or fixed, scoped to everything / a country / a product, with a date window, a minimum order, a maximum discount and an optional first-order-only rule | One code per order, enforced in the database. Usage counted from real redemptions, never a counter that can drift |
+| **Referrals** | Every user has a code. Rewards are configurable per event — joining, first purchase, merchant conversion — and separately for the referrer and the referred | Credited as reward credit only, so it is never withdrawable. One reward per referred person per event, enforced in the database. Reversed if the qualifying order is refunded |
+
+Both ship **switched off or at zero**, so nothing is paid until the business
+deliberately configures it.
+
+---
+
+## 8. Support and communications
+
+| Channel | Purpose |
+|---|---|
+| **Ticketing** | Customer raises a ticket with attachments; staff reply in-thread; both sides also get email, so the conversation continues wherever the customer actually reads it |
+| **WhatsApp / phone** | Published on the site — currently placeholder numbers that must be replaced before launch |
+| **Automatic email** | Ten business events, every one copied to `system@triptel.co` so there is a single operational record of everything monetary |
+
+---
+
+## 9. Dependency register
+
+| Dependency | Criticality | If it fails | Current position |
+|---|---|---|---|
+| VivaPe | **Critical** | No sales at all | Orders fail honestly and refund automatically; adapter isolation makes a second supplier additive |
+| PostgreSQL | **Critical** | Platform down | Single instance; managed replicated Postgres is the upgrade path |
+| ShurjoPay | High | No card or mobile-banking top-ups | Manual deposit route is fully independent |
+| SMTP | High | No eSIM delivery emails, no password resets | eSIM is still visible in-account and via the tracking link |
+| Dokploy / VPS | High | No deploys, or downtime | Compose file is portable to any Docker host |
+| Exchange rate API | Low | Rates go stale | Last-known rates persist; manual override available per currency |
+| Google OAuth | Low | Google sign-in unavailable | Email/password login unaffected |
+
+---
+
+## 10. Where the ecosystem is incomplete
+
+| Gap | Effect | Owner |
+|---|---|---|
+| No real bKash / Nagad / bank account configured | The manual deposit rail is built but has nowhere to send money | Business |
+| ShurjoPay not yet exercised end to end with a live payment | Card rail unproven in production | Business |
+| Withdrawal rules, referral amounts and discount codes unset | Those mechanics do nothing until configured | Business |
+| Support phone numbers are placeholders | Customers cannot reach anyone by phone | Business |
+| Single supplier | Concentration risk | Business / engineering |
+| Legal entity details missing from the Declaration | Legal pages cannot be published | Business / legal |

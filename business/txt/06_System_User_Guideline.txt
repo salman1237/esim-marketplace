@@ -1,0 +1,467 @@
+===============================
+SYSTEM USER GUIDELINE — TRIPTEL
+===============================
+
+
+Version 1.0 · 28 September 2026
+
+A walkthrough of every part of the platform, illustrated with screenshots.
+All images are in screenshots/ (screenshots/) and were captured from a
+local instance seeded with fictional demo data — no real customer information
+appears in any of them.
+
+Contents
+
+1. Getting around (#1-getting-around)
+2. Creating an account (#2-creating-an-account)
+3. Finding and buying an eSIM (#3-finding-and-buying-an-esim)
+4. The wallet (#4-the-wallet)
+5. Your eSIMs and live status (#5-your-esims-and-live-status)
+6. Sharing a tracking link (#6-sharing-a-tracking-link)
+7. Referrals and discount codes (#7-referrals-and-discount-codes)
+8. Identity verification (KYC) (#8-identity-verification-kyc)
+9. Withdrawing money (#9-withdrawing-money)
+10. Support (#10-support)
+11. The merchant portal (#11-the-merchant-portal)
+12. The agent portal (#12-the-agent-portal)
+13. The admin console (#13-the-admin-console)
+14. On a phone (#14-on-a-phone)
+
+---
+
+
+1. Getting around
+-----------------
+
+The public site opens on the landing page, with destinations, a currency
+selector and a language selector in the header.
+
+[screenshot: screenshots/01-home-landing.png — Landing page]
+
+The currency and language pickers at the top right change the whole site
+immediately. For a signed-in user the currency choice is saved to their
+account, so it follows them to any device they sign in from.
+
+Browse every destination from Destinations:
+
+[screenshot: screenshots/02-destinations.png — Destination catalogue]
+
+---
+
+
+2. Creating an account
+----------------------
+
+Sign up with an email address and password, or use **Sign in with
+Google**.
+
+[screenshot: screenshots/07-register.png — Registration]
+
+[screenshot: screenshots/08-login.png — Sign in]
+
+If a friend gave you a referral code, enter it during sign-up — both of you
+can be rewarded, depending on how the programme is configured.
+
+Forgotten your password? Request a reset link; it is single-use and expires.
+
+[screenshot: screenshots/09-forgot-password.png — Password reset]
+
+---
+
+
+3. Finding and buying an eSIM
+-----------------------------
+
+Open a destination to see every package for that country. Filter by data
+allowance and by number of days, and enter a discount code if you have one —
+it is applied when you buy, and only one code applies per order.
+
+[screenshot: screenshots/03-explore-thailand.png — Thailand packages]
+
+Each card shows the data, the validity and the price in your chosen currency,
+along with the payment methods available.
+
+**Press Buy Now.** What happens next depends on your balance:
+
+- Enough in your wallet — the eSIM is bought immediately from your
+  balance. Reward credit is always spent before your own money.
+- Not enough — you are taken to the gateway (card, bKash, Nagad or
+  Rocket) to pay for that order directly.
+
+Within seconds you receive:
+
+- the eSIM in your account under My eSIMs,
+- an email containing the QR code, the activation details and a tracking
+  link.
+
+> Validity starts when you first install the eSIM, not when you buy it.
+> Buying a week before departure does not shorten the plan.
+
+If the supplier cannot deliver, the order is marked Failed and your money
+is refunded automatically — back into exactly the balances you paid from.
+
+---
+
+
+4. The wallet
+-------------
+
+Wallet shows your balances, lets you top up and lists every transaction.
+
+[screenshot: screenshots/10-customer-wallet.png — Wallet]
+
+
+The three balances
+
+| Balance | What it is | Can you spend it? | Can you withdraw it? |
+|---|---|---|---|
+| Main balance | Money you topped up, refunds, transferred commission | Yes | Yes |
+| Reward credit | Referral rewards | Yes, on eSIMs | No, never |
+| Commission earned | Merchant or agent earnings | Move it to your main balance first | Only after moving it |
+
+
+Topping up
+
+Type the amount in your own currency — the box follows whatever currency
+your account is set to. The minimum and maximum are shown converted, so there
+is no arithmetic to do.
+
+Two routes:
+
+- Pay via ShurjoPay — card, bKash, Nagad or Rocket, credited
+  automatically when the payment confirms. If your currency is taka you are
+  charged exactly the taka shown on the button.
+- Manual deposit — send money to the published bKash, Nagad or bank
+  account, then submit the transaction ID. Staff check it and credit your
+  wallet. The screen tells you the amount to send and what will land in your
+  wallet.
+
+Every credit and debit appears in the ledger below, with the balance before
+and after.
+
+---
+
+
+5. Your eSIMs and live status
+-----------------------------
+
+My eSIMs lists everything you have bought.
+
+[screenshot: screenshots/11-customer-my-esims.png — My eSIMs]
+
+Open one for the full live status page:
+
+[screenshot: screenshots/12-customer-esim-live-status.png — Live eSIM status]
+
+This page shows real figures from the carrier, not estimates:
+
+| Panel | Meaning |
+|---|---|
+| Data used | Actual consumption, with the remainder of your allowance |
+| SIM status | Active, installed or not yet installed, and the handset detected |
+| Validity | Days, and the exact expiry — counted from first activation |
+| Install on another device | One-tap iPhone and Android setup, the SM-DP+ address, the activation code and the full LPA string, each copyable |
+| eSIM details | Plan, order reference, ICCID, purchase, activation and expiry times |
+| Daily usage | Per-day breakdown where the carrier reports it |
+
+Refresh fetches fresh figures from the carrier. Status is cached for five
+minutes and a forced refresh is limited to once every 45 seconds, so the
+button is never dead just because you looked at the page.
+
+Print produces a printable sheet with the QR — useful if you are
+installing on a phone that is not the one you are reading this on.
+
+---
+
+
+6. Sharing a tracking link
+--------------------------
+
+Every eSIM has a tracking link at the bottom of its status page. It opens
+the same usage and installation information without anyone needing to sign in.
+
+[screenshot: screenshots/18-public-tracking-link.png — Public tracking link]
+
+Use it when the person travelling is not the person who bought the eSIM. The
+link is also included in the delivery email.
+
+The address contains a long random token, not a sequential number, so it
+cannot be guessed and nobody can step from your eSIM to anyone else's. It
+still shows real usage data, so share it only with whoever is actually using
+the eSIM.
+
+---
+
+
+7. Referrals and discount codes
+-------------------------------
+
+Refer shows your personal referral code, a link to share, and what you
+have earned.
+
+[screenshot: screenshots/14-customer-refer.png — Referrals]
+
+Rewards are configured by the platform and can be paid on three events:
+someone joining with your code, their first purchase, and their becoming a
+merchant. Rewards land in your reward credit balance — spendable on eSIMs,
+never withdrawable.
+
+Discount codes are entered on the destination page before buying. One code
+applies per order.
+
+---
+
+
+8. Identity verification (KYC)
+------------------------------
+
+Your Profile holds your details, your preferred currency and language, and
+your identity verification.
+
+[screenshot: screenshots/15-customer-profile.png — Profile and KYC]
+
+Submit your NID number and photographs of the document. Staff review it and
+you are notified of the outcome. **You must have approved KYC before you can
+withdraw any money.** Your documents are stored privately and are visible only
+to authorised staff — never through a public address.
+
+---
+
+
+9. Withdrawing money
+--------------------
+
+From the wallet, choose Withdraw.
+
+[screenshot: screenshots/13-customer-withdraw.png — Withdrawal request]
+
+Before you can request one you need:
+
+1. approved KYC, and
+2. a saved payout account — a bank account or a mobile wallet such as
+   bKash or Nagad.
+
+What happens then:
+
+| Stage | What it means |
+|---|---|
+| Requested | The amount leaves your main balance straight away and is held, so it cannot be spent twice |
+| Approved / Paid | Staff send the money and upload proof. The conversion rate is frozen at this moment, so what you see is what you get |
+| Rejected | The full amount is returned to your balance with a reason |
+| Cancelled | You can cancel while it is still pending; the money comes straight back |
+
+You and the platform both receive an email at every stage, showing the amount,
+the fee, the rate used and the payout total.
+
+Note: reward credit can never be withdrawn, and commission has to be moved
+into your main balance first.
+
+---
+
+
+10. Support
+-----------
+
+Support lists your tickets.
+
+[screenshot: screenshots/16-customer-support-list.png — Support tickets]
+
+Open one to read the conversation and reply. You can attach up to five files
+of 5 MB each — a screenshot of the error is usually the fastest route to an
+answer.
+
+[screenshot: screenshots/17-customer-support-thread.png — Support thread]
+
+The thread and your email stay in step: when staff reply you get an email, and
+you can carry on in either place. If you reply to a ticket that was already
+resolved, it reopens automatically.
+
+---
+
+
+11. The merchant portal
+-----------------------
+
+Approved travel agencies get a Merchant Portal in the header.
+
+[screenshot: screenshots/19-merchant-overview.png — Merchant overview]
+
+
+Selling to a customer
+
+Buy for customer sells an eSIM to a traveller. If they have no account,
+one is created for them and the eSIM is sent to their email.
+
+[screenshot: screenshots/20-merchant-provision.png — Sell to a customer]
+
+
+Orders
+
+Everything you have sold, with status and value.
+
+[screenshot: screenshots/21-merchant-orders.png — Merchant orders]
+
+
+Commission
+
+Your commission balance, and the button to move it into your main balance
+where it can be spent or withdrawn.
+
+[screenshot: screenshots/22-merchant-commission.png — Commission]
+
+Commission is credited when the eSIM is delivered, calculated on the price
+after any discount. A refunded order pays no commission.
+
+
+Statements
+
+Month-by-month, on screen and as a CSV download for your own accounts.
+
+[screenshot: screenshots/23-merchant-statement.png — Statements]
+
+
+API and webhooks
+
+If you run your own booking system, issue an API key and point a webhook at
+your server to be told when each eSIM is delivered.
+
+[screenshot: screenshots/24-merchant-api-access.png — API access]
+
+Full reference at /api-docs:
+
+[screenshot: screenshots/05-api-docs.png — Partner API docs]
+
+---
+
+
+12. The agent portal
+--------------------
+
+Approved agents get an Agent Portal.
+
+[screenshot: screenshots/25-agent-overview.png — Agent overview]
+
+The overview shows how many partners you have, what they have sold, and what
+you have earned — plus your invite link. Send that link to a travel
+agency and their B2B application opens with your agent code already filled in,
+so every eSIM they sell earns you commission from the first sale.
+
+
+Your partners
+
+[screenshot: screenshots/26-agent-merchants.png — Agent partners]
+
+Here you can:
+
+- see each partner's status, delivered sales, volume and what you have
+  earned from them;
+- add an existing merchant who does not already have an agent;
+- set a bonus of 0–10% for a partner.
+
+The bonus is taken from that partner's commission and paid to you **on top of
+your own percentage**. It does nothing until an admin approves it — pending
+requests are listed underneath with their status.
+
+
+Sales, commission and statements
+
+[screenshot: screenshots/27-agent-sales.png — Agent sales]
+
+[screenshot: screenshots/28-agent-commission.png — Agent commission]
+
+[screenshot: screenshots/29-agent-statement.png — Agent statement]
+
+Commission is paid when an eSIM is delivered. A refunded order pays neither
+you nor the partner.
+
+---
+
+
+13. The admin console
+---------------------
+
+Staff see Admin Console in the header. Every tab shows its pending count,
+so the queue that needs attention is obvious at a glance.
+
+[screenshot: screenshots/30-admin-overview.png — Admin overview]
+
+The overview carries the headline numbers, trend charts, a needs attention
+panel — stuck orders, ledger balance, failed orders, items awaiting review —
+and recent orders.
+
+
+Approval queues
+
+| Tab | What you do there | Screenshot |
+|---|---|---|
+| Merchants | Approve or reject B2B applications, set the commission rate, assign an agent | [screenshot: screenshots/31-admin-merchants.png] |
+| Manual Deposits | Check a bKash / Nagad / bank transaction ID and credit the wallet | [screenshot: screenshots/32-admin-manual-deposits.png] |
+| Withdrawals | Pay a withdrawal, upload proof, or reject with a reason | [screenshot: screenshots/33-admin-withdrawals.png] |
+| Agents | Approve agents, set their rate, and approve or reject bonus requests | [screenshot: screenshots/39-admin-agents.png] |
+| KYC Review | View identity documents and approve, reject, or demand re-verification | [screenshot: screenshots/47-admin-kyc.png] |
+| Support | Work the ticket queue: assign, reply, resolve, close | [screenshot: screenshots/46-admin-support.png] |
+
+
+Trading
+
+| Tab | What you do there | Screenshot |
+|---|---|---|
+| Orders | Every order on the platform | [screenshot: screenshots/34-admin-orders.png] |
+| Catalog | Sync the supplier catalogue, set the global markup, override individual prices, export to Excel | [screenshot: screenshots/35-admin-catalog.png] |
+| Sales & Profit | Revenue, cost and margin, filterable and exportable | [screenshot: screenshots/36-admin-sales-profit.png] |
+| Finance & Reconciliation | Platform summary, merchant statements, supplier reconciliation | [screenshot: screenshots/40-admin-finance.png] |
+| Discount Codes | Create and manage codes; see who redeemed what | [screenshot: screenshots/37-admin-discounts.png] |
+| Referrals & Rewards | Set reward amounts per event; see what has been granted | [screenshot: screenshots/38-admin-referrals.png] |
+| Customer Wallet | Find any customer, credit their wallet, or buy an eSIM on their behalf | [screenshot: screenshots/41-admin-customer-wallet.png] |
+
+> Customer Wallet — note: an admin-assisted purchase is charged to **the
+> customer's own wallet**, not the platform's. The admin is triggering the
+> purchase for them, not paying for it.
+
+
+Platform (Super Admin)
+
+| Tab | What you do there | Screenshot |
+|---|---|---|
+| Staff & Users | Create staff accounts, change roles, suspend users | [screenshot: screenshots/42-admin-users.png] |
+| Dynamic Branding & Rates | Logo, favicon, share image, platform name, currency rates and overrides | [screenshot: screenshots/43-admin-branding.png] |
+| Languages & Translations | Add languages, edit strings, auto-translate | [screenshot: screenshots/44-admin-translations.png] |
+| 360° Logs | Every administrative action with before and after state, and every supplier call | [screenshot: screenshots/45-admin-logs.png] |
+
+Legal pages, payment methods, withdrawal rules, top-up limits, notification
+settings and the ShurjoPay credentials are all editable from the console too —
+the business can change its own text, prices and rules without an engineer.
+
+> The demo screenshots show *"Supplier balance unavailable — VivaPe login
+> failed: 401"*. That is expected: the local instance used for the captures is
+> given dummy supplier credentials on purpose.
+
+---
+
+
+14. On a phone
+--------------
+
+The whole site is built mobile-first, with a bottom navigation bar for the
+pages people use most.
+
+| | | |
+|---|---|---|
+| [screenshot: screenshots/48-mobile-home.png — Mobile landing] | [screenshot: screenshots/49-mobile-wallet.png — Mobile wallet] | [screenshot: screenshots/50-mobile-my-esims.png — Mobile eSIMs] |
+
+---
+
+
+Appendix — who can see what
+---------------------------
+
+| Page | Anonymous | Customer | Merchant | Agent | Admin | Super Admin |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Storefront, destinations, legal | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Public tracking link | ✓ (with the link) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Wallet, My eSIMs, Support, Refer | | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Withdraw (needs KYC + payout account) | | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Merchant Portal | | | ✓ | if also a merchant | | |
+| Agent Portal | | | | ✓ | | |
+| Admin Console — operational tabs | | | | | ✓ | ✓ |
+| Staff & Users, Branding, Translations | | | | | | ✓ |
