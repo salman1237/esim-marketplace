@@ -23,6 +23,7 @@ import OverviewTab from "@/components/admin/overview/OverviewTab";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { Trash2, Download } from "lucide-react";
 import { saveBlob } from "@/components/finance/StatementView";
+import { formatDate, formatDateTime, formatTime } from "@/lib/datetime";
 
 type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "withdrawals" | "discounts" | "referrals" | "agents" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales" | "finance" | "support";
 
@@ -1071,7 +1072,7 @@ export default function AdminConsolePage() {
                 {allOrders.map((o) => (
                   <tr key={o.id}>
                     <td className="py-2.5 font-mono text-admin-600">{o.order_no}</td>
-                    <td className="py-2.5 text-slate-500">{new Date(o.created_at).toLocaleString()}</td>
+                    <td className="py-2.5 text-slate-500">{formatDateTime(o.created_at)}</td>
                     <td className="py-2.5 text-slate-700">{o.email}</td>
                     <td className="py-2.5 text-slate-700">{o.product_title}</td>
                     <td className="py-2.5 font-bold text-emerald-600">{formatPrice(o.total_amount)}</td>
@@ -1450,7 +1451,7 @@ export default function AdminConsolePage() {
                     <td className="py-2.5 text-slate-900 font-semibold">{u.username}</td>
                     <td className="py-2.5 text-slate-700">{u.email}</td>
                     <td className="py-2.5 font-bold text-admin-600">{u.role}</td>
-                    <td className="py-2.5 text-slate-500">{new Date(u.created_at).toLocaleDateString()}</td>
+                    <td className="py-2.5 text-slate-500">{formatDate(u.created_at)}</td>
                     <td className="py-2.5 space-x-2">
                       <select 
                         value={u.role} 
@@ -1505,7 +1506,7 @@ export default function AdminConsolePage() {
                 <tbody className="divide-y divide-gray-100 font-mono">
                   {supplierLogs.map((log) => (
                     <tr key={log.id} onClick={() => setInspectingLog(log)} className="cursor-pointer hover:bg-gray-50">
-                      <td className="py-2.5 text-slate-500">{new Date(log.created_at).toLocaleTimeString()}</td>
+                      <td className="py-2.5 text-slate-500">{formatTime(log.created_at)}</td>
                       <td className="py-2.5 font-bold text-admin-600">{log.method}</td>
                       <td className="py-2.5 text-slate-700">/{log.endpoint}</td>
                       <td className="py-2.5">
@@ -1544,7 +1545,7 @@ export default function AdminConsolePage() {
                   <tbody className="divide-y divide-gray-100">
                     {auditLogs.map((log) => (
                       <tr key={log.id} onClick={() => setInspectingLog(log)} className="cursor-pointer hover:bg-gray-50">
-                        <td className="py-2.5 text-slate-500 font-mono">{new Date(log.created_at).toLocaleTimeString()}</td>
+                        <td className="py-2.5 text-slate-500 font-mono">{formatTime(log.created_at)}</td>
                         <td className="py-2.5 font-bold text-amber-600">{log.actor_role}</td>
                         <td className="py-2.5 font-semibold text-slate-900">{log.action}</td>
                         <td className="py-2.5 font-mono text-[11px] text-slate-500 truncate max-w-xs">{JSON.stringify(log.after_state)}</td>
@@ -1583,7 +1584,7 @@ export default function AdminConsolePage() {
                       <tbody className="divide-y divide-gray-100">
                         {auditSummary.recent.map((log) => (
                           <tr key={log.id}>
-                            <td className="py-2.5 text-slate-500 font-mono">{new Date(log.created_at).toLocaleTimeString()}</td>
+                            <td className="py-2.5 text-slate-500 font-mono">{formatTime(log.created_at)}</td>
                             <td className="py-2.5 font-bold text-amber-600">{log.actor_role}</td>
                             <td className="py-2.5 font-semibold text-slate-900">{log.action}</td>
                           </tr>
@@ -1632,7 +1633,7 @@ export default function AdminConsolePage() {
                         k.status === "REJECTED" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700"
                       }`}>{k.status}</span>
                     </td>
-                    <td className="py-2.5 text-slate-500">{new Date(k.submitted_at).toLocaleDateString()}</td>
+                    <td className="py-2.5 text-slate-500">{formatDate(k.submitted_at)}</td>
                     <td className="py-2.5 space-x-2">
                       {k.status === "PENDING" ? (
                         <>

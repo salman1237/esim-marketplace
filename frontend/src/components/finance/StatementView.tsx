@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { CheckCircle2, AlertTriangle, ChevronDown, ChevronUp, Download } from "lucide-react";
 import { api } from "@/lib/api";
+import { formatDateTime, formatDayLabel } from "@/lib/datetime";
 
 // Statement amounts are accounting figures in the base currency.
 export const eur = (value?: string | null) => (value === null || value === undefined ? "—" : `€${Number(value).toFixed(2)}`);
@@ -102,7 +103,7 @@ function WalletSection({ wallet }: { wallet: any }) {
             <tbody className="divide-y divide-gray-100">
               {wallet.entries.map((e: any, i: number) => (
                 <tr key={i}>
-                  <td className="py-1.5 pe-3 text-slate-500 whitespace-nowrap">{e.created_at ? new Date(e.created_at).toLocaleString() : "—"}</td>
+                  <td className="py-1.5 pe-3 text-slate-500 whitespace-nowrap">{formatDateTime(e.created_at)}</td>
                   <td className="py-1.5 pe-3 text-slate-700">{e.description || REFERENCE_LABELS[e.reference_type] || e.reference_type}</td>
                   <td className={`py-1.5 pe-3 text-end font-mono font-semibold ${e.tx_type === "CREDIT" ? "text-emerald-600" : "text-rose-600"}`}>
                     {e.tx_type === "CREDIT" ? "+" : "−"}{eur(e.amount)}
@@ -137,7 +138,7 @@ export default function StatementView({ statement, csvPath, csvName }: { stateme
     }
   };
 
-  const monthLabel = new Date(`${statement.period.month}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+  const monthLabel = formatDayLabel(`${statement.period.month}-01`, { month: "long", year: "numeric" });
 
   return (
     <div className="space-y-4">
@@ -145,7 +146,7 @@ export default function StatementView({ statement, csvPath, csvName }: { stateme
         <div>
           <div className="text-base font-bold text-slate-900">{statement.merchant.business_name || statement.merchant.username} — {monthLabel}</div>
           <div className="text-[11px] text-slate-500">
-            {statement.merchant.email} · commission {statement.merchant.commission_rate_pct ?? "—"}% · generated {new Date(statement.generated_at).toLocaleString()}
+            {statement.merchant.email} · commission {statement.merchant.commission_rate_pct ?? "—"}% · generated {formatDateTime(statement.generated_at)}
           </div>
         </div>
         <button type="button" onClick={download} disabled={downloading} className="flex items-center gap-1.5 bg-white hover:bg-gray-50 border border-gray-300 text-slate-700 text-xs font-bold px-3 py-2 rounded-lg disabled:opacity-60">

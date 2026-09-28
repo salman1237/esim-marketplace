@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { formatDayLabel } from "@/lib/datetime";
 
 // Chart tokens. Categorical slots 1-3 are the validated reference palette
 // (checked against the white card surface: all gates pass; aqua is 2.82:1,
@@ -66,7 +67,7 @@ export function tickIndices(n: number, stepPx: number, minGap = 64): number[] {
 const anchorFor = (i: number, n: number) => (i === 0 ? "start" : i === n - 1 ? "end" : "middle");
 
 export const shortDate = (iso: string) =>
-  new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+  formatDayLabel(iso);
 
 // ---------------------------------------------------------------------------
 // Tooltip - values lead, labels follow, keyed with a short line.

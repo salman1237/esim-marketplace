@@ -7,6 +7,7 @@ import {
   RefreshCw, Signal, Smartphone, WifiOff,
 } from "lucide-react";
 import { esimInstallLinks } from "@/lib/esimInstall";
+import { formatDateTimeZoned, formatDayLabel } from "@/lib/datetime";
 
 export type EsimStatus = {
   esim_id: string;
@@ -31,13 +32,16 @@ export type EsimStatus = {
   telemetry: { fetched_at: string | null; error: string | null; available: boolean };
 };
 
-export const fmtDate = (v?: string | null) => (v ? new Date(v).toLocaleString() : "—");
+// Bangladesh time, always — see lib/datetime. A traveller reading this
+// page has a phone that has just switched to a foreign timezone, and an
+// expiry that quietly re-renders in local time cannot be compared with
+// the receipt or the support reply that quoted it.
+export const fmtDate = (v?: string | null) => formatDateTimeZoned(v);
 const mbLabel = (v?: string | null) => (v === null || v === undefined ? "—" : `${Number(v).toFixed(2)} MB`);
 
 function dayLabel(yyyymmdd?: string) {
   if (!yyyymmdd || yyyymmdd.length !== 8) return yyyymmdd || "—";
-  return new Date(`${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}T00:00:00Z`)
-    .toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC" });
+  return formatDayLabel(`${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`);
 }
 
 export function CopyRow({ label, value }: { label: string; value: string }) {

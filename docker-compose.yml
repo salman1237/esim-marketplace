@@ -33,6 +33,12 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
       VIVAPE_BASE_URL: ${VIVAPE_BASE_URL:-https://app.vivape.net/api}
       CATALOG_SYNC_INTERVAL_HOURS: ${CATALOG_SYNC_INTERVAL_HOURS:-4}
+      # Timezone assumed for supplier timestamps that arrive with no offset
+      # (VivaPe passes the upstream carrier's naive local strings straight
+      # through). Anything carrying a real offset ignores this. Named here
+      # because Compose only forwards variables it lists - the same omission
+      # silently disabled SMTP once already.
+      SUPPLIER_TIMEZONE: ${SUPPLIER_TIMEZONE:-Asia/Hong_Kong}
       VIVAPE_EMAIL: ${VIVAPE_EMAIL:?VIVAPE_EMAIL env var is required}
       VIVAPE_PASSWORD: ${VIVAPE_PASSWORD:?VIVAPE_PASSWORD env var is required}
       SHURJOPAY_BASE_URL: ${SHURJOPAY_BASE_URL:-https://sandbox.shurjopayment.com}

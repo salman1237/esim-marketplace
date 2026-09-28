@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronRight, RefreshCw, WifiOff, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { ChartCard, ColumnChart, HBarChart, Legend, LineChart, Meter, ShareBar, StatTile, VIZ, shortDate } from "./charts";
+import { formatDateTime } from "@/lib/datetime";
 
 const RANGES = [7, 30, 90];
 const CHANNEL_LABELS: Record<string, string> = { web: "Website", api: "Partner API", admin: "Admin console" };
@@ -299,7 +300,7 @@ export default function OverviewTab({ onNavigate }: { onNavigate: (tab: string) 
                           {o.order_no}
                           <span className="ms-1.5 font-sans text-[10px]" style={{ color: VIZ.muted }}>{CHANNEL_LABELS[o.channel]}</span>
                         </td>
-                        <td className="py-2 pe-3 whitespace-nowrap" style={{ color: VIZ.secondary }}>{o.created_at ? new Date(o.created_at).toLocaleString() : "—"}</td>
+                        <td className="py-2 pe-3 whitespace-nowrap" style={{ color: VIZ.secondary }}>{formatDateTime(o.created_at)}</td>
                         <td className="py-2 pe-3 truncate max-w-[180px]" style={{ color: VIZ.secondary }}>{o.buyer}</td>
                         <td className="py-2 pe-3" style={{ color: VIZ.secondary }}>{o.country_iso2} · {o.product}</td>
                         <td className="py-2 pe-3">

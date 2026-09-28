@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     VIVAPE_EMAIL: str = os.getenv("VIVAPE_EMAIL", "dev-only-not-a-real-account@example.com")
     VIVAPE_PASSWORD: str = os.getenv("VIVAPE_PASSWORD", "dev-only-not-a-real-password")
     VIVAPE_CURRENCY: str = "EUR"
+    # VivaPe's eSIM diagnostics endpoints pass the upstream carrier's own
+    # timestamps through as naive strings, with no offset to read. This is the
+    # zone those are assumed to be in; anything that DOES carry an offset
+    # ignores this setting entirely. Change it here if activation times come
+    # back consistently shifted by a whole number of hours.
+    SUPPLIER_TIMEZONE: str = os.getenv("SUPPLIER_TIMEZONE", "Asia/Hong_Kong")
 
     # Payment Gateway: ShurjoPay
     SHURJOPAY_BASE_URL: str = os.getenv("SHURJOPAY_BASE_URL", "https://sandbox.shurjopayment.com")

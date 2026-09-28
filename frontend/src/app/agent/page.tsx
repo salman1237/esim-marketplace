@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import StatementView, { currentMonth } from "@/components/finance/StatementView";
+import { formatDate } from "@/lib/datetime";
 
 const eur = (v: any) => `€${Number(v || 0).toFixed(2)}`;
 
@@ -574,7 +575,7 @@ export default function AgentPortalPage() {
                     <tr key={r.order_id}>
                       <td className="py-2.5 pe-3">
                         <div className="font-mono text-brand-600">{r.order_no}</div>
-                        <div className="text-[10px] text-slate-400">{new Date(r.created_at).toLocaleDateString()} · {r.status}</div>
+                        <div className="text-[10px] text-slate-400">{formatDate(r.created_at)} · {r.status}</div>
                       </td>
                       <td className="py-2.5 pe-3 text-slate-700">{r.merchant}</td>
                       <td className="py-2.5 pe-3 text-slate-700">
@@ -631,7 +632,7 @@ export default function AgentPortalPage() {
                   <tbody className="divide-y divide-gray-100">
                     {ledger.entries.map((e: any) => (
                       <tr key={e.id}>
-                        <td className="py-2.5 pe-3 text-slate-500">{new Date(e.created_at).toLocaleDateString()}</td>
+                        <td className="py-2.5 pe-3 text-slate-500">{formatDate(e.created_at)}</td>
                         <td className="py-2.5 pe-3 text-slate-700">{e.description || e.reference_type}</td>
                         <td className={`py-2.5 pe-3 text-end font-mono font-bold ${e.tx_type === "CREDIT" ? "text-emerald-600" : "text-rose-600"}`}>
                           {e.tx_type === "CREDIT" ? "+" : "−"}{eur(e.amount)}

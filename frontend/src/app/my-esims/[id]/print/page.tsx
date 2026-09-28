@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 import { api, API_BASE } from "@/lib/api";
 import { esimInstallLinks } from "@/lib/esimInstall";
+import { formatDate } from "@/lib/datetime";
 
 // Deliberately light and self-contained: this page exists to be printed or
 // saved as a PDF, so it avoids the app chrome, dark panels and animations
@@ -74,7 +75,7 @@ export default function PrintEsimPage() {
   // carrying it for weeks before they land.
   rows.push(
     item.expires_at
-      ? ["Expires", new Date(item.expires_at).toLocaleDateString()]
+      ? ["Expires", formatDate(item.expires_at)]
       : ["Expires", `${item.validity_days} days after you install it`]
   );
 

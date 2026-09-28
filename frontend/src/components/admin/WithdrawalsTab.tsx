@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { formatDateTime } from "@/lib/datetime";
 
 function getToken() {
   try {
@@ -322,8 +323,8 @@ export default function WithdrawalsTab({ isSuperAdmin, onCountChange }: { isSupe
                     {row.account?.routing_number && <div className="text-xs text-slate-500 font-mono">Routing: {row.account.routing_number}</div>}
                     {row.note && <div className="text-xs text-slate-600 mt-1 italic">&ldquo;{row.note}&rdquo;</div>}
                     <div className="text-[11px] text-slate-400 mt-1">
-                      Requested {new Date(row.created_at).toLocaleString()}
-                      {row.reviewed_at ? ` · reviewed ${new Date(row.reviewed_at).toLocaleString()}` : ""}
+                      Requested {formatDateTime(row.created_at)}
+                      {row.reviewed_at ? ` · reviewed ${formatDateTime(row.reviewed_at)}` : ""}
                     </div>
                   </div>
 

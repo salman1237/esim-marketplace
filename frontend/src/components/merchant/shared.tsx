@@ -39,10 +39,9 @@ export function SourceBadge({ source }: { source: "api" | "web" | string }) {
   );
 }
 
-export function formatDateTime(iso?: string | null) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString();
-}
+// Re-exported so the merchant components keep importing it from here,
+// while the Bangladesh-time rule lives in one place.
+export { formatDateTime } from "@/lib/datetime";
 
 export function dataLabel(product?: { is_unlimited?: boolean; data_amount_gb?: number | null } | null) {
   if (!product) return "";

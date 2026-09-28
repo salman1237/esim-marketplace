@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
+import { formatDate } from "@/lib/datetime";
 
 type PayoutAccount = {
   id: string;
@@ -563,7 +564,7 @@ export default function WithdrawPage() {
                         </span>
                       </div>
                       <div className="text-xs text-slate-500 mt-1">
-                        {new Date(item.created_at).toLocaleDateString()} · {item.account_line}
+                        {formatDate(item.created_at)} · {item.account_line}
                         {item.note_category ? ` · ${CATEGORY_LABELS[item.note_category] || item.note_category}` : ""}
                       </div>
                       {item.status === "PAID" && item.payout_amount && (

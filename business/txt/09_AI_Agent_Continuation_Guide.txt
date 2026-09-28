@@ -245,6 +245,8 @@ Tests
 | 9 | Live credentials never enter source, tests, git or the deploy environment. ShurjoPay credentials live in the admin console, encrypted. The Google OAuth client secret is not used by this flow and must not be stored anywhere. |
 | 10 | Production database writes, secrets and Dokploy environment changes are performed by the platform owner, not by an agent. Do not write to the production database. |
 | 11 | A green CI run is not proof that production changed. Verify against the live system after every deploy. |
+| 12 | Store UTC, display Bangladesh time. Never render a date with a bare toLocaleString() — use frontend/src/lib/datetime.ts or app/core/timeutil.py. A bare call follows the viewer's own timezone, and this product's viewers are travellers. |
+| 13 | Never relabel a supplier timestamp as UTC. Honour any offset it carries; only a genuinely naive string falls back to SUPPLIER_TIMEZONE. |
 
 ---
 
@@ -294,6 +296,8 @@ Each of these cost real time. They are recorded so they cost nobody else any.
 | 8 | An alembic check drift from a redundant UniqueConstraint and unique index on the same column | Pick one. Run alembic check before pushing |
 | 9 | A careless edit truncated OverviewTab.tsx and left a _unusedTail wrapper | Read the whole region before a structural edit |
 | 10 | Bash heredocs failed on apostrophes in prose; sleep 300; tail was blocked by the harness; \| tail buffered a background pytest run so it looked hung | Use the Write tool for prose; use a background task plus an until loop to wait |
+
+| 11 | Supplier timestamps were sliced to [:19] and stamped UTC, which threw away any offset they carried and assumed UTC for the rest. An eSIM that came alive at 16:47 Dhaka time was shown as 00:47 the next morning | Convert, never relabel. And a comment reading "an hour's drift is immaterial" is a sign nobody measured it — it was eight |
 
 
 Supplier-specific gotchas

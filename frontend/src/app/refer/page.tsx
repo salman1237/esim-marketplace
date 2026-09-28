@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
+import { formatDate } from "@/lib/datetime";
 
 type Summary = {
   code: string | null;
@@ -294,7 +295,7 @@ export default function ReferPage() {
                           <span className="ms-2 text-[10px] font-bold px-1.5 py-0.5 rounded bg-merchant-50 text-merchant-600 border border-merchant-200">Partner</span>
                         )}
                       </td>
-                      <td className="py-2.5 pe-3 text-slate-500">{new Date(person.joined_at).toLocaleDateString()}</td>
+                      <td className="py-2.5 pe-3 text-slate-500">{formatDate(person.joined_at)}</td>
                       <td className="py-2.5 text-end font-mono font-bold text-emerald-700">
                         {earned > 0 ? eur(earned) : "—"}
                         {theirs.some((r) => r.status === "REVERSED") && (

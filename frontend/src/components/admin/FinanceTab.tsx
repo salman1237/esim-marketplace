@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Download, Scale } from "lucide-react";
 import { api } from "@/lib/api";
 import StatementView, { REFERENCE_LABELS, currentMonth, eur, saveBlob } from "@/components/finance/StatementView";
+import { formatDateTime } from "@/lib/datetime";
 
 function getToken() {
   try {
@@ -74,12 +75,12 @@ function ExceptionGroup({ def, items }: { def: (typeof EXCEPTIONS)[number]; item
                 def.key === "supplier_trx_without_order" ? (
                   <tr key={i}>
                     <td className="py-1.5 pe-3 font-mono">{o.vivape_trx_id}</td>
-                    <td className="py-1.5 pe-3 text-slate-500">{o.logged_at ? new Date(o.logged_at).toLocaleString() : "—"}</td>
+                    <td className="py-1.5 pe-3 text-slate-500">{formatDateTime(o.logged_at)}</td>
                   </tr>
                 ) : (
                   <tr key={o.order_id}>
                     <td className="py-1.5 pe-3 font-mono text-admin-600">{o.order_no}</td>
-                    <td className="py-1.5 pe-3 text-slate-500 whitespace-nowrap">{o.created_at ? new Date(o.created_at).toLocaleString() : "—"}</td>
+                    <td className="py-1.5 pe-3 text-slate-500 whitespace-nowrap">{formatDateTime(o.created_at)}</td>
                     <td className="py-1.5 pe-3 text-slate-600">{o.status}</td>
                     <td className="py-1.5 pe-3 font-mono text-slate-600">{o.vivape_trx_id || "—"}</td>
                     <td className="py-1.5 pe-3 text-slate-700">{o.product} <span className="text-slate-400">· {o.buyer}</span></td>

@@ -78,7 +78,11 @@ async def test_order_email_renders_order_details_table(db_session, smtp_configur
     html = _part(msg, "text/html")
     text = _part(msg, "text/plain")
 
-    for expected in ["Order Details", "ADM-9", "8986210179", "3 Days", "3.00 GB", "60084", "2026-07-08 22:18 UTC"]:
+    # 22:18 UTC is 04:18 the next morning in Dhaka. The receipt quotes the
+    # customer's own time, because it is the one they will compare against
+    # everything else we send them.
+    for expected in ["Order Details", "ADM-9", "8986210179", "3 Days", "3.00 GB", "60084",
+                     "09 Jul 2026, 04:18 (GMT+6)"]:
         assert expected in html, expected
         assert expected in text or expected == "Order Details", expected
 

@@ -10,6 +10,7 @@ import { useAppSettings } from "@/lib/AppSettingsContext";
 import { EsimListSkeleton } from "@/components/Skeleton";
 import { esimInstallLinks } from "@/lib/esimInstall";
 import { waitForOrder } from "@/lib/waitForOrder";
+import { formatDate } from "@/lib/datetime";
 
 function EsimCard({ item }: { item: any }) {
   const { t } = useAppSettings();
@@ -43,7 +44,7 @@ function EsimCard({ item }: { item: any }) {
               expiry date to show yet - saying so beats an invented one. */}
           <p className="text-[11px] text-slate-400 mt-0.5">
             {item.expires_at
-              ? `Expires ${new Date(item.expires_at).toLocaleDateString()}`
+              ? `Expires ${formatDate(item.expires_at)}`
               : `${item.validity_days} days start when you install it`}
           </p>
         </div>

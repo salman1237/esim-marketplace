@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, CheckCircle2, LifeBuoy, Search, UserCheck } from "lucide-react";
 import { api } from "@/lib/api";
 import { ReplyBox, StatusBadge, Thread } from "@/components/support/TicketThread";
+import { formatDateTime } from "@/lib/datetime";
 
 function getToken() {
   try {
@@ -231,7 +232,7 @@ export default function SupportTab({ onCountChange }: { onCountChange?: (n: numb
                     <td className="py-2.5 pe-3 text-slate-500">{t.category}</td>
                     <td className="py-2.5 pe-3"><StatusBadge status={t.status} staff /></td>
                     <td className="py-2.5 text-end text-slate-500 whitespace-nowrap">
-                      {new Date(t.last_message_at).toLocaleString()}
+                      {formatDateTime(t.last_message_at)}
                     </td>
                   </tr>
                 ))}

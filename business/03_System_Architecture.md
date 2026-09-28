@@ -312,6 +312,27 @@ Eight HTML templates. Port selects the encryption mode (465 implicit TLS, 587
 STARTTLS). Sending is backgrounded so a slow mail server never delays an API
 response.
 
+### 4.6 Time
+
+Every instant is **stored in UTC** and **displayed in Bangladesh time**
+(Asia/Dhaka, UTC+6, no daylight saving). One module owns each half of that:
+`app/core/timeutil.py` on the server and `frontend/src/lib/datetime.ts` in the
+browser. Nothing renders a date with a bare `toLocaleString()`, because that
+follows the *viewer's* timezone — and the moment a traveller most needs to
+read an eSIM's expiry is the moment their phone has just switched to a
+foreign one.
+
+Supplier timestamps are converted, not relabelled. VivaPe is inconsistent
+across its endpoints — `user/profile` carries a real offset, their published
+collection shows a UTC `Z`, and the eSIM diagnostics endpoints pass the
+upstream carrier's naive local strings straight through. Any offset present
+is honoured; only a genuinely naive string falls back to the assumed
+`SUPPLIER_TIMEZONE` (default `Asia/Hong_Kong`).
+
+Order references take their date from Bangladesh time too: an order placed at
+02:00 in Dhaka is 20:00 the previous day in UTC, and a reference must never
+carry yesterday's date for the person reading it.
+
 ---
 
 ## 6. Security

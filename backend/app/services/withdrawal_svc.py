@@ -18,6 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.timeutil import fmt_bd
 from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
 from app.models.kyc import KYCStatus, KYCSubmission
@@ -269,7 +270,7 @@ def email_payload(request: WithdrawalRequest, user: User) -> dict:
     returned, because the background sender uses its own DB session and must
     not touch these ORM objects."""
     def when(value):
-        return value.strftime("%d %b %Y, %H:%M UTC") if value else "—"
+        return fmt_bd(value)
 
     return {
         "id": request.id,

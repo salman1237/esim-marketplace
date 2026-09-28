@@ -14,6 +14,7 @@ from sqlalchemy import select, func, or_
 from sqlalchemy.orm import aliased
 from app.core.config import settings
 from app.core.database import get_db, AsyncSessionLocal
+from app.core.timeutil import bd_datestamp
 from app.core.deps import require_admin, require_super_admin
 from app.core.security import get_password_hash
 from app.models.user import User, UserRole, UserStatus
@@ -608,7 +609,7 @@ async def admin_purchase_esim_for_customer(
     if not wallet or Decimal(str(wallet.balance)) < total_cost:
         raise HTTPException(status_code=400, detail="Customer has insufficient wallet balance.")
 
-    order_no = f"ADM-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+    order_no = f"ADM-{bd_datestamp()}-{uuid.uuid4().hex[:6].upper()}"
     order = Order(
         order_no=order_no,
         buyer_id=target.id,

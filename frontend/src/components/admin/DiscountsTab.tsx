@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { formatDate } from "@/lib/datetime";
 
 function getToken() {
   try {
@@ -377,8 +378,8 @@ export default function DiscountsTab() {
 
   const window_ = (d: Discount) => {
     if (!d.starts_at && !d.ends_at) return "No date limit";
-    const from = d.starts_at ? new Date(d.starts_at).toLocaleDateString() : "now";
-    const to = d.ends_at ? new Date(d.ends_at).toLocaleDateString() : "no end";
+    const from = d.starts_at ? formatDate(d.starts_at) : "now";
+    const to = d.ends_at ? formatDate(d.ends_at) : "no end";
     return `${from} → ${to}`;
   };
 
@@ -501,7 +502,7 @@ export default function DiscountsTab() {
                               </td>
                               <td className="py-1.5 pe-3 text-end font-mono text-amber-600">{eur(r.discount_amount)}</td>
                               <td className="py-1.5 pe-3 text-end font-mono text-slate-900">{eur(r.paid_amount)}</td>
-                              <td className="py-1.5 text-end text-slate-500">{new Date(r.created_at).toLocaleDateString()}</td>
+                              <td className="py-1.5 text-end text-slate-500">{formatDate(r.created_at)}</td>
                             </tr>
                           ))}
                         </tbody>

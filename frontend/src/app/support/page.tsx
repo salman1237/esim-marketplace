@@ -5,6 +5,7 @@ import Link from "next/link";
 import { LifeBuoy, Plus, Paperclip, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { StatusBadge } from "@/components/support/TicketThread";
+import { formatDate } from "@/lib/datetime";
 
 export default function SupportPage() {
   const [tickets, setTickets] = useState<any[]>([]);
@@ -181,7 +182,7 @@ export default function SupportPage() {
                   <div className="text-end shrink-0">
                     <StatusBadge status={t.status} />
                     <div className="text-[11px] text-slate-400 mt-1">
-                      {new Date(t.last_message_at).toLocaleDateString()}
+                      {formatDate(t.last_message_at)}
                     </div>
                   </div>
                 </Link>

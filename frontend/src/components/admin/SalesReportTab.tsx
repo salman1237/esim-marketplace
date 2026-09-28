@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
 import { api, SalesReportParams } from "@/lib/api";
+import { formatDateTime, formatDayLabel } from "@/lib/datetime";
 
 const PAGE_SIZE = 50;
 
@@ -334,7 +335,7 @@ export default function SalesReportTab() {
             rows={breakdown.daily}
             labelKey="day"
             labelTitle="Day (UTC)"
-            renderLabel={(r) => new Date(`${r.day}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}
+            renderLabel={(r) => formatDayLabel(r.day, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
           />
         )}
         {view === "bundle" && breakdown && <GroupTable rows={breakdown.by_bundle} labelKey="plan" labelTitle="Bundle" />}
@@ -382,7 +383,7 @@ export default function SalesReportTab() {
                         <div className="font-mono text-admin-600">{r.order_no}</div>
                         <div className="text-[10px] text-slate-400">{CHANNEL_LABELS[r.channel] || r.channel} · {r.status}</div>
                       </td>
-                      <td className="py-2.5 pe-3 text-slate-500 whitespace-nowrap">{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td>
+                      <td className="py-2.5 pe-3 text-slate-500 whitespace-nowrap">{formatDateTime(r.created_at)}</td>
                       <td className="py-2.5 pe-3 text-slate-700">
                         <div>{r.buyer.username}</div>
                         <div className="text-[10px] text-slate-400">{r.buyer.email}</div>

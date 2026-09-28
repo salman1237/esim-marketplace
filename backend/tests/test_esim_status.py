@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy import select
 
 from app.models.esim_telemetry import ESIMTelemetry
+from app.core.timeutil import fmt_bd
 from app.models.order import ESIMProfile
 from conftest import create_test_product, fund_wallet, register_and_login, wait_for_order
 
@@ -161,8 +162,14 @@ async def test_installing_it_sets_the_real_validity_window(client, db_session):
 
     activated = datetime.fromisoformat(body["validity"]["activated_at"])
     expires = datetime.fromisoformat(body["validity"]["expires_at"])
-    assert activated == datetime(2026, 9, 26, 18, 47, 19, tzinfo=timezone.utc)
-    # Three days from activation, not from purchase.
+    # VivaPe reports "2026-09-26 18:47:19" with no offset - the upstream
+    # carrier's local time, not UTC. Stamping it UTC (which this assertion
+    # used to expect) showed a Dhaka customer 00:47 the following morning for
+    # an eSIM that came alive at 16:47 the same afternoon.
+    assert activated == datetime(2026, 9, 26, 10, 47, 19, tzinfo=timezone.utc)
+    assert fmt_bd(activated) == "26 Sep 2026, 16:47 (GMT+6)"
+    # Three days from activation, not from purchase. Converting both ends of
+    # the window must not change its length.
     assert expires - activated == timedelta(days=3) - timedelta(seconds=20)
 
     # And it is promoted onto the profile, so lists and the print sheet agree.

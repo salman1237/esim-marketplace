@@ -11,6 +11,7 @@ ESIMProfile.activated_at/expires_at are filled in from here once the customer
 installs, and stay NULL until then.
 """
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 from typing import Optional
 
@@ -32,22 +33,62 @@ TTL = timedelta(minutes=5)
 # VivaPe poll the upstream carrier, so the button can't be a load generator.
 FORCE_COOLDOWN = timedelta(seconds=45)
 
-# VivaPe returns naive local-looking timestamps ("2026-09-26 18:47:19") in
-# their account timezone. Parsed as UTC: an hour's drift on a 3-day validity
-# is immaterial next to showing the wrong month, which is what computing from
-# the purchase date did.
-_TS_FORMATS = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S")
+# VivaPe is inconsistent about timestamps across its endpoints: user/profile
+# returns an ISO string with a real offset ("...T13:31:32+01:00"), their
+# published collection shows a UTC "Z", and the eSIM diagnostics endpoints
+# hand back the upstream carrier's own naive strings ("2026-09-26 18:47:19").
+#
+# The previous version of this function sliced every value to [:19], which
+# threw away the offset when there was one and stamped the result UTC. An
+# activation an hour or eight hours out is not a rounding detail: it is what a
+# customer compares against their landing time, so it is read as the system
+# being wrong about their eSIM.
+#
+# So: honour whatever offset the string carries, and only fall back to an
+# assumed zone when it genuinely has none. That assumption is configurable
+# because it belongs to whoever is upstream of VivaPe, not to us.
+_NAIVE_TS_FORMATS = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S")
+
+
+def _supplier_tz() -> ZoneInfo:
+    try:
+        return ZoneInfo(settings.SUPPLIER_TIMEZONE)
+    except Exception:
+        logger.warning("unknown_supplier_timezone", configured=settings.SUPPLIER_TIMEZONE)
+        return ZoneInfo("UTC")
 
 
 def _parse_ts(value) -> Optional[datetime]:
+    """Parse a supplier timestamp into an aware UTC datetime.
+
+    Returns None for anything unparseable rather than guessing, so a bad value
+    surfaces as a missing activation date instead of a plausible wrong one.
+    """
     if not value or not isinstance(value, str):
         return None
-    for fmt in _TS_FORMATS:
-        try:
-            return datetime.strptime(value.strip()[:19], fmt).replace(tzinfo=timezone.utc)
-        except ValueError:
-            continue
-    return None
+
+    text = value.strip()
+    parsed: Optional[datetime] = None
+
+    # fromisoformat handles "Z", "+01:00" and fractional seconds on 3.11.
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        for fmt in _NAIVE_TS_FORMATS:
+            try:
+                parsed = datetime.strptime(text[:19], fmt)
+                break
+            except ValueError:
+                continue
+
+    if parsed is None:
+        return None
+
+    if parsed.tzinfo is None:
+        # No offset: the string is local time somewhere upstream of us.
+        parsed = parsed.replace(tzinfo=_supplier_tz())
+
+    return parsed.astimezone(timezone.utc)
 
 
 def _as_int(value) -> int:

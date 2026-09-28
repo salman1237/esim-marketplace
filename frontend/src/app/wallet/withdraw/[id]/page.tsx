@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { api, API_BASE } from "@/lib/api";
+import { formatDateTimeZoned } from "@/lib/datetime";
 
 // Same approach as the eSIM print sheet: self-contained, light, and free of
 // app chrome so it survives being printed or saved as a PDF for accounting.
@@ -57,9 +58,9 @@ export default function WithdrawalReceiptPage() {
   const rows: [string, string][] = [
     ["Reference", item.reference_no],
     ["Status", paid ? "Paid" : item.status.charAt(0) + item.status.slice(1).toLowerCase()],
-    ["Requested on", new Date(item.created_at).toLocaleString()],
+    ["Requested on", formatDateTimeZoned(item.created_at)],
   ];
-  if (item.reviewed_at) rows.push(["Paid on", new Date(item.reviewed_at).toLocaleString()]);
+  if (item.reviewed_at) rows.push(["Paid on", formatDateTimeZoned(item.reviewed_at)]);
   rows.push(["Withdrawn from wallet", eur(item.amount)]);
   if (Number(item.fee_amount) > 0) rows.push(["Processing fee", `- ${eur(item.fee_amount)}`]);
   rows.push(["Net amount", eur(item.net_amount)]);

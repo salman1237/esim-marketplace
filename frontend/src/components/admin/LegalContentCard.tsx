@@ -5,6 +5,7 @@ import { FileText, ExternalLink, RotateCcw } from "lucide-react";
 import { api } from "@/lib/api";
 import LegalMarkdown from "@/components/LegalMarkdown";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { formatDateTime } from "@/lib/datetime";
 
 type LegalDoc = { slug: string; title: string; body: string; updated_at: string | null; is_default: boolean };
 
@@ -102,7 +103,7 @@ export default function LegalContentCard({ isSuperAdmin }: { isSuperAdmin: boole
                 </span>
               ) : (
                 <span className="text-slate-500">
-                  Last saved {doc.updated_at ? new Date(doc.updated_at).toLocaleString() : ""}
+                  Last saved {formatDateTime(doc.updated_at, "")}
                 </span>
               )}
             </div>

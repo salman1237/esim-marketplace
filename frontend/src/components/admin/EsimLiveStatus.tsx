@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Database, RefreshCw, Signal, Smartphone, WifiOff } from "lucide-react";
 import { api } from "@/lib/api";
+import { formatDate } from "@/lib/datetime";
 
 // Support panel: the same telemetry the customer sees, so nobody debugs
 // against different numbers than the person on the phone is looking at.
@@ -92,7 +93,7 @@ export default function EsimLiveStatus({ esimId }: { esimId: string }) {
           <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Expires</div>
           <div className="text-slate-700">
             {data.validity.expires_at
-              ? new Date(data.validity.expires_at).toLocaleDateString()
+              ? formatDate(data.validity.expires_at)
               : `On install +${data.validity.days}d`}
           </div>
         </div>

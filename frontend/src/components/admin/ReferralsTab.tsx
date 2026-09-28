@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Gift, Save, Trophy, Users } from "lucide-react";
 import { api } from "@/lib/api";
+import { formatDate } from "@/lib/datetime";
 
 function getToken() {
   try {
@@ -252,7 +253,7 @@ export default function ReferralsTab({ isSuperAdmin }: { isSuperAdmin: boolean }
                     <td className="py-2.5 pe-3 text-slate-700">{r.referred}</td>
                     <td className="py-2.5 pe-3 text-end font-mono text-emerald-700">{Number(r.referrer_amount) > 0 ? eur(r.referrer_amount) : "—"}</td>
                     <td className="py-2.5 pe-3 text-end font-mono text-emerald-700">{Number(r.referred_amount) > 0 ? eur(r.referred_amount) : "—"}</td>
-                    <td className="py-2.5 text-end text-slate-500 whitespace-nowrap">{new Date(r.created_at).toLocaleDateString()}</td>
+                    <td className="py-2.5 text-end text-slate-500 whitespace-nowrap">{formatDate(r.created_at)}</td>
                   </tr>
                 ))}
               </tbody>

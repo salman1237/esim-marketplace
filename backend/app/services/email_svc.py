@@ -20,6 +20,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.config import settings
+from app.core.timeutil import fmt_bd
 from app.core.logging import get_logger
 from app.models.settings import PlatformSetting
 from app.services.esim_links import esim_install_links
@@ -332,7 +333,7 @@ class EmailService:
         if purchase_reference:
             details.append(("Purchase ID", purchase_reference))
         if purchased_at:
-            details.append(("Purchase Date", purchased_at.strftime("%Y-%m-%d %H:%M UTC")))
+            details.append(("Purchase Date", fmt_bd(purchased_at)))
 
         html = _env.get_template("order_confirmation.html").render(
             platform_name=platform_name, order_no=order_no, product_title=product_title,

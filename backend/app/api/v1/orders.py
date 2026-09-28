@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db
+from app.core.timeutil import bd_datestamp
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.catalog import Product
@@ -72,7 +73,7 @@ async def checkout_esim(
     if funds["total"] < total_cost:
         raise HTTPException(status_code=400, detail="Insufficient wallet balance. Please top up.")
 
-    order_no = f"ORD-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+    order_no = f"ORD-{bd_datestamp()}-{uuid.uuid4().hex[:6].upper()}"
     order = Order(
         order_no=order_no,
         buyer_id=current_user.id,

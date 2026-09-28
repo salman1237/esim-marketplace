@@ -225,6 +225,7 @@ These are the invariants. Any change to the system must preserve them.
 | R14 | The conversion rate for a payout is frozen at the moment of approval. |
 | R15 | eSIM validity runs from first activation, not from purchase. |
 | R16 | Identity documents, payout proofs and support attachments are never served from the public file mount. |
+| R17 | Time is stored in UTC and shown to humans in Bangladesh time (UTC+6), everywhere, regardless of where the viewer's device thinks it is. |
 
 ---
 

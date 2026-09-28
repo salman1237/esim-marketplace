@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { API_BASE } from "@/lib/api";
 import LegalMarkdown from "@/components/LegalMarkdown";
+import { formatDate } from "@/lib/datetime";
 
 const LEGAL_LINKS = [
   { slug: "privacy", title: "Privacy Policy" },
@@ -66,7 +67,7 @@ export default async function LegalPage({ params }: { params: Promise<{ slug: st
         <h1 className="text-3xl font-extrabold text-slate-900">{title}</h1>
         {doc !== "error" && doc.updated_at && (
           <p className="text-xs text-slate-500 mt-1">
-            Last updated {new Date(doc.updated_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
+            Last updated {formatDate(doc.updated_at)}
           </p>
         )}
         <div className="mt-6">

@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.timeutil import fmt_bd
 from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
 from app.models.settings import PlatformSetting
@@ -133,7 +134,7 @@ _tasks: set = set()
 
 
 def _when(dt: Optional[datetime] = None) -> str:
-    return (dt or datetime.now(timezone.utc)).strftime("%d %b %Y, %H:%M UTC")
+    return fmt_bd(dt or datetime.now(timezone.utc))
 
 
 # --- The events themselves -------------------------------------------------

@@ -1,6 +1,6 @@
 # Screenshot index
 
-54 screenshots captured on **28 September 2026** from a local Triptel
+55 screenshots captured on **28 September 2026** from a local Triptel
 instance seeded with fictional demo data.
 
 **No production data appears in any image.** Every person, agency and
@@ -108,6 +108,12 @@ Captured at 1440 × 950 (full page), except the three mobile shots at
 | `48-mobile-home.png` | Landing page at 390 px |
 | `49-mobile-wallet.png` | Wallet with the mobile bottom navigation |
 | `50-mobile-my-esims.png` | eSIM list at 390 px |
+
+## Verification
+
+| File | What it shows |
+|---|---|
+| `55-timezone-pinned-to-bangladesh.png` | The eSIM status page rendered by a browser set to **America/New_York**, still showing every time in Bangladesh time (GMT+6). Captured from browsers in Dhaka, Bangkok, New York and London — all four produced identical times |
 
 ---
 

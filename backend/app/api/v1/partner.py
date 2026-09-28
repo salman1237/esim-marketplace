@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db, AsyncSessionLocal
+from app.core.timeutil import bd_datestamp
 from app.core.security import create_access_token
 from app.core.partner_auth import get_current_partner, authenticate_partner_api_key, PartnerContext, PARTNER_TOKEN_ROLE
 from app.core.rate_limit import limiter, get_partner_api_key
@@ -215,7 +216,7 @@ async def create_partner_order(
     if not wallet or Decimal(str(wallet.balance)) < total_cost:
         raise HTTPException(status_code=400, detail="Insufficient wallet balance. Please top up.")
 
-    order_no = f"PTR-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+    order_no = f"PTR-{bd_datestamp()}-{uuid.uuid4().hex[:6].upper()}"
     order = Order(
         order_no=order_no,
         buyer_id=ctx.user.id,

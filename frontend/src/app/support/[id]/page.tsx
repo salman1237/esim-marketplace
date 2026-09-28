@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { ReplyBox, StatusBadge, Thread } from "@/components/support/TicketThread";
+import { formatDate } from "@/lib/datetime";
 
 export default function TicketPage() {
   const params = useParams();
@@ -88,7 +89,7 @@ export default function TicketPage() {
         <div className="min-w-0">
           <h1 className="text-2xl font-extrabold text-slate-900">{ticket.subject}</h1>
           <p className="text-xs text-slate-500 mt-1 font-mono">
-            {ticket.reference} · opened {new Date(ticket.created_at).toLocaleDateString()}
+            {ticket.reference} · opened {formatDate(ticket.created_at)}
           </p>
         </div>
         <StatusBadge status={ticket.status} />

@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { FileText, Paperclip, Send, X } from "lucide-react";
 import { api } from "@/lib/api";
+import { formatDateTime } from "@/lib/datetime";
 
 export const STATUS_STYLE: Record<string, { badge: string; label: string }> = {
   OPEN: { badge: "bg-amber-50 text-amber-700 border-amber-200", label: "Waiting for support" },
@@ -68,7 +69,7 @@ export function Thread({ messages }: { messages: any[] }) {
           }`}>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-[11px] font-bold text-slate-900">{m.author}</span>
-              <span className="text-[10px] text-slate-400">{new Date(m.created_at).toLocaleString()}</span>
+              <span className="text-[10px] text-slate-400">{formatDateTime(m.created_at)}</span>
             </div>
             <p className="text-xs text-slate-700 whitespace-pre-wrap break-words">{m.body}</p>
             {m.attachments?.length > 0 && (

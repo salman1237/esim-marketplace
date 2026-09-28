@@ -6,6 +6,7 @@ import { Wallet, CheckCircle2, Copy, Check, Banknote, Gift, Coins } from "lucide
 import { animate } from "framer-motion";
 import { api, API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
+import { formatDate } from "@/lib/datetime";
 
 type DepositMethod = {
   id?: string;
@@ -415,7 +416,7 @@ export default function WalletPage() {
               <tbody className="divide-y divide-gray-100">
                 {ledger.map((entry) => (
                   <tr key={entry.id}>
-                    <td className="py-3 text-slate-500">{new Date(entry.created_at).toLocaleDateString()}</td>
+                    <td className="py-3 text-slate-500">{formatDate(entry.created_at)}</td>
                     <td className="py-3 font-semibold">
                       <span className={`px-2 py-0.5 rounded text-[10px] ${
                         entry.tx_type === "CREDIT" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
