@@ -56,8 +56,17 @@ function CountUpBalance({ value, formatPrice }: { value: number; formatPrice: (n
   return <>{formatPrice(display)}</>;
 }
 
+const CURRENCY_SYMBOLS: Record<string, string> = { EUR: "€", USD: "$", BDT: "৳", GBP: "£", AED: "د.إ", SAR: "﷼" };
+
 export default function WalletPage() {
-  const { formatPrice, convertTo } = useAppSettings();
+  const { formatPrice, convertTo, currency } = useAppSettings();
+  // The customer types in their own currency; the wallet is held in EUR and
+  // ShurjoPay settles in BDT. Those three are kept explicitly apart below.
+  const symbol = CURRENCY_SYMBOLS[currency] || `${currency} `;
+  const rateToCurrency = convertTo(1, currency) || 1;
+  const toBase = (v: number) => (Number.isFinite(v) ? v / rateToCurrency : 0);
+  const fromBase = (v: number) => v * rateToCurrency;
+  const money = (v: number) => `${symbol}${v.toLocaleString(undefined, { maximumFractionDigits: currency === "BDT" ? 0 : 2, minimumFractionDigits: currency === "BDT" ? 0 : 2 })}`;
   const [wallets, setWallets] = useState<any[]>([]);
   const [ledger, setLedger] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,13 +80,18 @@ export default function WalletPage() {
   const [settings, setSettings] = useState<{ bangla_qr_image?: string; payment_methods?: DepositMethod[]; topup_min?: string; topup_max?: string }>({});
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const depositMethods = settings.payment_methods || [];
-  const topupMin = Number(settings.topup_min ?? 1);
-  const topupMax = Number(settings.topup_max ?? 2000);
+  // Limits are configured in EUR; they're shown converted so the customer
+  // never has to do the arithmetic themselves.
+  const topupMinBase = Number(settings.topup_min ?? 1);
+  const topupMaxBase = Number(settings.topup_max ?? 2000);
+  const topupMin = fromBase(topupMinBase);
+  const topupMax = fromBase(topupMaxBase);
   const amountNumber = parseFloat(depositAmount);
-  const amountValid = Number.isFinite(amountNumber) && amountNumber >= topupMin && amountNumber <= topupMax;
+  const amountBase = toBase(amountNumber);
+  const amountValid = Number.isFinite(amountNumber) && amountBase >= topupMinBase && amountBase <= topupMaxBase;
   // ShurjoPay's own floor, independent of our configured minimum.
   const GATEWAY_MIN_BDT = 10;
-  const amountBdt = Number.isFinite(amountNumber) ? convertTo(amountNumber, "BDT") : 0;
+  const amountBdt = currency === "BDT" ? amountNumber : convertTo(amountBase, "BDT");
   const belowGatewayMin = amountValid && amountBdt < GATEWAY_MIN_BDT;
   const selectedMethod = depositMethods.find((m) => m.name === bankName);
 
@@ -122,7 +136,7 @@ export default function WalletPage() {
 
     setPayingViaGateway(true);
     try {
-      const res = await api.initiateShurjopayTopup(token, parseFloat(depositAmount));
+      const res = await api.initiateShurjopayTopup(token, amountNumber, currency);
       const checkoutUrl = res.checkout_url || res.checkoutUrl;
       if (checkoutUrl) {
         window.location.href = checkoutUrl;
@@ -144,8 +158,10 @@ export default function WalletPage() {
     setSubmittingSlip(true);
     try {
       await api.submitManualDeposit(token, {
-        amount: convertTo(parseFloat(depositAmount), "BDT"),
-        currency: "BDT",
+        // Whatever they typed, in the currency they typed it in - the admin
+        // converts at the rate on the day they approve it.
+        amount: amountNumber,
+        currency,
         bank_name: bankName,
         transaction_id: txId,
       });
@@ -226,20 +242,26 @@ export default function WalletPage() {
 
           <div className="space-y-4">
             <div>
-              <label className="text-xs text-slate-700 font-semibold block mb-1">Amount (EUR)</label>
+              <label className="text-xs text-slate-700 font-semibold block mb-1">Amount ({currency})</label>
               <div className="flex gap-2">
-                {["5", "10", "20", "50"].map((amt) => (
-                  <button
-                    key={amt}
-                    type="button"
-                    onClick={() => setDepositAmount(amt)}
-                    className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-colors ${
-                      depositAmount === amt ? "bg-brand-600 border-brand-500 text-white" : "bg-gray-50 border-gray-300 text-slate-700 hover:bg-gray-100"
-                    }`}
-                  >
-                    €{amt}
-                  </button>
-                ))}
+                {/* Presets in the customer's own currency, rounded to
+                    something a person would actually type. */}
+                {[5, 10, 20, 50].map((base) => {
+                  const local = fromBase(base);
+                  const value = String(currency === "BDT" ? Math.round(local / 50) * 50 : Math.round(local));
+                  return (
+                    <button
+                      key={base}
+                      type="button"
+                      onClick={() => setDepositAmount(value)}
+                      className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-colors ${
+                        depositAmount === value ? "bg-brand-600 border-brand-500 text-white" : "bg-gray-50 border-gray-300 text-slate-700 hover:bg-gray-100"
+                      }`}
+                    >
+                      {symbol}{Number(value).toLocaleString()}
+                    </button>
+                  );
+                })}
               </div>
               <div className="mt-2">
                 <input
@@ -254,15 +276,18 @@ export default function WalletPage() {
                   className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
                 />
                 <p className="text-[11px] text-slate-500 mt-1">
-                  Between €{topupMin.toFixed(2)} and €{topupMax.toFixed(2)}
-                  {amountValid ? <> · about ৳{Math.round(convertTo(amountNumber, "BDT")).toLocaleString()}</> : null}
+                  Between {money(topupMin)} and {money(topupMax)}
+                  {/* The wallet is held in EUR, so say so rather than letting
+                      the balance look like it shrank on arrival. */}
+                  {amountValid && currency !== "EUR" ? <> · adds €{amountBase.toFixed(2)} to your wallet</> : null}
                 </p>
                 {!amountValid && depositAmount.trim() !== "" && (
                   <p className="text-[11px] text-rose-600 mt-1">Enter an amount within these limits.</p>
                 )}
                 {belowGatewayMin && (
                   <p className="text-[11px] text-rose-600 mt-1">
-                    ShurjoPay won&apos;t accept less than ৳{GATEWAY_MIN_BDT} — enter at least €{(GATEWAY_MIN_BDT / (amountBdt / amountNumber || 1)).toFixed(2)}.
+                    ShurjoPay won&apos;t accept less than ৳{GATEWAY_MIN_BDT} — enter at least{" "}
+                    {money(fromBase(GATEWAY_MIN_BDT / (convertTo(1, "BDT") || 1)))}.
                   </p>
                 )}
               </div>
@@ -273,7 +298,7 @@ export default function WalletPage() {
               disabled={payingViaGateway || !amountValid || belowGatewayMin}
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 text-white text-xs font-bold shadow-md shadow-emerald-900/10 hover:opacity-95 disabled:opacity-60"
             >
-              {payingViaGateway ? "Redirecting to ShurjoPay..." : `Pay via ShurjoPay (€${depositAmount})`}
+              {payingViaGateway ? "Redirecting to ShurjoPay..." : `Pay via ShurjoPay (${money(amountNumber || 0)})`}
             </button>
           </div>
         </div>
@@ -339,7 +364,7 @@ export default function WalletPage() {
                     {selectedMethod.instructions || (selectedMethod.kind === "qr" ? "Scan to pay, then submit the transaction ID below." : "Send the amount, then submit the transaction ID below.")}
                   </p>
                   <p className="text-[11px] text-slate-500">
-                    Amount to send: <strong className="text-slate-900">≈ ৳{Math.round(convertTo(parseFloat(depositAmount) || 0, "BDT")).toLocaleString()}</strong> (€{depositAmount})
+                    Amount to send: <strong className="text-slate-900">{currency === "BDT" ? money(amountNumber || 0) : `≈ ৳${Math.round(amountBdt || 0).toLocaleString()}`}</strong>{currency !== "BDT" ? <> ({money(amountNumber || 0)})</> : null}{currency !== "EUR" ? <> · credits €{(amountBase || 0).toFixed(2)} to your wallet</> : null}
                   </p>
                 </div>
               )}

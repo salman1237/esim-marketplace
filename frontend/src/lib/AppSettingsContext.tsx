@@ -103,9 +103,32 @@ export function AppSettingsProvider({ children, initialSettings }: { children: R
     try { localStorage.setItem("esim_lang", code); } catch {}
   }, []);
 
+  // A signed-in account's currency follows them across devices, which browser
+  // storage alone never did - and the wallet's top-up box reads it to decide
+  // what the customer is typing in.
+  useEffect(() => {
+    let token: string | null = null;
+    try { token = localStorage.getItem("esim_token"); } catch { return; }
+    if (!token) return;
+    api.getMe(token)
+      .then((me: any) => {
+        if (me?.preferred_currency) {
+          setCurrencyState(me.preferred_currency);
+          try { localStorage.setItem("esim_currency_v2", me.preferred_currency); } catch {}
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const setCurrency = useCallback((code: string) => {
     setCurrencyState(code);
     try { localStorage.setItem("esim_currency_v2", code); } catch {}
+    try {
+      const token = localStorage.getItem("esim_token");
+      // Best-effort: the switch has already taken effect locally, so a failed
+      // save must not undo it or interrupt the customer.
+      if (token) api.updateMyPreferences(token, code).catch(() => {});
+    } catch {}
   }, []);
 
   const t = useCallback(

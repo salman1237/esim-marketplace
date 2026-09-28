@@ -63,6 +63,10 @@ export const api = {
   forgotPassword: (email: string) => fetchApi("/api/v1/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) }),
   resetPassword: (token: string, newPassword: string) => fetchApi("/api/v1/auth/reset-password", { method: "POST", body: JSON.stringify({ token, new_password: newPassword }) }),
   getMe: (token: string) => fetchApi("/api/v1/auth/me", { headers: { Authorization: `Bearer ${token}` } }),
+  // Persists the currency this account thinks in, so it follows the customer
+  // between devices and drives what the top-up box asks them to type.
+  updateMyPreferences: (token: string, preferredCurrency: string) =>
+    fetchApi("/api/v1/auth/me/preferences", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ preferred_currency: preferredCurrency }) }),
   applyMerchant: (token: string, data: any) => fetchApi("/api/v1/auth/apply-merchant", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
   getMyKyc: (token: string) => fetchApi("/api/v1/kyc/me", { headers: { Authorization: `Bearer ${token}` } }),
   submitKyc: async (token: string, nidNumber: string, front: File, back: File | null) => {
@@ -102,8 +106,10 @@ export const api = {
   cancelWithdrawal: (token: string, id: string) => fetchApi(`/api/v1/withdrawals/${id}/cancel`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
 
   // Payments
-  initiateShurjopayTopup: (token: string, amountUsd: number) =>
-    fetchApi(`/api/v1/payments/shurjopay/topup?amount=${amountUsd}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+  // `amount` is in `currency` — the customer's own. The server converts to
+  // EUR for the limits and to BDT for the gateway.
+  initiateShurjopayTopup: (token: string, amount: number, currency?: string) =>
+    fetchApi(`/api/v1/payments/shurjopay/topup?amount=${amount}${currency ? `&currency=${encodeURIComponent(currency)}` : ""}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
 
   // Agent portal. Gated on an approved agent profile, not on the role —
   // an agent can also be a merchant.

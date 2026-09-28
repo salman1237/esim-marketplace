@@ -10,6 +10,17 @@ from app.core.logging import get_logger
 RATE_TTL = timedelta(hours=6)
 logger = get_logger(__name__)
 
+# The currencies this platform supports: what gets synced from the rate API,
+# what a customer may set as their own, and what they may top up in. Kept here
+# rather than derived from whichever CurrencyRate rows happen to exist, because
+# a rate that hasn't been synced yet still has a last-resort fallback below -
+# validating against the table would reject a currency we can in fact convert.
+SUPPORTED_CURRENCIES = ("USD", "BDT", "EUR", "GBP", "AED", "SAR", "THB", "SGD", "JPY", "MYR", "INR")
+
+
+def is_supported(code: str) -> bool:
+    return (code or "").strip().upper() in SUPPORTED_CURRENCIES
+
 class CurrencyService:
     @staticmethod
     async def sync_rates_from_api(db: AsyncSession) -> dict:
@@ -40,7 +51,7 @@ class CurrencyService:
             return {"error": "Could not fetch rates from either source"}
 
         # Store/update supported currencies
-        supported = ["USD", "BDT", "EUR", "GBP", "AED", "SAR", "THB", "SGD", "JPY", "MYR", "INR"]
+        supported = SUPPORTED_CURRENCIES
         for curr in supported:
             if curr in rates:
                 rate_val = Decimal(str(rates[curr]))

@@ -9,7 +9,10 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.wallet import Wallet, WalletType, LedgerRefType
+from typing import Optional
+
 from app.models.catalog import Product
+from app.services import currency_svc
 from app.models.order import Order, OrderStatus, PaymentMethod
 from app.schemas.order import OrderCreateRequest
 from app.services.shurjopay_svc import ShurjoPayService
@@ -51,17 +54,48 @@ def _require_checkout_url(pay_res) -> None:
 
 @router.post("/shurjopay/topup")
 async def topup_via_shurjopay(
-    amount: Decimal,  # in the base currency (EUR)
+    amount: Decimal,
     request: Request,
+    currency: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    min_topup, max_topup = await get_topup_limits(db)
-    if amount < min_topup or amount > max_topup:
-        raise HTTPException(status_code=400, detail=f"Amount must be between {min_topup} and {max_topup} {settings.BASE_CURRENCY}")
+    """`amount` is in `currency` - the customer's own, defaulting to the base
+    currency for older clients that only ever sent euros.
 
-    # Convert the base-currency amount to BDT for the gateway
-    amount_bdt = await CurrencyService.convert(db, amount, "BDT")
+    Three currencies are in play and conflating them is the trap here: the
+    customer types theirs, the wallet is held in EUR, and ShurjoPay always
+    settles in BDT.
+    """
+    entered = (currency or settings.BASE_CURRENCY).strip().upper()
+    if not currency_svc.is_supported(entered):
+        raise HTTPException(status_code=400, detail=f"{entered} isn't a currency we hold a rate for")
+
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Enter an amount greater than zero")
+
+    # Limits are configured in the base currency, so the check happens there.
+    if entered == settings.BASE_CURRENCY:
+        amount_base = amount
+    else:
+        rate = await CurrencyService.get_effective_rate(db, entered)
+        amount_base = (amount / rate).quantize(Decimal("0.0001"))
+
+    min_topup, max_topup = await get_topup_limits(db)
+    if amount_base < min_topup or amount_base > max_topup:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Amount must be between {min_topup} and {max_topup} {settings.BASE_CURRENCY}",
+        )
+
+    # A customer who typed taka is charged exactly the taka they typed:
+    # round-tripping it through EUR would bill them a slightly different
+    # number than the one on screen.
+    if entered == "BDT":
+        amount_bdt = amount.quantize(Decimal("0.0001"))
+    else:
+        amount_bdt = await CurrencyService.convert(db, amount_base, "BDT")
+
     order_id = f"TOPUP-{current_user.id}-{uuid.uuid4().hex[:10]}"
 
     pay_res = await ShurjoPayService.initiate_payment(

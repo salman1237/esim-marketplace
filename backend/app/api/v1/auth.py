@@ -21,6 +21,8 @@ from app.models.referral import ReferralEvent
 from app.models.agent import AgentStatus
 from app.models.wallet import Wallet, WalletType
 from app.models.password_reset import PasswordResetToken
+from app.services import currency_svc
+from pydantic import BaseModel, Field
 from app.schemas.auth import (
     UserRegister, UserLogin, Token, UserResponse, MerchantApplicationRequest,
     ForgotPasswordRequest, ResetPasswordRequest, GoogleLoginRequest,
@@ -296,6 +298,9 @@ async def get_me(current_user: User = Depends(get_current_user), db: AsyncSessio
         "phone": current_user.phone,
         "full_name": current_user.full_name,
         "is_kyc_verified": current_user.is_kyc_verified,
+        # The currency this account thinks in. Prices are still held in EUR;
+        # this is what the customer types and reads, including when topping up.
+        "preferred_currency": current_user.preferred_currency or settings.BASE_CURRENCY,
         "avatar_url": current_user.avatar_url,
         "email_verified": bool(current_user.email_verified),
         "has_google": bool(current_user.google_sub),
@@ -363,3 +368,28 @@ async def apply_merchant(
         "message": "Application submitted for review",
         "agent": agent_profile.company_name if agent_id else None,
     }
+
+
+class PreferencesRequest(BaseModel):
+    preferred_currency: str = Field(..., min_length=3, max_length=10)
+
+
+@router.put("/me/preferences")
+async def update_preferences(
+    req: PreferencesRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Persists the currency this account thinks in.
+
+    It was previously only in browser storage, so a customer who switched to
+    BDT on their phone still saw euros on their laptop - and the top-up box
+    had no idea what they wanted to type in.
+    """
+    code = req.preferred_currency.strip().upper()
+    if not currency_svc.is_supported(code):
+        raise HTTPException(status_code=400, detail=f"{code} isn't a currency we hold a rate for")
+
+    current_user.preferred_currency = code
+    await db.commit()
+    return {"status": "success", "preferred_currency": code}
