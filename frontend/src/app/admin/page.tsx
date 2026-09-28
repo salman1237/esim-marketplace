@@ -11,6 +11,7 @@ import PackagePicker, { packLabel } from "@/components/PackagePicker";
 import ShurjoPayCard from "@/components/admin/ShurjoPayCard";
 import LegalContentCard from "@/components/admin/LegalContentCard";
 import NotificationSettingsCard from "@/components/admin/NotificationSettingsCard";
+import SupportTab from "@/components/admin/SupportTab";
 import SalesReportTab from "@/components/admin/SalesReportTab";
 import FinanceTab from "@/components/admin/FinanceTab";
 import WithdrawalsTab from "@/components/admin/WithdrawalsTab";
@@ -23,7 +24,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import { Trash2, Download } from "lucide-react";
 import { saveBlob } from "@/components/finance/StatementView";
 
-type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "withdrawals" | "discounts" | "referrals" | "agents" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales" | "finance";
+type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "withdrawals" | "discounts" | "referrals" | "agents" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales" | "finance" | "support";
 
 export default function AdminConsolePage() {
   const { formatPrice, languages: appLanguages } = useAppSettings();
@@ -103,6 +104,7 @@ export default function AdminConsolePage() {
   // before the tab has ever been opened.
   const [pendingWithdrawals, setPendingWithdrawals] = useState(0);
   const [pendingAgents, setPendingAgents] = useState(0);
+  const [openTickets, setOpenTickets] = useState(0);
 
   // Currency override
   const [overrideCurrency, setOverrideCurrency] = useState("BDT");
@@ -129,6 +131,7 @@ export default function AdminConsolePage() {
     api.getSupplierLogs(token).then(setSupplierLogs).catch(console.error);
     api.getAdminWithdrawals(token, "PENDING").then((rows) => setPendingWithdrawals(rows.length)).catch(console.error);
     api.getAdminAgents(token, "PENDING").then((rows) => setPendingAgents(rows.length)).catch(console.error);
+    api.getSupportQueue(token, { status: "OPEN" }).then((r) => setOpenTickets(r.counts?.OPEN ?? 0)).catch(console.error);
     api.getAdminOrders(token).then(setAllOrders).catch(console.error);
     loadCatalog(token, { offset: 0 });
     api.getKycQueue(token).then(setKycQueue).catch(console.error);
@@ -612,6 +615,7 @@ export default function AdminConsolePage() {
           ...(isSuperAdmin ? [{ id: "branding", label: "Dynamic Branding & Rates" }] : []),
           ...(isSuperAdmin ? [{ id: "translations", label: "Languages & Translations" }] : []),
           { id: "logs", label: `360° Logs (${auditLogs.length + supplierLogs.length})` },
+          { id: "support", label: `Support (${openTickets})` },
           { id: "kyc", label: `KYC Review (${kycQueue.filter(k => k.status === "PENDING").length})` }
         ].map((tab) => (
           <button
@@ -1119,6 +1123,7 @@ export default function AdminConsolePage() {
       {activeTab === "discounts" && <DiscountsTab />}
       {activeTab === "referrals" && <ReferralsTab isSuperAdmin={isSuperAdmin} />}
       {activeTab === "agents" && <AgentsTab isSuperAdmin={isSuperAdmin} />}
+      {activeTab === "support" && <SupportTab onCountChange={setOpenTickets} />}
 
       {/* Tab: Catalog - selling profit % sets every price */}
       {activeTab === "catalog" && (

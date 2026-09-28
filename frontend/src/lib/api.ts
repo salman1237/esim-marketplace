@@ -125,6 +125,44 @@ export const api = {
   requestAgentBonus: (token: string, data: { merchant_profile_id: string; requested_pct: string; reason?: string }) =>
     fetchApi("/api/v1/agent/bonus-requests", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
 
+  // Support tickets. Creating and replying use multipart because they carry
+  // attachments, so they can't go through fetchApi's JSON default.
+  getSupportCategories: () => fetchApi("/api/v1/support/categories"),
+  getMyTickets: (token: string) => fetchApi("/api/v1/support/tickets", { headers: { Authorization: `Bearer ${token}` } }),
+  getTicket: (token: string, id: string) => fetchApi(`/api/v1/support/tickets/${id}`, { headers: { Authorization: `Bearer ${token}` } }),
+  createTicket: async (token: string, form: FormData) => {
+    const res = await fetch(`${API_BASE}/api/v1/support/tickets`, {
+      method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form,
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `Failed with status ${res.status}`);
+    return res.json();
+  },
+  replyToTicket: async (token: string, id: string, form: FormData) => {
+    const res = await fetch(`${API_BASE}/api/v1/support/tickets/${id}/messages`, {
+      method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form,
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `Failed with status ${res.status}`);
+    return res.json();
+  },
+  closeTicket: (token: string, id: string) => fetchApi(`/api/v1/support/tickets/${id}/close`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+  // Attachments are behind auth, so they're fetched as a blob and handed back
+  // as an object URL - same approach as KYC documents.
+  getSupportAttachmentUrl: async (token: string, url: string) => {
+    const res = await fetch(`${API_BASE}${url}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(`Failed to load attachment (${res.status})`);
+    const blob = await res.blob();
+    return { url: URL.createObjectURL(blob), contentType: blob.type };
+  },
+  // Staff
+  getSupportQueue: (token: string, params: { status?: string; q?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.status) qs.append("status", params.status);
+    if (params.q) qs.append("q", params.q);
+    return fetchApi(`/api/v1/support/queue?${qs.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
+  },
+  resolveTicket: (token: string, id: string) => fetchApi(`/api/v1/support/tickets/${id}/resolve`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+  assignTicket: (token: string, id: string) => fetchApi(`/api/v1/support/tickets/${id}/assign`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+
   // Referrals. Reward credit lands in the REWARD wallet: spendable on
   // eSIMs, never withdrawable.
   validateReferralCode: (code: string) => fetchApi(`/api/v1/referrals/validate?code=${encodeURIComponent(code)}`),

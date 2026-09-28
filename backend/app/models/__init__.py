@@ -16,6 +16,9 @@ from app.models.referral import ReferralReward, ReferralEvent, ReferralRewardSta
 from app.models.agent import AgentProfile, AgentStatus
 from app.models.agent_bonus import AgentBonusRequest, AgentBonusStatus
 from app.models.esim_telemetry import ESIMTelemetry
+from app.models.support import (
+    SupportTicket, SupportMessage, SupportAttachment, TicketStatus, TicketCategory,
+)
 
 __all__ = [
     "User", "UserRole", "UserStatus",
@@ -35,5 +38,6 @@ __all__ = [
     "ReferralReward", "ReferralEvent", "ReferralRewardStatus",
     "AgentProfile", "AgentStatus",
     "AgentBonusRequest", "AgentBonusStatus",
-    "ESIMTelemetry"
+    "ESIMTelemetry",
+    "SupportTicket", "SupportMessage", "SupportAttachment", "TicketStatus", "TicketCategory"
 ]

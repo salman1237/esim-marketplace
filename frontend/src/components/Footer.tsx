@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { Wifi, Phone, Mail, MessageCircle, ShieldCheck, Briefcase, ArrowRight, Facebook, Instagram, Twitter, Youtube, Linkedin } from "lucide-react";
+import { Wifi, Phone, Mail, MessageCircle, ShieldCheck, Briefcase, ArrowRight, LifeBuoy, Facebook, Instagram, Twitter, Youtube, Linkedin } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 import PartnerCta from "@/components/PartnerCta";
@@ -119,6 +119,7 @@ export default function Footer() {
         <div className="space-y-3">
           <h4 className={heading}>{t("nav", "support", "Support")}</h4>
           <ul className="space-y-2 text-xs">
+            <li><Link href="/support" className={`flex items-center gap-2 ${link}`}><LifeBuoy className="w-3.5 h-3.5 shrink-0" /><span>Help &amp; tickets</span></Link></li>
             {settings.support_email && (
               <li><a href={`mailto:${settings.support_email}`} className={`flex items-center gap-2 ${link}`}><Mail className="w-3.5 h-3.5 shrink-0" /><span className="truncate">{settings.support_email}</span></a></li>
             )}

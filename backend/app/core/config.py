@@ -89,6 +89,12 @@ class Settings(BaseSettings):
     # and the owner's own receipt endpoint.
     WITHDRAWAL_UPLOADS_DIR: str = os.getenv("WITHDRAWAL_UPLOADS_DIR", "withdrawal_uploads")
 
+    # Support ticket attachments. Private for the same reason as the two
+    # above: a customer troubleshooting an eSIM will photograph a screen
+    # showing their own account details. Served only to the ticket's owner
+    # and to staff, never from the public uploads mount.
+    SUPPORT_UPLOADS_DIR: str = os.getenv("SUPPORT_UPLOADS_DIR", "support_uploads")
+
     # How often the background job re-syncs the VivaPe catalog (countries +
     # products for the popular-destination list). 0 disables the scheduled
     # job entirely (sync still available on-demand via POST

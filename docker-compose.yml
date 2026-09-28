@@ -66,12 +66,18 @@ services:
       # only evidence a withdrawal was actually sent, so they must survive a
       # redeploy, and they are never served from the public uploads mount.
       WITHDRAWAL_UPLOADS_DIR: /app/withdrawal_uploads
+      # Support ticket attachments. Its own volume for the same reason as the
+      # two above: a customer troubleshooting an eSIM photographs a screen
+      # showing their own details, and those must survive a redeploy while
+      # never being reachable from the public uploads mount.
+      SUPPORT_UPLOADS_DIR: /app/support_uploads
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - uploads_data:/app/uploads
       - kyc_uploads_data:/app/kyc_uploads
       - withdrawal_uploads_data:/app/withdrawal_uploads
+      - support_uploads_data:/app/support_uploads
       - logs_data:/var/log/esim
     networks:
       - esim-network
@@ -112,6 +118,8 @@ volumes:
     name: esim_kyc_uploads_data
   withdrawal_uploads_data:
     name: esim_withdrawal_uploads_data
+  support_uploads_data:
+    name: esim_support_uploads_data
   logs_data:
     name: esim_logs_data
 

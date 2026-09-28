@@ -60,6 +60,7 @@ pg_data/
 backend/uploads/
 backend/kyc_uploads/
 backend/withdrawal_uploads/
+backend/support_uploads/
 
 # Logs & Temporary
 *.log
