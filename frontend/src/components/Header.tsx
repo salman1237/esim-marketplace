@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Globe, DollarSign, User, Shield, Briefcase, Wifi, Menu, X, Gift, Handshake } from "lucide-react";
 import { api, API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
+import { portalsFor } from "@/lib/portals";
 
 const CURRENCIES = ["EUR", "USD", "BDT", "GBP", "AED", "SAR"];
 
@@ -13,6 +14,7 @@ export default function Header() {
   const settings = publicSettings || {};
   const [token, setToken] = useState<string | null>(null);
   const [userData, setUserData] = useState<any>(null);
+  const portals = portalsFor(userData);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -77,17 +79,23 @@ export default function Header() {
               <span>{t("common", "admin", "Admin Console")}</span>
             </Link>
           ) : null}
-          {userData?.role === "AGENT" ? (
+          {/* Both portals, independently. These used to be an either/or chain,
+              which hid the agent portal from anyone who was also a merchant -
+              and that combination is common, since an agent who sells as well
+              keeps role=MERCHANT. */}
+          {portals.isAgent && (
             <Link href="/agent" className="text-brand-600 hover:text-brand-700 flex items-center space-x-1">
               <Handshake className="w-4 h-4" />
               <span>Agent Portal</span>
             </Link>
-          ) : userData?.role === "MERCHANT" ? (
+          )}
+          {portals.isPartner && (
             <Link href="/reseller" className="text-merchant-600 hover:text-merchant-700 flex items-center space-x-1">
               <Briefcase className="w-4 h-4" />
               <span>{t("common", "merchant", "Partner Portal")}</span>
             </Link>
-          ) : (
+          )}
+          {!portals.isAgent && !portals.isPartner && (
             // Everyone else sees the partner program - it's a marketing
             // priority, so it lives in the main navigation.
             <Link href="/partners" className="text-merchant-600 hover:text-merchant-700 font-semibold flex items-center space-x-1">
@@ -190,11 +198,13 @@ export default function Header() {
           {userData?.role === "SUPER_ADMIN" || userData?.role === "ADMIN" ? (
             <Link href="/admin" onClick={() => setIsMenuOpen(false)} className="block py-2 text-admin-600">{t("common", "admin", "Admin Console")}</Link>
           ) : null}
-          {userData?.role === "AGENT" ? (
+          {portals.isAgent && (
             <Link href="/agent" onClick={() => setIsMenuOpen(false)} className="block py-2 text-brand-600 font-semibold">Agent Portal</Link>
-          ) : userData?.role === "MERCHANT" ? (
+          )}
+          {portals.isPartner && (
             <Link href="/reseller" onClick={() => setIsMenuOpen(false)} className="block py-2 text-merchant-600 font-semibold">{t("common", "merchant", "Partner Portal")}</Link>
-          ) : (
+          )}
+          {!portals.isAgent && !portals.isPartner && (
             <Link href="/partners" onClick={() => setIsMenuOpen(false)} className="block py-2 text-merchant-600 font-semibold">For Business — Partner Program</Link>
           )}
           <div className="pt-2 border-t border-gray-200">

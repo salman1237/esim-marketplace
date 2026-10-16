@@ -12,9 +12,12 @@ import CommissionTab from "@/components/merchant/CommissionTab";
 import ApiAccessTab from "@/components/merchant/ApiAccessTab";
 import StatementTab from "@/components/merchant/StatementTab";
 
+// Selling leads. A partner opens this portal to issue an eSIM to the customer
+// standing in front of them; the summary of sales already made is what they
+// read afterwards, not first.
 const MERCHANT_TABS: { id: MerchantTab; label: string; icon: any }[] = [
-  { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "provision", label: "Buy for customer", icon: Send },
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "orders", label: "Orders", icon: List },
   { id: "commission", label: "Commission", icon: Coins },
   { id: "statement", label: "Statements", icon: FileText },
@@ -44,7 +47,7 @@ export default function ResellerPortalPage() {
   const [userData, setUserData] = useState<any>(null);
   const [loadingMe, setLoadingMe] = useState(true);
   const [overview, setOverview] = useState<any | null>(null);
-  const [activeTab, setActiveTab] = useState<MerchantTab>("overview");
+  const [activeTab, setActiveTab] = useState<MerchantTab>("provision");
 
   // Merchant application state
   const [businessName, setBusinessName] = useState("");
@@ -257,7 +260,15 @@ export default function ResellerPortalPage() {
               <button
                 key={tab.id}
                 onClick={() => selectTab(tab.id)}
-                className={`px-4 py-2.5 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex items-center space-x-2 ${currentTab === tab.id ? "bg-merchant-50 text-merchant-700 border border-merchant-200" : "text-slate-500 hover:text-slate-900 bg-gray-50 border border-gray-200"}`}
+                className={`px-4 py-2.5 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex items-center space-x-2 ${
+                  tab.id === "provision"
+                    ? currentTab === tab.id
+                      ? "bg-merchant-600 text-white border border-merchant-600 shadow-md shadow-merchant-900/15"
+                      : "bg-merchant-50 text-merchant-700 border border-merchant-300 hover:bg-merchant-100"
+                    : currentTab === tab.id
+                    ? "bg-merchant-50 text-merchant-700 border border-merchant-200"
+                    : "text-slate-500 hover:text-slate-900 bg-gray-50 border border-gray-200"
+                }`}
               >
                 <Icon className="w-3.5 h-3.5" />
                 <span>{tab.label}</span>

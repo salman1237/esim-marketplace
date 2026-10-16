@@ -28,6 +28,10 @@ interface AppSettingsContextValue {
   // GET /settings/public. Server-rendered into the first paint by the root
   // layout, then refreshed client-side. null only if both fetches failed.
   publicSettings: any | null;
+  // The signed-in account, already fetched here for its currency preference.
+  // Shared so the bottom navigation can tell an agent from a partner without
+  // a second identical request on every page.
+  me: any | null;
 }
 
 const AppSettingsContext = createContext<AppSettingsContextValue | null>(null);
@@ -60,6 +64,7 @@ export function AppSettingsProvider({ children, initialSettings }: { children: R
   // hardcoded placeholder name here flashed on every page load until the
   // client-side fetch replaced it.
   const [publicSettings, setPublicSettings] = useState<any | null>(initialSettings ?? null);
+  const [me, setMe] = useState<any | null>(null);
   const maintenanceMode = !!publicSettings?.maintenance_mode;
   const platformName: string = publicSettings?.platform_name || "";
 
@@ -122,6 +127,7 @@ export function AppSettingsProvider({ children, initialSettings }: { children: R
     if (!token) return;
     api.getMe(token)
       .then((me: any) => {
+        setMe(me);
         if (me?.preferred_currency) {
           setCurrencyState(me.preferred_currency);
           try { localStorage.setItem("esim_currency_v2", me.preferred_currency); } catch {}
@@ -165,7 +171,7 @@ export function AppSettingsProvider({ children, initialSettings }: { children: R
   }, [lang, isRTL]);
 
   return (
-    <AppSettingsContext.Provider value={{ lang, setLang, currency, setCurrency, isRTL, languages, t, convert, convertTo, formatPrice, maintenanceMode, platformName, publicSettings }}>
+    <AppSettingsContext.Provider value={{ lang, setLang, currency, setCurrency, isRTL, languages, t, convert, convertTo, formatPrice, maintenanceMode, platformName, publicSettings, me }}>
       {children}
     </AppSettingsContext.Provider>
   );

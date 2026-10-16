@@ -1,6 +1,6 @@
 # Screenshot index
 
-58 screenshots captured on **28 September 2026** from a local Triptel
+61 screenshots captured on **28 September 2026** from a local Triptel
 instance seeded with fictional demo data.
 
 **No production data appears in any image.** Every person, agency and
@@ -117,6 +117,9 @@ Captured at 1440 × 950 (full page), except the three mobile shots at
 | `56-commission-unsaved-hint.png` | A merchant's commission rate edited but not yet committed — the row says so rather than leaving it ambiguous |
 | `57-commission-saved.png` | The same rate after pressing Enter: confirmed, with the value the server accepted |
 | `58-commission-rejected.png` | An out-of-range rate refused, with the stored value put back rather than the typed one left on screen |
+| `59-mobile-nav-agent-and-partner.png` | The mobile bottom bar for an account that is both an agent and a partner — six tabs, both portals reachable |
+| `60-merchant-sell-first.png` | The partner dashboard opening on "Buy for customer", highlighted as the primary action |
+| `61-merchant-sell-still-prominent.png` | The same bar with another tab selected — selling stays visually primary |
 
 ---
 

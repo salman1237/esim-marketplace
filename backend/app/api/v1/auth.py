@@ -18,6 +18,7 @@ from app.core.deps import get_current_user
 from app.core.logging import get_logger
 from app.models.user import User, UserRole, UserStatus
 from app.models.merchant import MerchantProfile, MerchantStatus
+from app.models.agent import AgentProfile
 from app.models.referral import ReferralEvent
 from app.models.agent import AgentStatus
 from app.models.wallet import Wallet, WalletType
@@ -290,6 +291,14 @@ async def get_me(current_user: User = Depends(get_current_user), db: AsyncSessio
     merchant_res = await db.execute(select(MerchantProfile).where(MerchantProfile.user_id == current_user.id))
     merchant = merchant_res.scalar_one_or_none()
 
+    # Both capabilities are reported, because one account can hold both and
+    # the role column can only name one of them. An approved merchant who is
+    # later approved as an agent stays role=MERCHANT (see approve_agent), so
+    # anything keyed on the role alone hides the agent portal from exactly
+    # the people who have one.
+    agent_res = await db.execute(select(AgentProfile).where(AgentProfile.user_id == current_user.id))
+    agent = agent_res.scalar_one_or_none()
+
     return {
         "id": current_user.id,
         "email": current_user.email,
@@ -316,7 +325,14 @@ async def get_me(current_user: User = Depends(get_current_user), db: AsyncSessio
             "status": merchant.status.value,
             "rejection_reason": merchant.rejection_reason,
             "commission_rate_pct": float(merchant.commission_rate_pct)
-        } if merchant else None
+        } if merchant else None,
+        "agent_profile": {
+            "company_name": agent.company_name,
+            "agent_code": agent.agent_code,
+            "status": agent.status.value,
+            "rejection_reason": agent.rejection_reason,
+            "commission_rate_pct": float(agent.commission_rate_pct),
+        } if agent else None,
     }
 
 @router.post("/apply-merchant")
