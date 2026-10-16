@@ -52,8 +52,12 @@ export default function CommissionCell({ value, onSave, disabled }: Props) {
     if (state === "saving") return;
     const typed = draft.trim();
     if (typed === stored) {
-      setState("idle");
-      setMessage(null);
+      // Nothing to do - but leave a confirmation that is still showing
+      // alone, or tapping Save would erase the "Saved" it just produced.
+      if (state !== "saved") {
+        setState("idle");
+        setMessage(null);
+      }
       return;
     }
 
@@ -89,6 +93,7 @@ export default function CommissionCell({ value, onSave, disabled }: Props) {
         <input
           ref={inputRef}
           type="number"
+          inputMode="decimal"
           min={0}
           max={100}
           step={0.01}
@@ -144,8 +149,18 @@ export default function CommissionCell({ value, onSave, disabled }: Props) {
           {message}
         </span>
       )}
-      {state === "idle" && draft.trim() !== stored && (
-        <span className="text-[10px] text-slate-400">Enter to save</span>
+      {draft.trim() !== stored && state !== "saving" && (
+        <button
+          type="button"
+          // Stops the input blurring, so the click is the only thing that
+          // commits. Without this the blur saves first and the click then
+          // runs against an already-saved value.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={commit}
+          className="text-[10px] font-bold px-2 py-1 rounded-lg bg-admin-600 hover:bg-admin-500 text-white whitespace-nowrap"
+        >
+          Save
+        </button>
       )}
     </div>
   );

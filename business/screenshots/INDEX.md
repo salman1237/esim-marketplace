@@ -1,6 +1,6 @@
 # Screenshot index
 
-61 screenshots captured on **28 September 2026** from a local Triptel
+62 screenshots captured on **28 September 2026** from a local Triptel
 instance seeded with fictional demo data.
 
 **No production data appears in any image.** Every person, agency and
@@ -120,6 +120,7 @@ Captured at 1440 × 950 (full page), except the three mobile shots at
 | `59-mobile-nav-agent-and-partner.png` | The mobile bottom bar for an account that is both an agent and a partner — six tabs, both portals reachable |
 | `60-merchant-sell-first.png` | The partner dashboard opening on "Buy for customer", highlighted as the primary action |
 | `61-merchant-sell-still-prominent.png` | The same bar with another tab selected — selling stays visually primary |
+| `62-commission-save-button-mobile.png` | The commission field at 390px with an explicit Save button — a numeric phone keypad has no Enter key to press |
 
 ---
 
