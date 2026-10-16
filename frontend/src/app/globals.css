@@ -59,3 +59,102 @@ body {
   z-index: 2;
   background-color: #ffffff;
 }
+
+/* ...and a shadow on whichever edge still has content behind it, so a table
+   that is cut off at the viewport edge says so. Without this a narrow screen
+   simply hides the Action column, which reads as missing rather than
+   scrolled - nobody swipes a table they have no reason to think moves.
+
+   The trick is background-attachment: the two white panels scroll WITH the
+   content (local) and so slide away at the ends, uncovering the fixed
+   shadows beneath (scroll). No JavaScript and no scroll listener; the
+   shadows appear and disappear on their own. */
+.frozen-col-table {
+  background-image:
+    linear-gradient(to right, #ffffff 40%, rgba(255, 255, 255, 0)),
+    linear-gradient(to left, #ffffff 40%, rgba(255, 255, 255, 0)),
+    radial-gradient(farthest-side at 0 50%, rgba(15, 23, 42, 0.14), rgba(15, 23, 42, 0)),
+    radial-gradient(farthest-side at 100% 50%, rgba(15, 23, 42, 0.14), rgba(15, 23, 42, 0));
+  background-position: left center, right center, left center, right center;
+  background-repeat: no-repeat;
+  background-size: 28px 100%, 28px 100%, 16px 100%, 16px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
+
+/* A wide table restated as one card per row, for screens too narrow to show
+   it as a grid. Scrolling sideways to reach an action is tolerable on a
+   tablet and miserable on a phone, where the Action column simply sits off
+   the edge with nothing to suggest it exists.
+
+   This is CSS rather than a second set of markup, so there is only ever one
+   table to keep correct: each cell carries a data-label and wears it as its
+   own heading once the columns collapse. A cell without a label - the
+   expanded detail row - spans the card instead. */
+@media (max-width: 639.98px) {
+  .stacked-table {
+    /* Nothing scrolls sideways any more, so the edge shadows would be
+       permanent decoration. */
+    background-image: none;
+    overflow-x: visible;
+  }
+
+  .stacked-table table,
+  .stacked-table tbody,
+  .stacked-table tr,
+  .stacked-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .stacked-table thead {
+    display: none;
+  }
+
+  .stacked-table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .stacked-table tbody tr {
+    border: 1px solid #e5e7eb;
+    border-radius: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background-color: #ffffff;
+  }
+
+  /* The frozen first column has nothing to stay in front of once the row is
+     a card, and leaving it sticky pins it mid-scroll. */
+  .stacked-table table td:first-child {
+    position: static;
+  }
+
+  .stacked-table tbody td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.4rem 0;
+    text-align: end;
+  }
+
+  .stacked-table tbody td + td {
+    border-top: 1px solid #f1f5f9;
+  }
+
+  .stacked-table tbody td[data-label]::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #64748b;
+    text-align: start;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* A detail row that spanned every column keeps the full width of the card
+     and gains no heading of its own. */
+  .stacked-table tbody td:not([data-label]) {
+    display: block;
+    text-align: start;
+  }
+}

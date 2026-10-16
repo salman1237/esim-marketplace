@@ -667,7 +667,7 @@ export default function AdminConsolePage() {
         )}
         <div className="glass-panel rounded-2xl p-6 border border-gray-200">
           <h3 className="text-base font-bold text-slate-900 mb-4">Partner &amp; Reseller Applications</h3>
-          <div className="overflow-x-auto frozen-col-table">
+          <div className="overflow-x-auto frozen-col-table stacked-table">
             <table className="w-full text-start text-xs">
               <thead className="text-slate-500 border-b border-gray-200">
                 <tr>
@@ -682,21 +682,21 @@ export default function AdminConsolePage() {
                 {merchants.map((m) => (
                   <React.Fragment key={m.id}>
                   <tr>
-                    <td className="py-3 font-semibold text-slate-900">{m.business_name}</td>
-                    <td className="py-3 text-slate-700">{m.contact_phone}</td>
-                    <td className="py-3">
+                    <td data-label="Business" className="py-3 font-semibold text-slate-900">{m.business_name}</td>
+                    <td data-label="Contact" className="py-3 text-slate-700">{m.contact_phone}</td>
+                    <td data-label="Status" className="py-3">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                         m.status === "APPROVED" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
                       }`}>{m.status}</span>
                     </td>
-                    <td className="py-3">
+                    <td data-label="Commission %" className="py-3">
                       <CommissionCell
                         value={m.commission_rate_pct}
                         disabled={!isSuperAdmin}
                         onSave={(rate) => handleUpdateCommission(m.id, rate)}
                       />
                     </td>
-                    <td className="py-3 flex gap-2">
+                    <td data-label="Action" className="py-3 flex gap-2">
                       {m.status === "PENDING" && (
                         <button
                           onClick={() => handleApproveMerchant(m.id)}

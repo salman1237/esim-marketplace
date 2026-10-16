@@ -1,6 +1,6 @@
 # Screenshot index
 
-62 screenshots captured on **28 September 2026** from a local Triptel
+65 screenshots captured on **28 September 2026** from a local Triptel
 instance seeded with fictional demo data.
 
 **No production data appears in any image.** Every person, agency and
@@ -121,6 +121,9 @@ Captured at 1440 × 950 (full page), except the three mobile shots at
 | `60-merchant-sell-first.png` | The partner dashboard opening on "Buy for customer", highlighted as the primary action |
 | `61-merchant-sell-still-prominent.png` | The same bar with another tab selected — selling stays visually primary |
 | `62-commission-save-button-mobile.png` | The commission field at 390px with an explicit Save button — a numeric phone keypad has no Enter key to press |
+| `63-admin-merchants-stacked-mobile.png` | The merchant queue restated as one card per partner at 390px — every action reachable without scrolling sideways |
+| `64-admin-merchants-desktop-unchanged.png` | The same table on desktop, still a table |
+| `65-admin-merchants-api-panel-mobile.png` | The expandable API panel inside the stacked layout |
 
 ---
 
