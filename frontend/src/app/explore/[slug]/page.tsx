@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, ShieldCheck, Wifi, Zap } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import PackageBrowser from "@/components/explore/PackageBrowser";
+import FromPrice from "@/components/explore/FromPrice";
 
 type Destination = { country: any; products: any[] };
 
@@ -65,7 +66,7 @@ export default async function ExploreDestinationPage({ params }: { params: Promi
             <h1 className="text-3xl font-extrabold text-slate-900">{country.name_en} eSIM</h1>
             <p className="text-xs text-slate-500 mt-1">
               {products.length} package{products.length === 1 ? "" : "s"}
-              {cheapest !== null ? ` · from €${cheapest.toFixed(2)}` : ""}
+              {cheapest !== null ? <FromPrice amount={cheapest} /> : null}
               {country.region ? ` · ${country.region}` : ""}
             </p>
           </div>
