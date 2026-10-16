@@ -66,6 +66,10 @@ services:
       SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-no-reply@triptel.co}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Triptel}
+      # Blind copy of every outgoing email. Named here because Compose only
+      # forwards variables it lists - the same omission silently disabled
+      # SMTP itself once already.
+      NOTICE_BCC_EMAIL: ${NOTICE_BCC_EMAIL:-triptel.com@gmail.com}
       UPLOADS_DIR: /app/uploads
       KYC_UPLOADS_DIR: /app/kyc_uploads
       # Payout proof screenshots. Its own volume, like KYC: these are the
@@ -99,7 +103,7 @@ services:
       # on JS that was already bundled into a prior build.
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://triptel.co}
-        NEXT_PUBLIC_DEFAULT_CURRENCY: ${NEXT_PUBLIC_DEFAULT_CURRENCY:-USD}
+        NEXT_PUBLIC_DEFAULT_CURRENCY: ${NEXT_PUBLIC_DEFAULT_CURRENCY:-BDT}
         NEXT_PUBLIC_DEFAULT_LOCALE: ${NEXT_PUBLIC_DEFAULT_LOCALE:-en}
     container_name: esim-frontend
     restart: unless-stopped
@@ -107,7 +111,7 @@ services:
       - esim-backend
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://triptel.co}
-      NEXT_PUBLIC_DEFAULT_CURRENCY: ${NEXT_PUBLIC_DEFAULT_CURRENCY:-USD}
+      NEXT_PUBLIC_DEFAULT_CURRENCY: ${NEXT_PUBLIC_DEFAULT_CURRENCY:-BDT}
       NEXT_PUBLIC_DEFAULT_LOCALE: ${NEXT_PUBLIC_DEFAULT_LOCALE:-en}
     ports:
       - "${FRONTEND_PORT:-3001}:3000"

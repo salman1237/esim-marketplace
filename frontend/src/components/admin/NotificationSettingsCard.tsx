@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Mail, Save } from "lucide-react";
+import { AlertTriangle, Mail, Save, Send } from "lucide-react";
 import { api } from "@/lib/api";
 
 function getToken() {
@@ -30,6 +30,9 @@ export default function NotificationSettingsCard({ isSuperAdmin }: { isSuperAdmi
   const [email, setEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const [testTo, setTestTo] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
 
   const load = useCallback(async () => {
     const token = getToken();
@@ -37,6 +40,7 @@ export default function NotificationSettingsCard({ isSuperAdmin }: { isSuperAdmi
     const cfg = await api.getNotificationSettings(token);
     setData(cfg);
     setEmail(cfg.system_notice_email);
+    setTestTo((prev) => prev || cfg.system_notice_email);
   }, []);
 
   useEffect(() => {
@@ -56,6 +60,21 @@ export default function NotificationSettingsCard({ isSuperAdmin }: { isSuperAdmi
       setNotice({ kind: "error", text: err.message || "Couldn't save" });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const runTest = async () => {
+    const token = localStorage.getItem("esim_token");
+    if (!token || !testTo.trim()) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res: any = await api.sendTestEmail(token, testTo.trim());
+      setTestResult({ ok: !!res.sent, text: res.reason || (res.sent ? "Sent." : "Not sent.") });
+    } catch (err: any) {
+      setTestResult({ ok: false, text: err.message || "Couldn't send the test email." });
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -98,9 +117,52 @@ export default function NotificationSettingsCard({ isSuperAdmin }: { isSuperAdmi
       {!data.smtp_configured && (
         <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-2">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          Outgoing mail isn&apos;t configured on the server, so nothing is being sent yet.
+          <span>
+            Outgoing mail isn&apos;t configured on the server, so nothing is being sent yet.
+            {data.missing_settings?.length ? <> Missing: <strong>{data.missing_settings.join(", ")}</strong>.</> : null}
+          </span>
         </p>
       )}
+
+      {/* Delivery used to fail silently - a warning in a container log nobody
+          reads. This says what the server is actually doing and lets anyone
+          prove it in one click. */}
+      <div className="mt-4 rounded-xl border border-gray-200 p-3">
+        <div className="text-[11px] font-semibold text-slate-600 mb-2">Outgoing mail</div>
+        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+          <div className="flex justify-between gap-2"><dt className="text-slate-500">Server</dt><dd className="text-slate-900 font-mono">{data.smtp_host ? `${data.smtp_host}:${data.smtp_port}` : "not set"}</dd></div>
+          <div className="flex justify-between gap-2"><dt className="text-slate-500">Encryption</dt><dd className="text-slate-900">{data.smtp_mode}</dd></div>
+          <div className="flex justify-between gap-2"><dt className="text-slate-500">Username</dt><dd className="text-slate-900 font-mono">{data.smtp_username || "not set"}</dd></div>
+          <div className="flex justify-between gap-2"><dt className="text-slate-500">Blind copy</dt><dd className="text-slate-900 font-mono">{data.bcc_email || "off"}</dd></div>
+        </dl>
+
+        {data.last_error && (
+          <p className="mt-2 text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5 font-mono break-words">
+            Last failure: {data.last_error}
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-end gap-2 mt-3">
+          <div className="flex-1 min-w-[200px]">
+            <label className="text-[11px] text-slate-700 font-semibold block mb-1">Send a test to</label>
+            <input className={inputCls} type="email" value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="you@example.com" />
+          </div>
+          <button
+            type="button"
+            onClick={runTest}
+            disabled={testing || !testTo.trim()}
+            className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white text-xs font-bold px-4 py-2.5 rounded-xl"
+          >
+            <Send className="w-3.5 h-3.5" /> {testing ? "Sending…" : "Send test"}
+          </button>
+        </div>
+
+        {testResult && (
+          <p className={`mt-2 text-[11px] rounded-lg px-2.5 py-1.5 border ${testResult.ok ? "text-emerald-700 bg-emerald-50 border-emerald-200" : "text-rose-700 bg-rose-50 border-rose-200"}`}>
+            {testResult.text}
+          </p>
+        )}
+      </div>
 
       <div className="mt-4 rounded-xl bg-gray-50 border border-gray-200 p-3">
         <div className="text-[11px] font-semibold text-slate-600 mb-1.5">Copied to this address</div>

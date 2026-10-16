@@ -15,6 +15,24 @@ export default function ProfilePage() {
   const [frontFile, setFrontFile] = useState<File | null>(null);
   const [backFile, setBackFile] = useState<File | null>(null);
   const [submittingKyc, setSubmittingKyc] = useState(false);
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [phoneDraft, setPhoneDraft] = useState("");
+  const [savingPhone, setSavingPhone] = useState(false);
+
+  const savePhone = async () => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    setSavingPhone(true);
+    try {
+      const res: any = await api.updateMyPhone(token, phoneDraft.trim());
+      setUserData((prev: any) => ({ ...prev, phone: res.phone }));
+      setEditingPhone(false);
+    } catch (err: any) {
+      alert(err.message || "Couldn't save that number.");
+    } finally {
+      setSavingPhone(false);
+    }
+  };
 
   useEffect(() => {
     const token = localStorage.getItem("esim_token");
@@ -107,12 +125,52 @@ export default function ProfilePage() {
               <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">Verified</span>
             )}
           </div>
-          {userData.phone && (
-            <div className="flex items-center space-x-3 text-slate-700">
-              <Phone className="w-4 h-4 text-slate-400 shrink-0" />
-              <span>{userData.phone}</span>
+          {/* Optional, and editable from here - a traveller's number changes,
+              and the one place they would look to change it is their profile. */}
+          <div className="flex items-start space-x-3 text-slate-700">
+            <Phone className="w-4 h-4 text-slate-400 shrink-0 mt-2" />
+            <div className="flex-1 min-w-0">
+              {editingPhone ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="tel"
+                    value={phoneDraft}
+                    onChange={(e) => setPhoneDraft(e.target.value)}
+                    placeholder="Phone / WhatsApp (optional)"
+                    className="flex-1 min-w-[160px] bg-white border border-gray-300 rounded-lg px-3 py-1.5 text-xs text-slate-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={savePhone}
+                    disabled={savingPhone}
+                    className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white text-xs font-bold px-3 py-1.5 rounded-lg"
+                  >
+                    {savingPhone ? "Saving…" : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setEditingPhone(false); setPhoneDraft(userData.phone || ""); }}
+                    className="text-xs text-slate-500 hover:text-slate-700 px-1"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={userData.phone ? "" : "text-slate-400"}>
+                    {userData.phone || "No phone or WhatsApp number — optional"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { setPhoneDraft(userData.phone || ""); setEditingPhone(true); }}
+                    className="text-xs font-semibold text-brand-600 hover:underline"
+                  >
+                    {userData.phone ? "Change" : "Add"}
+                  </button>
+                </div>
+              )}
             </div>
-          )}
+          </div>
           <div className="flex items-center space-x-3">
             {userData.is_kyc_verified ? (
               <>

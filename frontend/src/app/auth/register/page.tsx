@@ -116,7 +116,7 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label className="text-xs text-slate-700 font-semibold block mb-1">Phone (Optional)</label>
+            <label className="text-xs text-slate-700 font-semibold block mb-1">Phone / WhatsApp <span className="font-normal text-slate-400">(optional)</span></label>
             <input
               type="tel"
               value={phone}

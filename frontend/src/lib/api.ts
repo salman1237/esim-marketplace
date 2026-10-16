@@ -67,6 +67,9 @@ export const api = {
   // between devices and drives what the top-up box asks them to type.
   updateMyPreferences: (token: string, preferredCurrency: string) =>
     fetchApi("/api/v1/auth/me/preferences", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ preferred_currency: preferredCurrency }) }),
+  // An empty string clears the number; omitting the field leaves it alone.
+  updateMyPhone: (token: string, phone: string) =>
+    fetchApi("/api/v1/auth/me/preferences", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ phone }) }),
   applyMerchant: (token: string, data: any) => fetchApi("/api/v1/auth/apply-merchant", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
   getMyKyc: (token: string) => fetchApi("/api/v1/kyc/me", { headers: { Authorization: `Bearer ${token}` } }),
   submitKyc: async (token: string, nidNumber: string, front: File, back: File | null) => {
@@ -304,6 +307,7 @@ export const api = {
   // Admin: agents
   getNotificationSettings: (token: string) => fetchApi("/api/v1/admin/notification-settings", { headers: { Authorization: `Bearer ${token}` } }),
   updateNotificationSettings: (token: string, email: string) => fetchApi("/api/v1/admin/notification-settings", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ system_notice_email: email }) }),
+  sendTestEmail: (token: string, toEmail: string) => fetchApi("/api/v1/admin/notification-settings/test", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ to_email: toEmail }) }),
   getSupplierAccount: (token: string, refresh = false) => fetchApi(`/api/v1/admin/supplier/account${refresh ? "?refresh=true" : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   getAdminAgents: (token: string, status?: string) => fetchApi(`/api/v1/admin/agents${status ? `?status=${status}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   getAgentMarginCheck: (token: string, merchantPct: string, agentPct: string) =>

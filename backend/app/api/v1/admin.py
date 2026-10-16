@@ -2983,12 +2983,81 @@ class SystemEmailRequest(BaseModel):
 
 @router.get("/notification-settings", dependencies=[Depends(require_admin)])
 async def get_notification_settings(db: AsyncSession = Depends(get_db)):
+    from app.services.email_svc import EmailService
+
+    # Enough to diagnose "nobody is getting emails" without shell access:
+    # which host we are talking to, as whom, on which port, and - the part
+    # that was invisible before - what the last failure actually said.
+    missing = [
+        name for name, value in (
+            ("SMTP_HOST", settings.SMTP_HOST),
+            ("SMTP_USERNAME", settings.SMTP_USERNAME),
+            ("SMTP_PASSWORD", settings.SMTP_PASSWORD),
+        ) if not value
+    ]
     return {
         "system_notice_email": await notify_svc.get_system_email(db),
         "default": notify_svc.DEFAULT_SYSTEM_EMAIL,
         "sender": settings.SMTP_FROM_EMAIL,
+        "sender_name": settings.SMTP_FROM_NAME,
         "smtp_configured": settings.smtp_configured,
+        "smtp_host": settings.SMTP_HOST or None,
+        "smtp_port": settings.SMTP_PORT,
+        "smtp_username": settings.SMTP_USERNAME or None,
+        "smtp_mode": "implicit TLS (SMTPS)" if settings.SMTP_PORT == 465 else ("STARTTLS" if settings.SMTP_USE_TLS else "plain"),
+        "missing_settings": missing,
+        "bcc_email": settings.NOTICE_BCC_EMAIL or None,
+        "last_error": EmailService._last_error,
     }
+
+
+class TestEmailRequest(BaseModel):
+    to_email: EmailStr
+
+
+@router.post("/notification-settings/test", dependencies=[Depends(require_admin)])
+async def send_test_email(
+    req: TestEmailRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Sends one real email and reports exactly what happened.
+
+    Delivery problems were previously silent - a missing SMTP_HOST logged a
+    warning inside the container and nothing else, so "emails aren't arriving"
+    could not be told apart from "emails are arriving in spam". This answers
+    that in one click.
+    """
+    from app.services.email_svc import EmailService
+
+    if not settings.smtp_configured:
+        missing = [n for n, v in (("SMTP_HOST", settings.SMTP_HOST), ("SMTP_USERNAME", settings.SMTP_USERNAME)) if not v]
+        return {
+            "sent": False,
+            "reason": f"SMTP is not configured — {', '.join(missing)} is not set in the deployment environment.",
+        }
+
+    EmailService._last_error = None
+    sent = await EmailService.send_notice(
+        db, str(req.to_email),
+        subject="Triptel email test",
+        title="Email is working",
+        intro="This is a test message sent from the admin console. If you are reading it, outgoing mail is configured correctly.",
+        rows=[
+            ("Sent to", str(req.to_email)),
+            ("From", f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"),
+            ("Server", f"{settings.SMTP_HOST}:{settings.SMTP_PORT}"),
+            ("Blind copy", settings.NOTICE_BCC_EMAIL or "none"),
+        ],
+        footnote="Triggered by hand from the admin console.",
+    )
+    if sent:
+        return {
+            "sent": True,
+            "reason": f"Sent to {req.to_email}"
+                      + (f", blind-copied to {settings.NOTICE_BCC_EMAIL}" if settings.NOTICE_BCC_EMAIL else "")
+                      + ". If it does not arrive within a minute or two, check the spam folder.",
+        }
+    return {"sent": False, "reason": EmailService._last_error or "The mail server rejected the message."}
 
 
 @router.put("/notification-settings", dependencies=[Depends(require_super_admin)])

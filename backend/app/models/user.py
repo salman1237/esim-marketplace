@@ -31,7 +31,11 @@ class User(Base):
     phone = Column(String(50), nullable=True)
     role = Column(Enum(UserRole), default=UserRole.USER, nullable=False)
     status = Column(Enum(UserStatus), default=UserStatus.ACTIVE, nullable=False)
-    preferred_currency = Column(String(10), default="EUR")
+    # What this account is shown prices in. NOT what anything is stored in -
+    # that is always the base currency (EUR). New accounts start on taka
+    # because the home market is Bangladesh; anyone can switch, and the
+    # choice then follows them between devices.
+    preferred_currency = Column(String(10), default="BDT")
     preferred_language = Column(String(10), default="en")
     is_kyc_verified = Column(Boolean, default=False)
     # Referrals. referral_code is this user's own code to share; referred_by_id

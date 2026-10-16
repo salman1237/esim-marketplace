@@ -95,6 +95,10 @@ class EmailService:
             logger.warning("qr_generation_failed", error=str(e))
             return None
 
+    # The most recent send failure, surfaced to the admin console. In-process
+    # and best-effort: this is a diagnostic, not a record.
+    _last_error: str | None = None
+
     @staticmethod
     async def _send(
         to_email: str,
@@ -134,6 +138,22 @@ class EmailService:
         message["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
         message["To"] = to_email
         message["Subject"] = subject
+
+        # Every outgoing mail is blind-copied to the business mailbox, so
+        # there is one place that holds a copy of everything a customer, a
+        # merchant or an agent was actually sent. Blind on purpose: the
+        # recipient should not see an internal address, and a visible Cc on
+        # every message also reads as bulk mail to spam filters.
+        #
+        # The address is a header for the MIME tree but NOT a header we put
+        # on the wire - Bcc must be stripped before sending or it stops
+        # being blind. aiosmtplib does that itself when it builds the
+        # envelope, which is why the recipient list is passed explicitly
+        # below rather than left to be inferred.
+        recipients = [to_email]
+        bcc = (settings.NOTICE_BCC_EMAIL or "").strip()
+        if bcc and bcc.lower() != to_email.lower():
+            recipients.append(bcc)
         # Absent Date/Message-ID headers are a spam signal on their own, and
         # nothing downstream is guaranteed to add them for us.
         message["Date"] = formatdate(localtime=True)
@@ -155,12 +175,14 @@ class EmailService:
                 password=settings.SMTP_PASSWORD,
                 use_tls=implicit_tls,
                 start_tls=False if implicit_tls else settings.SMTP_USE_TLS,
+                recipients=recipients,
                 timeout=20,
             )
-            logger.info("email_sent", to=to_email, subject=subject)
+            logger.info("email_sent", to=to_email, bcc=bcc or None, subject=subject)
             return True
         except Exception as e:
             logger.warning("email_send_failed", to=to_email, subject=subject, error=str(e))
+            EmailService._last_error = f"{type(e).__name__}: {e}"
             return False
 
     @classmethod
@@ -207,8 +229,10 @@ class EmailService:
         )
         text_rows = "\n".join(f"{label}: {value}" for label, value in rows)
         text = f"{title}\n\n{intro}\n\n{text_rows}\n" + (f"\n{cta_url}\n" if cta_url else "")
-        await cls._send(to_email, subject, html, text_body=text,
-                        inline_images={"brand_logo": logo_png} if logo_png else None)
+        # Returned so a caller that needs to report the outcome (the admin
+        # console's test button) can tell "sent" from "silently skipped".
+        return await cls._send(to_email, subject, html, text_body=text,
+                               inline_images={"brand_logo": logo_png} if logo_png else None)
 
     @classmethod
     async def send_withdrawal_requested(cls, db: AsyncSession, to_email: str, withdrawal: dict, processing_time: str):

@@ -38,22 +38,25 @@ def _gateway():
 
 async def test_an_account_carries_its_own_currency(client, db_session):
     user = await register_and_login(client, "curr")
-    me = (await client.get("/api/v1/auth/me", headers=user["headers"])).json()
-    assert me["preferred_currency"] == "EUR"
-
-    saved = await client.put(
-        "/api/v1/auth/me/preferences", json={"preferred_currency": "bdt"}, headers=user["headers"]
-    )
-    assert saved.status_code == 200, saved.text
-    assert saved.json()["preferred_currency"] == "BDT"
-
-    # It survives a fresh read, which browser storage never did across devices.
+    # New accounts start on taka: the home market is Bangladesh, and the
+    # books being kept in EUR is a separate question from what a customer is
+    # shown. See test_account_defaults.
     me = (await client.get("/api/v1/auth/me", headers=user["headers"])).json()
     assert me["preferred_currency"] == "BDT"
 
+    saved = await client.put(
+        "/api/v1/auth/me/preferences", json={"preferred_currency": "eur"}, headers=user["headers"]
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["preferred_currency"] == "EUR"
+
+    # It survives a fresh read, which browser storage never did across devices.
+    me = (await client.get("/api/v1/auth/me", headers=user["headers"])).json()
+    assert me["preferred_currency"] == "EUR"
+
     row = (await db_session.execute(select(User).where(User.id == user["user_id"]))).scalar_one()
     await db_session.refresh(row)
-    assert row.preferred_currency == "BDT"
+    assert row.preferred_currency == "EUR"
 
 
 async def test_an_unknown_currency_is_refused(client, db_session):

@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     # back consistently shifted by a whole number of hours.
     SUPPLIER_TIMEZONE: str = os.getenv("SUPPLIER_TIMEZONE", "Asia/Hong_Kong")
 
+    # Blind copy of every outgoing email, so the business keeps one record of
+    # everything its customers, merchants and agents were actually sent.
+    # Separate from the system notice mailbox, which only receives the
+    # platform's own summaries of monetary events.
+    NOTICE_BCC_EMAIL: str = os.getenv("NOTICE_BCC_EMAIL", "triptel.com@gmail.com")
+
     # Payment Gateway: ShurjoPay
     SHURJOPAY_BASE_URL: str = os.getenv("SHURJOPAY_BASE_URL", "https://sandbox.shurjopayment.com")
     SHURJOPAY_USERNAME: str = os.getenv("SHURJOPAY_USERNAME", "dev-only-not-a-real-username")

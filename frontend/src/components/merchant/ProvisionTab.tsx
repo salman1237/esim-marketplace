@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { waitForOrder } from "@/lib/waitForOrder";
 import PaymentMethodChooser from "@/components/PaymentMethodChooser";
 import PackagePicker, { packLabel } from "@/components/PackagePicker";
+import DiscountCodeBox from "@/components/DiscountCodeBox";
 import { getToken } from "./shared";
 
 type Props = {
@@ -25,6 +26,15 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
   const [loading, setLoading] = useState<null | "checking" | "wallet" | "gateway">(null);
   const [chooserBalance, setChooserBalance] = useState<number | null>(null);
   const [orderResult, setOrderResult] = useState<any | null>(null);
+  // A merchant selling at the counter gets the same codes a customer would -
+  // the campaign is the platform's, not the channel's, so a code that works
+  // on the website has to work here too or the agency looks out of date to
+  // the traveller standing in front of them.
+  const [code, setCode] = useState("");
+  const [applied, setApplied] = useState<{ code: string; discountLabel: string; totalLabel: string; total: number } | null>(null);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [checkingCode, setCheckingCode] = useState(false);
+  const [pendingCode, setPendingCode] = useState<string | null>(null);
 
   // Every destination we sell - not only the handful flagged "popular".
   useEffect(() => {
@@ -33,7 +43,49 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
 
   const product = selection.product;
   const selectedProduct = product?.id || "";
+
+  // A code can be scoped to one country or product, so an applied one stops
+  // meaning anything the moment the package changes.
+  useEffect(() => {
+    setApplied(null);
+    setCodeError(null);
+  }, [selectedProduct]);
+
+  /** Validates the typed code against the chosen package. Returns the code to
+   *  send with the order, or null to buy at full price. */
+  const resolveCode = async (): Promise<string | null> => {
+    const typed = code.trim();
+    if (!typed || !product) return null;
+    const token = getToken();
+    if (!token) return null;
+    if (applied && applied.code.toUpperCase() === typed.toUpperCase()) return applied.code;
+
+    setCheckingCode(true);
+    try {
+      const preview: any = await api.previewDiscount(token, typed, product.id);
+      if (preview.valid) {
+        setApplied({
+          code: preview.code,
+          discountLabel: formatPrice(Number(preview.discount_amount)),
+          totalLabel: formatPrice(Number(preview.total)),
+          total: Number(preview.total),
+        });
+        setCodeError(null);
+        return preview.code;
+      }
+      setApplied(null);
+      setCodeError(preview.reason || "That code isn't valid.");
+      return null;
+    } catch {
+      setApplied(null);
+      setCodeError("We couldn't check that code. Try again.");
+      return null;
+    } finally {
+      setCheckingCode(false);
+    }
+  };
   const price = product ? parseFloat(product.retail_price) : 0;
+  const payable = applied ? applied.total : price;
 
   // Same beneficiary rule for both payment methods: issue to the customer's
   // existing account by email, or create one if there isn't any.
@@ -46,14 +98,19 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
     }
   };
 
-  const payByWallet = async () => {
+  const payByWallet = async (discountCode?: string | null) => {
     const token = getToken();
     if (!token) return;
     setChooserBalance(null);
     setLoading("wallet");
     try {
       const res: any = await withBeneficiary((extra) =>
-        api.checkout(token, { product_id: selectedProduct, payment_method: "WALLET", ...extra })
+        api.checkout(token, {
+          product_id: selectedProduct,
+          payment_method: "WALLET",
+          ...(discountCode ? { discount_code: discountCode } : {}),
+          ...extra,
+        })
       );
       let settled;
       try {
@@ -76,13 +133,18 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
     }
   };
 
-  const payByGateway = async () => {
+  const payByGateway = async (discountCode?: string | null) => {
     const token = getToken();
     if (!token) return;
     setChooserBalance(null);
     setLoading("gateway");
     try {
-      const res: any = await withBeneficiary((extra) => api.initiateOrderPayment(token, selectedProduct, extra));
+      const res: any = await withBeneficiary((extra) =>
+        api.initiateOrderPayment(token, selectedProduct, {
+          ...(discountCode ? { discount_code: discountCode } : {}),
+          ...extra,
+        })
+      );
       const checkoutUrl = res.checkout_url || res.checkoutUrl;
       if (checkoutUrl) {
         window.location.href = checkoutUrl;
@@ -102,6 +164,17 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
     const token = getToken();
     if (!token || !product) return;
     setLoading("checking");
+
+    // Check the code before the balance: the wallet only has to cover what
+    // will actually be charged, and a typed code that turns out to be
+    // invalid must not quietly become a full-price sale.
+    const typed = code.trim();
+    const resolved = await resolveCode();
+    if (typed && !resolved) {
+      setLoading(null);
+      return;
+    }
+
     let balance: number | null = null;
     try {
       const wallets = await api.getMyWallets(token);
@@ -110,11 +183,12 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
     } catch {
       balance = null;
     }
-    if (balance !== null && balance >= price) {
+    setPendingCode(resolved);
+    if (balance !== null && balance >= payable) {
       setLoading(null);
       setChooserBalance(balance);
     } else {
-      await payByGateway();
+      await payByGateway(resolved);
     }
   };
 
@@ -129,13 +203,29 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
         <form onSubmit={handleBuyNow} className="space-y-4">
           <PackagePicker id="provision-country" countries={countries} formatPrice={formatPrice} onChange={setSelection} />
 
+          <DiscountCodeBox
+            value={code}
+            onChange={(v) => {
+              setCode(v);
+              setApplied(null);
+              setCodeError(null);
+            }}
+            applied={applied}
+            error={codeError}
+            onClear={() => {
+              setCode("");
+              setApplied(null);
+              setCodeError(null);
+            }}
+          />
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-slate-700 font-semibold block mb-1">Customer Email</label>
               <input type="email" required placeholder="traveler@gmail.com" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900" />
             </div>
             <div>
-              <label className="text-xs text-slate-700 font-semibold block mb-1">Customer WhatsApp / Phone</label>
+              <label className="text-xs text-slate-700 font-semibold block mb-1">Customer WhatsApp / Phone <span className="font-normal text-slate-400">(optional)</span></label>
               <input type="tel" placeholder="+880 1800-000000" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900" />
             </div>
           </div>
@@ -150,14 +240,23 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
           {product && (
             <div className="flex items-center justify-between rounded-xl bg-gray-50 border border-gray-200 px-3 py-2 text-xs">
               <span className="text-slate-600">{selection.country?.name_en} · {packLabel(product)} · {product.validity_days} days</span>
-              <span className="font-black text-slate-900">{formatPrice(price)}</span>
+              <span className="font-black text-slate-900">
+                {applied ? (
+                  <>
+                    <span className="text-slate-400 font-semibold line-through me-1.5">{formatPrice(price)}</span>
+                    {formatPrice(payable)}
+                  </>
+                ) : (
+                  formatPrice(price)
+                )}
+              </span>
             </div>
           )}
 
           <button type="submit" disabled={loading !== null || !selectedProduct} className="w-full py-3 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-60 text-white text-sm font-bold transition-all shadow-md shadow-brand-900/10 flex items-center justify-center space-x-2">
             <Send className="w-4 h-4" />
             <span>
-              {loading === "checking" ? "Checking wallet…" : loading === "wallet" ? "Setting up eSIM…" : loading === "gateway" ? "Opening payment…" : selectedProduct ? "Buy Now" : "Choose a package"}
+              {checkingCode ? "Checking code…" : loading === "checking" ? "Checking wallet…" : loading === "wallet" ? "Setting up eSIM…" : loading === "gateway" ? "Opening payment…" : selectedProduct ? "Buy Now" : "Choose a package"}
             </span>
           </button>
           <p className="text-center text-[10px] text-slate-400">bKash · Nagad · Card · Wallet</p>
@@ -197,11 +296,11 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
       <PaymentMethodChooser
         open={chooserBalance !== null && !!product}
         summary={<>For {customerEmail || "your customer"} · {product ? packLabel(product) : ""} · {product?.validity_days} days</>}
-        priceLabel={formatPrice(price)}
+        priceLabel={formatPrice(payable)}
         walletBalanceLabel={formatPrice(chooserBalance ?? 0)}
-        walletAfterLabel={formatPrice((chooserBalance ?? 0) - price)}
-        onWallet={payByWallet}
-        onGateway={payByGateway}
+        walletAfterLabel={formatPrice((chooserBalance ?? 0) - payable)}
+        onWallet={() => payByWallet(pendingCode)}
+        onGateway={() => payByGateway(pendingCode)}
         onCancel={() => setChooserBalance(null)}
       />
     </div>

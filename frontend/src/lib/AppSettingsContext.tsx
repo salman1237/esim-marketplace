@@ -40,9 +40,19 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
 
 const ZERO_DECIMAL_CURRENCIES = new Set(["JPY"]);
 
+// What someone sees before they have told us anything. Overridable at build
+// time, because a deployment aimed at a different market would want its own.
+export const DEFAULT_DISPLAY_CURRENCY = process.env.NEXT_PUBLIC_DEFAULT_CURRENCY || "BDT";
+
 export function AppSettingsProvider({ children, initialSettings }: { children: React.ReactNode; initialSettings?: any | null }) {
   const [lang, setLangState] = useState("en");
-  const [currency, setCurrencyState] = useState("EUR");
+  // The platform's books are kept in EUR - that is the base every rate is
+  // quoted against and every amount is stored in. What a visitor SEES is a
+  // different question, and the answer is taka: the home market does not
+  // think in euros, and making them convert in their head to find out what a
+  // package costs loses the sale before the package page finishes loading.
+  // A signed-in account's own preference overrides this a moment later.
+  const [currency, setCurrencyState] = useState(DEFAULT_DISPLAY_CURRENCY);
   const [languages, setLanguages] = useState<LanguageMeta[]>([]);
   const [translations, setTranslations] = useState<Record<string, Record<string, string>>>({});
   const [rates, setRates] = useState<Record<string, number>>({ EUR: 1 });

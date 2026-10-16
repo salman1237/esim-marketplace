@@ -1,3 +1,4 @@
+from typing import Optional
 import re
 import uuid
 import asyncio
@@ -371,7 +372,10 @@ async def apply_merchant(
 
 
 class PreferencesRequest(BaseModel):
-    preferred_currency: str = Field(..., min_length=3, max_length=10)
+    # Both optional so this one endpoint can carry either, and so clearing a
+    # phone number is expressible: omitted leaves it alone, "" removes it.
+    preferred_currency: Optional[str] = Field(None, min_length=3, max_length=10)
+    phone: Optional[str] = Field(None, max_length=50)
 
 
 @router.put("/me/preferences")
@@ -380,16 +384,29 @@ async def update_preferences(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Persists the currency this account thinks in.
+    """Persists the currency this account thinks in, and its contact number.
 
-    It was previously only in browser storage, so a customer who switched to
-    BDT on their phone still saw euros on their laptop - and the top-up box
-    had no idea what they wanted to type in.
+    Currency was previously only in browser storage, so a customer who
+    switched to BDT on their phone still saw euros on their laptop - and the
+    top-up box had no idea what they wanted to type in.
+
+    The phone number is optional at every point it is asked for, here
+    included: plenty of customers buy an eSIM precisely because they are
+    about to stop being reachable on their usual number.
     """
-    code = req.preferred_currency.strip().upper()
-    if not currency_svc.is_supported(code):
-        raise HTTPException(status_code=400, detail=f"{code} isn't a currency we hold a rate for")
+    if req.preferred_currency is not None:
+        code = req.preferred_currency.strip().upper()
+        if not currency_svc.is_supported(code):
+            raise HTTPException(status_code=400, detail=f"{code} isn't a currency we hold a rate for")
+        current_user.preferred_currency = code
 
-    current_user.preferred_currency = code
+    if req.phone is not None:
+        phone = req.phone.strip()
+        current_user.phone = phone or None
+
     await db.commit()
-    return {"status": "success", "preferred_currency": code}
+    return {
+        "status": "success",
+        "preferred_currency": current_user.preferred_currency,
+        "phone": current_user.phone,
+    }
