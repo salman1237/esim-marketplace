@@ -24,6 +24,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import { Trash2, Download } from "lucide-react";
 import { saveBlob } from "@/components/finance/StatementView";
 import { formatDate, formatDateTime, formatTime } from "@/lib/datetime";
+import CommissionCell from "@/components/admin/CommissionCell";
 
 type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "withdrawals" | "discounts" | "referrals" | "agents" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales" | "finance" | "support";
 
@@ -304,20 +305,13 @@ export default function AdminConsolePage() {
     setMerchants(merchants.map(m => m.id === id ? { ...m, status: "APPROVED" } : m));
   };
 
-  const handleUpdateCommission = async (id: string, ratePct: string) => {
+  // Throws on failure so the cell can say so and put the stored rate back -
+  // the row is only updated once the server has accepted the change.
+  const handleUpdateCommission = async (id: string, rate: number) => {
     const token = localStorage.getItem("esim_token");
-    if (!token) return;
-    const rate = parseFloat(ratePct);
-    if (Number.isNaN(rate) || rate < 0 || rate > 100) {
-      alert("Commission rate must be a number between 0 and 100.");
-      return;
-    }
-    try {
-      await api.updateMerchantCommission(token, id, rate);
-      setMerchants(merchants.map(m => m.id === id ? { ...m, commission_rate_pct: rate } : m));
-    } catch (err: any) {
-      alert("Failed to update commission: " + err.message);
-    }
+    if (!token) throw new Error("Signed out");
+    await api.updateMerchantCommission(token, id, rate);
+    setMerchants((prev) => prev.map((m) => (m.id === id ? { ...m, commission_rate_pct: rate } : m)));
   };
 
   const handleToggleApiPanel = async (merchantId: string) => {
@@ -696,20 +690,11 @@ export default function AdminConsolePage() {
                       }`}>{m.status}</span>
                     </td>
                     <td className="py-3">
-                      {isSuperAdmin ? (
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          step={0.01}
-                          defaultValue={m.commission_rate_pct}
-                          key={`${m.id}-${m.commission_rate_pct}`}
-                          onBlur={(e) => e.target.value !== String(m.commission_rate_pct) && handleUpdateCommission(m.id, e.target.value)}
-                          className="w-16 bg-white border border-gray-300 rounded px-2 py-1 text-xs text-slate-900"
-                        />
-                      ) : (
-                        <span className="text-slate-700">{m.commission_rate_pct}%</span>
-                      )}
+                      <CommissionCell
+                        value={m.commission_rate_pct}
+                        disabled={!isSuperAdmin}
+                        onSave={(rate) => handleUpdateCommission(m.id, rate)}
+                      />
                     </td>
                     <td className="py-3 flex gap-2">
                       {m.status === "PENDING" && (

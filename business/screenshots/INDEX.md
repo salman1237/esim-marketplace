@@ -1,6 +1,6 @@
 # Screenshot index
 
-55 screenshots captured on **28 September 2026** from a local Triptel
+58 screenshots captured on **28 September 2026** from a local Triptel
 instance seeded with fictional demo data.
 
 **No production data appears in any image.** Every person, agency and
@@ -114,6 +114,9 @@ Captured at 1440 × 950 (full page), except the three mobile shots at
 | File | What it shows |
 |---|---|
 | `55-timezone-pinned-to-bangladesh.png` | The eSIM status page rendered by a browser set to **America/New_York**, still showing every time in Bangladesh time (GMT+6). Captured from browsers in Dhaka, Bangkok, New York and London — all four produced identical times |
+| `56-commission-unsaved-hint.png` | A merchant's commission rate edited but not yet committed — the row says so rather than leaving it ambiguous |
+| `57-commission-saved.png` | The same rate after pressing Enter: confirmed, with the value the server accepted |
+| `58-commission-rejected.png` | An out-of-range rate refused, with the stored value put back rather than the typed one left on screen |
 
 ---
 
