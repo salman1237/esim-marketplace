@@ -183,6 +183,11 @@ export const api = {
   // again at checkout, under a row lock.
   previewDiscount: (token: string, code: string, productId: string) =>
     fetchApi("/api/v1/discounts/preview", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ code, product_id: productId }) }),
+  // No auth required - lets a visitor who isn't signed in yet see a code is
+  // real before being asked to log in. checkout/preview still re-check for
+  // real once a specific package and a specific account are both known.
+  checkDiscountCode: (code: string) =>
+    fetchApi("/api/v1/discounts/check", { method: "POST", body: JSON.stringify({ code }) }),
 
   // Orders
   checkout: (token: string, data: any) => fetchApi("/api/v1/orders/checkout", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(data) }),
@@ -310,6 +315,10 @@ export const api = {
   sendTestEmail: (token: string, toEmail: string) => fetchApi("/api/v1/admin/notification-settings/test", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ to_email: toEmail }) }),
   getSupplierSettings: (token: string) => fetchApi("/api/v1/admin/supplier-settings", { headers: { Authorization: `Bearer ${token}` } }),
   updateSupplierSettings: (token: string, enabledSuppliers: string[]) => fetchApi("/api/v1/admin/supplier-settings", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ enabled_suppliers: enabledSuppliers }) }),
+  getAdminCountries: (token: string, search?: string) =>
+    fetchApi(`/api/v1/admin/countries${search ? `?search=${encodeURIComponent(search)}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
+  updatePopularDestinations: (token: string, countries: { id: number; is_popular: boolean; popular_order: number }[]) =>
+    fetchApi("/api/v1/admin/countries/popular", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ countries }) }),
   getSupplierAccount: (token: string, refresh = false) => fetchApi(`/api/v1/admin/supplier/account${refresh ? "?refresh=true" : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   getAdminAgents: (token: string, status?: string) => fetchApi(`/api/v1/admin/agents${status ? `?status=${status}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   getAgentMarginCheck: (token: string, merchantPct: string, agentPct: string) =>

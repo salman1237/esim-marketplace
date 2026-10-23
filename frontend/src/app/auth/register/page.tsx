@@ -16,11 +16,15 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const [nextParam, setNextParam] = useState<string | null>(null);
+
   // A shared link arrives as /auth/register?ref=CODE, so the field fills
   // itself and the invite is confirmed by name before anyone types anything.
   useEffect(() => {
-    const fromLink = new URLSearchParams(window.location.search).get("ref");
+    const params = new URLSearchParams(window.location.search);
+    const fromLink = params.get("ref");
     if (fromLink) setReferralCode(fromLink.toUpperCase());
+    setNextParam(params.get("next"));
   }, []);
 
   useEffect(() => {
@@ -46,7 +50,10 @@ export default function RegisterPage() {
       });
       localStorage.setItem("esim_token", res.access_token);
       localStorage.setItem("esim_role", res.role);
-      window.location.href = "/";
+      // Mirrors the login page: a "Buy Now" while signed out that routed
+      // here (via login's "Create account" link) must come back to the
+      // same package, not to the home page.
+      window.location.href = nextParam || "/";
     } catch (err: any) {
       setError(err.message || "Registration failed");
     } finally {
@@ -154,7 +161,10 @@ export default function RegisterPage() {
 
         <div className="mt-6 text-center text-xs text-slate-500">
           Already have an account?{" "}
-          <Link href="/auth/login" className="text-brand-600 font-semibold hover:underline">
+          <Link
+            href={nextParam ? `/auth/login?next=${encodeURIComponent(nextParam)}` : "/auth/login"}
+            className="text-brand-600 font-semibold hover:underline"
+          >
             Sign In
           </Link>
         </div>

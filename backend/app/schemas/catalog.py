@@ -12,6 +12,7 @@ class CountryResponse(BaseModel):
     flag_url: Optional[str] = None
     region: Optional[str] = None
     is_popular: bool
+    popular_order: int = 0
     is_active: bool
 
     @computed_field

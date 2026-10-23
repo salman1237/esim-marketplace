@@ -7,6 +7,7 @@ import { useAppSettings } from "@/lib/AppSettingsContext";
 import TranslationsManager from "@/components/TranslationsManager";
 import PricingCard from "@/components/admin/PricingCard";
 import SupplierVisibilityCard from "@/components/admin/SupplierVisibilityCard";
+import PopularDestinationsCard from "@/components/admin/PopularDestinationsCard";
 import PaymentMethodsCard from "@/components/admin/PaymentMethodsCard";
 import PackagePicker, { packLabel } from "@/components/PackagePicker";
 import ShurjoPayCard from "@/components/admin/ShurjoPayCard";
@@ -1134,6 +1135,7 @@ ${deactivated} product(s) deactivated - no longer offered by the supplier after 
             }}
           />
           <SupplierVisibilityCard isSuperAdmin={isSuperAdmin} />
+          <PopularDestinationsCard isSuperAdmin={isSuperAdmin} />
         </div>
       )}
       {activeTab === "catalog" && (

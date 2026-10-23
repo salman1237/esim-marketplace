@@ -60,7 +60,14 @@ export default function GoogleSignInButton({ mode = "signin", oneTap = false }: 
         const res = await api.googleLogin(response.credential);
         localStorage.setItem("esim_token", res.access_token);
         localStorage.setItem("esim_role", res.role);
-        window.location.href = res.role === "SUPER_ADMIN" || res.role === "ADMIN" ? "/admin" : "/";
+        if (res.role === "SUPER_ADMIN" || res.role === "ADMIN") {
+          window.location.href = "/admin";
+          return;
+        }
+        // Same "Buy Now while signed out" resume path the email login and
+        // register forms use - Google is just another way to finish it.
+        const next = new URLSearchParams(window.location.search).get("next");
+        window.location.href = next || "/";
       } catch (err: any) {
         setError(err.message || "Google sign-in failed. Please try again.");
         setBusy(false);

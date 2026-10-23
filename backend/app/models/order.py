@@ -105,6 +105,10 @@ class ESIMProfile(Base):
     # un-activated eSIM look expired while it was still perfectly usable.
     activated_at = Column(DateTime(timezone=True), nullable=True)
     expires_at = Column(DateTime(timezone=True), nullable=True)
+    # Set once the "how was your trip" reminder has gone out for this eSIM,
+    # so the scheduler's sweep (expired in the last day) never re-sends it
+    # on a later run. Never cleared.
+    trip_feedback_sent_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

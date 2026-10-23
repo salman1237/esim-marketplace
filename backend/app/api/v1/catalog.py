@@ -38,8 +38,14 @@ async def list_countries(
         query = query.where(Country.is_popular == True)
     if search:
         query = query.where(Country.name_en.ilike(f"%{search}%") | Country.iso2.ilike(f"%{search}%"))
-    
-    query = query.order_by(Country.name_en.asc())
+
+    # Admin-controlled order for the home page's Popular Destinations row;
+    # irrelevant (and harmless) for the full /destinations listing, which
+    # never passes popular_only.
+    if popular_only:
+        query = query.order_by(Country.popular_order.asc(), Country.name_en.asc())
+    else:
+        query = query.order_by(Country.name_en.asc())
     res = await db.execute(query)
     return res.scalars().all()
 

@@ -15,6 +15,11 @@ class Country(Base):
     flag_url = Column(String(255), nullable=True)
     region = Column(String(50), nullable=True)
     is_popular = Column(Boolean, default=False)
+    # Where this destination sits in the home page's "Popular Destinations"
+    # row when is_popular is set - lower shows first. Not unique: ties just
+    # fall back to name order, which is harmless and saves an admin from
+    # having to renumber everything after a single reorder.
+    popular_order = Column(Integer, default=0, server_default="0", nullable=False)
     is_active = Column(Boolean, default=True)
 
     products = relationship("Product", back_populates="country")

@@ -1295,6 +1295,72 @@ async def update_supplier_settings(
     return {"suppliers": await serialize_all(db)}
 
 
+@router.get("/countries", dependencies=[Depends(require_admin)])
+async def list_admin_countries(search: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    """Every destination with inventory, for the Popular Destinations admin
+    panel - not filtered to is_popular, so an admin can both add new ones
+    and remove existing ones from the home page."""
+    has_products = select(Product.id).where(Product.country_id == Country.id, Product.is_active == True).exists()  # noqa: E712
+    query = select(Country).where(Country.is_active == True, has_products)
+    if search:
+        query = query.where(Country.name_en.ilike(f"%{search}%") | Country.iso2.ilike(f"%{search}%"))
+    res = await db.execute(query.order_by(Country.popular_order.asc(), Country.name_en.asc()))
+    countries = res.scalars().all()
+    return {
+        "countries": [
+            {"id": c.id, "iso2": c.iso2, "name_en": c.name_en, "flag_url": c.flag_url,
+             "is_popular": c.is_popular, "popular_order": c.popular_order}
+            for c in countries
+        ]
+    }
+
+
+class PopularDestinationEntry(BaseModel):
+    id: int
+    is_popular: bool
+    popular_order: int = 0
+
+
+class PopularDestinationsRequest(BaseModel):
+    # The whole set, replaced atomically - an admin reordering the list sees
+    # one save button, not a race between several per-row PATCH calls.
+    countries: list[PopularDestinationEntry]
+
+
+@router.put("/countries/popular", dependencies=[Depends(require_super_admin)])
+async def update_popular_destinations(
+    req: PopularDestinationsRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Which destinations show on the home page, and in what order. Same
+    gate as PUT /pricing and PUT /supplier-settings: this changes what
+    every visitor sees first, not one record."""
+    ids = [e.id for e in req.countries]
+    res = await db.execute(select(Country).where(Country.id.in_(ids)))
+    by_id = {c.id: c for c in res.scalars().all()}
+    before = {c.id: {"is_popular": c.is_popular, "popular_order": c.popular_order} for c in by_id.values()}
+
+    for entry in req.countries:
+        country = by_id.get(entry.id)
+        if not country:
+            raise HTTPException(status_code=404, detail=f"Country {entry.id} not found")
+        country.is_popular = entry.is_popular
+        country.popular_order = entry.popular_order
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_POPULAR_DESTINATIONS",
+        before_state=before,
+        after_state={c.id: {"is_popular": c.is_popular, "popular_order": c.popular_order} for c in by_id.values()},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return await list_admin_countries(search=None, db=db)
+
+
 @router.put("/catalog/{product_id}", dependencies=[Depends(require_admin)])
 async def update_product(
     product_id: str,
