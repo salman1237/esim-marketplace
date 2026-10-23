@@ -13,9 +13,18 @@ from typing import Optional
 
 from app.services.pricing_svc import DEFAULT_SELLING_PROFIT_PCT, retail_price_for
 
-ESIM_REFERENCES = ("esimgo_bundle", "worldmove_esim")
+# Telna joined VivaPe's catalog in October 2026 (VivaPe's own notice: their
+# existing suppliers "will discontinue... very soon"). Confirmed live against
+# their real feed before adding it here, not assumed from the announcement.
+ESIM_REFERENCES = ("esimgo_bundle", "worldmove_esim", "telna_esim")
 
 _GB_RE = re.compile(r"(\d+(\.\d+)?)\s*GB", re.IGNORECASE)
+# Telna is the first supplier whose titles use MB for small plans (e.g.
+# "VivaPe Test - 500MB - BGD - 7 Days", confirmed live). Checked only when
+# the GB pattern didn't match, so a title mentioning both (there are none
+# today, but "GB" would otherwise also satisfy a careless MB-only regex)
+# can never be read as the wrong unit.
+_MB_RE = re.compile(r"(\d+(\.\d+)?)\s*MB", re.IGNORECASE)
 _DAYS_RE = re.compile(r"(\d+)\s*Days?", re.IGNORECASE)
 
 
@@ -46,9 +55,23 @@ def parse_vivape_product(p: dict, profit_pct: Decimal = DEFAULT_SELLING_PROFIT_P
     # data_amount_gb is meaningless for these and left at 0.
     is_unlimited = "unlimited" in title.lower()
     gb_match = None if is_unlimited else _GB_RE.search(title)
+    # Only looked for once GB has already missed - GB must always win over
+    # MB if a title somehow mentioned both, and in practice every title
+    # observed so far uses exactly one of the two.
+    mb_match = None if (is_unlimited or gb_match) else _MB_RE.search(title)
     days_match = _DAYS_RE.search(title)
 
-    data_amount = Decimal("0") if is_unlimited else (Decimal(gb_match.group(1)) if gb_match else Decimal("3.0"))
+    if is_unlimited:
+        data_amount = Decimal("0")
+    elif gb_match:
+        data_amount = Decimal(gb_match.group(1))
+    elif mb_match:
+        # 500MB must read as 0.5 GB, not fall through to the 3.0 GB
+        # fallback below - that fallback is for a title with NEITHER unit,
+        # not a cue to silently show six times the real allowance.
+        data_amount = (Decimal(mb_match.group(1)) / Decimal(1000)).quantize(Decimal("0.001"))
+    else:
+        data_amount = Decimal("3.0")
     validity = int(days_match.group(1)) if days_match else 15
 
     # VivaPe's own receiver_amount_min/max for this exact product — the

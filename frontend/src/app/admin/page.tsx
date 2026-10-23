@@ -290,7 +290,13 @@ export default function AdminConsolePage() {
     setSyncing(true);
     try {
       const res = await api.syncCatalog(token);
-      alert(`Sync completed! ${res.synced_countries} new countries, ${res.synced_products} new products, ${res.updated_products ?? 0} updated.`);
+      const deactivated = res.deactivated_products ?? 0;
+      alert(
+        `Sync completed! ${res.synced_countries} new countries, ${res.synced_products} new products, ${res.updated_products ?? 0} updated.` +
+        (deactivated > 0 ? `
+
+${deactivated} product(s) deactivated - no longer offered by the supplier after several sync cycles.` : "")
+      );
     } catch (err: any) {
       alert("Catalog sync error: " + err.message);
     } finally {

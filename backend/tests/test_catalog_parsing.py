@@ -38,6 +38,46 @@ BANGLADESH_MOBILE_TOPUP = {
     "receiver_amount_min": "20", "receiver_amount_max": "1000",
 }
 
+# Telna joined VivaPe's catalog in October 2026. These four are real entries
+# captured from a full live scan of every country VivaPe lists (249
+# countries, 9 Telna products total at the time) - not simplified or
+# invented, because Telna's titles turned out messier than the other two
+# suppliers' and that messiness is exactly what needs to be tested against.
+TELNA_1GB_7D = {
+    "id": 16497, "vivape_id": "VPTLN21634922", "price": 1.98,
+    "price_min": 2.67, "price_max": 2.67, "reference": "telna_esim",
+    "title": "Telna Test - 1GB - Global - 7 Days", "details": "Standard Full Speed (Unthrottled)",
+    "country_id": 5, "receiver_type": "0",
+    "receiver_amount_min": "2.67", "receiver_amount_max": "2.67", "receiver_amount_currency": "EUR",
+}
+
+# The one that would have broken silently: VivaPe's other two suppliers
+# have never used MB in a title, only GB. The GB-only regex would have
+# missed this entirely and fallen back to the hardcoded 3.0 GB default -
+# showing a 500MB plan as six times its real allowance.
+TELNA_500MB_BANGLADESH = {
+    "id": 20001, "price": 1.6, "reference": "telna_esim",
+    "title": "VivaPe Test - 500MB - BGD - 7 Days",
+    "country_id": 18, "receiver_type": "0",
+    "receiver_amount_min": "302.4", "receiver_amount_max": "302.4", "receiver_amount_currency": "EUR",
+}
+
+# Messy real-world spacing (double spaces, "days" before the data amount
+# rather than after) - must parse the same as a clean title.
+TELNA_MESSY_SPACING_BANGLADESH = {
+    "id": 20002, "price": 1.98, "reference": "telna_esim",
+    "title": "Bangladesh 7  days 1 GB ",
+    "country_id": 18, "receiver_type": "0",
+    "receiver_amount_min": "373.8", "receiver_amount_max": "373.8", "receiver_amount_currency": "EUR",
+}
+
+TELNA_UNLIMITED_UK = {
+    "id": 20003, "price": 16.83, "reference": "telna_esim",
+    "title": "United Kingdom Unlimited 2 days ",
+    "country_id": 77, "receiver_type": "0",
+    "receiver_amount_min": "19.77", "receiver_amount_max": "19.77", "receiver_amount_currency": "EUR",
+}
+
 
 def test_esimgo_bundle_fixed_data_plan():
     parsed = parse_vivape_product(THAILAND_1GB_7D)
@@ -95,3 +135,57 @@ def test_esim_titled_product_from_another_supplier_is_filtered_out():
         "title": "eSIM, 5GB, 30 Days, Nowhere", "country_id": 1,
         "receiver_amount_min": "5000", "receiver_amount_max": "5000",
     }) is None
+
+
+def test_telna_is_recognised_as_a_provisionable_supplier():
+    """Confirmed live on VivaPe's catalog, October 2026 - not merely
+    announced. See catalog_parsing.ESIM_REFERENCES."""
+    parsed = parse_vivape_product(TELNA_1GB_7D)
+    assert parsed is not None
+    assert parsed["data_amount_gb"] == Decimal("1")
+    assert parsed["validity_days"] == 7
+    assert parsed["is_unlimited"] is False
+    # Same rule as worldmove_esim: no universal formula exists (confirmed by
+    # comparing receiver_amount/price ratios across Telna's own products,
+    # which vary from ~1.2x to ~189x with no pattern) - only round-trip
+    # whatever the catalog reports for this exact product.
+    assert parsed["supplier_receiver_amount"] == Decimal("2.67")
+    assert parsed["supplier_reference"] == "telna_esim"
+
+
+def test_telna_megabyte_title_is_not_mistaken_for_three_gigabytes():
+    """Regression test for the bug this scan actually found: a title using
+    MB (never seen from either existing supplier) has no GB substring to
+    match, and the GB-only regex used to fall through to its catch-all
+    default - showing a 500MB plan as 3.0 GB, six times its real size."""
+    parsed = parse_vivape_product(TELNA_500MB_BANGLADESH)
+    assert parsed is not None
+    assert parsed["data_amount_gb"] == Decimal("0.5")
+    assert parsed["validity_days"] == 7
+    assert parsed["is_unlimited"] is False
+
+
+def test_telna_messy_title_spacing_still_parses_correctly():
+    """Telna's titles are not as clean as the other two suppliers' (double
+    spaces, data-amount-after-validity rather than before) - the regexes
+    search the whole string rather than assume a fixed layout, so this
+    must parse identically to a tidy title."""
+    parsed = parse_vivape_product(TELNA_MESSY_SPACING_BANGLADESH)
+    assert parsed is not None
+    assert parsed["data_amount_gb"] == Decimal("1")
+    assert parsed["validity_days"] == 7
+
+
+def test_telna_unlimited_plan_is_flagged_not_mislabeled():
+    parsed = parse_vivape_product(TELNA_UNLIMITED_UK)
+    assert parsed is not None
+    assert parsed["is_unlimited"] is True
+    assert parsed["data_amount_gb"] == Decimal("0")
+    assert parsed["validity_days"] == 2
+
+
+def test_a_gb_title_is_never_read_as_megabytes():
+    """Guards the ordering: if a title somehow mentioned both units, GB must
+    win - MB is only ever consulted after the GB pattern has already missed."""
+    parsed = parse_vivape_product(TELNA_1GB_7D)
+    assert parsed["data_amount_gb"] == Decimal("1")  # not Decimal("0.001")

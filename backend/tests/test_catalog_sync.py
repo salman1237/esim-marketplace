@@ -1,7 +1,9 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 import httpx
 from sqlalchemy import select
-from app.services.catalog_sync_svc import sync_vivape_catalog
+from app.services.catalog_sync_svc import STALE_GRACE, sync_vivape_catalog
 from app.services.vivape_adapter import VivaPeAdapter
 from app.models.catalog import Product
 
@@ -98,3 +100,104 @@ async def test_sync_updates_existing_product_fields(db_session, monkeypatch):
     product = res.scalar_one()
     assert product.cost_price == pytest.approx(5.0)
     assert product.title_en == "eSIM, 2GB, 7 Days, Thailand, V2"
+
+
+async def test_a_product_missing_from_one_sync_is_not_deactivated(db_session, monkeypatch):
+    """A single missed sync - a timeout, a transient 5xx from VivaPe - must
+    not make a perfectly good product vanish from the storefront. Only
+    sustained absence (STALE_GRACE) means the supplier actually retired it."""
+    monkeypatch.setattr(httpx.AsyncClient, "post", _mock_post)
+    monkeypatch.setattr(
+        httpx.AsyncClient, "get",
+        _mock_get_factory([THAILAND], {212: [THAILAND_1GB_7D]})
+    )
+    await sync_vivape_catalog(db_session)
+
+    # This run's response for Thailand no longer includes it, but it was
+    # only just updated - nowhere near stale yet.
+    monkeypatch.setattr(
+        httpx.AsyncClient, "get",
+        _mock_get_factory([THAILAND], {212: []})
+    )
+    result = await sync_vivape_catalog(db_session)
+    assert result["deactivated_products"] == 0
+
+    res = await db_session.execute(select(Product).where(Product.supplier_product_id == 9991))
+    assert res.scalar_one().is_active is True
+
+
+async def test_a_product_absent_past_the_grace_period_is_deactivated(db_session, monkeypatch):
+    """The actual scenario this exists for: a supplier discontinues a
+    product line and it simply stops appearing. Confirmed against a real
+    retired product in production, which stayed purchasable - and failed at
+    checkout with "Product not found" - for weeks because nothing ever
+    noticed it was gone from the feed."""
+    monkeypatch.setattr(httpx.AsyncClient, "post", _mock_post)
+    monkeypatch.setattr(
+        httpx.AsyncClient, "get",
+        _mock_get_factory([THAILAND], {212: [THAILAND_1GB_7D]})
+    )
+    await sync_vivape_catalog(db_session)
+
+    res = await db_session.execute(select(Product).where(Product.supplier_product_id == 9991))
+    product = res.scalar_one()
+    # Backdate as if several sync cycles have passed with this product
+    # genuinely gone from the feed, rather than waiting out real time.
+    product.updated_at = datetime.now(timezone.utc) - STALE_GRACE - timedelta(hours=1)
+    await db_session.commit()
+
+    monkeypatch.setattr(
+        httpx.AsyncClient, "get",
+        _mock_get_factory([THAILAND], {212: []})
+    )
+    result = await sync_vivape_catalog(db_session)
+    assert result["deactivated_products"] == 1
+
+    await db_session.refresh(product)
+    assert product.is_active is False
+
+
+async def test_a_deactivated_product_reactivates_if_the_supplier_brings_it_back(db_session, monkeypatch):
+    """Deactivation must not be a one-way door - a product the supplier
+    reinstates (or that was only absent due to a longer outage, not a real
+    discontinuation) has to become purchasable again on its own, not stay
+    hidden forever because of one past gap."""
+    monkeypatch.setattr(httpx.AsyncClient, "post", _mock_post)
+    monkeypatch.setattr(
+        httpx.AsyncClient, "get",
+        _mock_get_factory([THAILAND], {212: [THAILAND_1GB_7D]})
+    )
+    await sync_vivape_catalog(db_session)
+
+    res = await db_session.execute(select(Product).where(Product.supplier_product_id == 9991))
+    product = res.scalar_one()
+    product.is_active = False
+    product.updated_at = datetime.now(timezone.utc) - STALE_GRACE - timedelta(hours=1)
+    await db_session.commit()
+
+    # Back in the feed on this run.
+    monkeypatch.setattr(
+        httpx.AsyncClient, "get",
+        _mock_get_factory([THAILAND], {212: [THAILAND_1GB_7D]})
+    )
+    await sync_vivape_catalog(db_session)
+
+    await db_session.refresh(product)
+    assert product.is_active is True
+
+
+async def test_an_active_product_in_a_country_with_zero_other_changes_stays_active(db_session, monkeypatch):
+    """Guards against an over-broad deactivation query: a product that IS
+    still being seen and updated every run must never be swept up by the
+    staleness check just because it exists."""
+    monkeypatch.setattr(httpx.AsyncClient, "post", _mock_post)
+    monkeypatch.setattr(
+        httpx.AsyncClient, "get",
+        _mock_get_factory([THAILAND], {212: [THAILAND_1GB_7D]})
+    )
+    await sync_vivape_catalog(db_session)
+    result = await sync_vivape_catalog(db_session)
+    assert result["deactivated_products"] == 0
+
+    res = await db_session.execute(select(Product).where(Product.supplier_product_id == 9991))
+    assert res.scalar_one().is_active is True
