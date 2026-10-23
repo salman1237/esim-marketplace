@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CheckCircle2, Smartphone } from "lucide-react";
+import { CheckCircle2, Smartphone, PhoneCall } from "lucide-react";
 
 export const metadata: Metadata = { title: "eSIM Compatible Phones" };
 
@@ -61,10 +61,35 @@ export default function CompatiblePhonesPage() {
         phone usually can't add a second carrier's eSIM even on a supported model.
       </p>
 
+      <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+        <div className="flex items-center gap-2 mb-2">
+          <PhoneCall className="w-4 h-4 text-emerald-700" />
+          <h2 className="text-sm font-bold text-emerald-900">The fastest way to check: dial *#06#</h2>
+        </div>
+        <p className="text-xs text-emerald-800 leading-relaxed">
+          Open your phone's dialer and dial <strong className="font-mono">*#06#</strong> — no need to press call.
+          A screen with your device's ID numbers will pop up. If you see a line labelled{" "}
+          <strong>EID</strong>, your phone supports eSIM. If there's no EID shown, only an IMEI, your phone can't use
+          an eSIM.
+        </p>
+        <div className="mt-4 rounded-xl overflow-hidden bg-black max-w-xs">
+          <video
+            src="/guides/check-esim-support.mp4"
+            controls
+            playsInline
+            preload="metadata"
+            className="w-full h-auto block"
+          >
+            Your browser doesn't support inline video — dial *#06# on your phone and look for &ldquo;EID&rdquo;.
+          </video>
+        </div>
+        <p className="mt-2 text-[11px] text-emerald-700">Watch: how to dial *#06# and spot the EID line.</p>
+      </div>
+
       <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800">
-        <strong>Not sure?</strong> On iPhone: Settings → General → About → look for &ldquo;Digital SIM&rdquo; or check
-        your carrier. On Android: Settings → Network &amp; internet → SIMs → look for an &ldquo;Add eSIM&rdquo; or
-        &ldquo;Download a SIM&rdquo; option. If it's missing, your device or region variant likely doesn't support eSIM.
+        <strong>Still not sure?</strong> On iPhone: Settings → General → About → look for &ldquo;Digital SIM&rdquo; or
+        check your carrier. On Android: Settings → Network &amp; internet → SIMs → look for an &ldquo;Add eSIM&rdquo;
+        or &ldquo;Download a SIM&rdquo; option. If it's missing, your device or region variant likely doesn't support eSIM.
       </div>
 
       <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-6">
