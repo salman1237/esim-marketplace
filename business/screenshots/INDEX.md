@@ -1,6 +1,6 @@
 # Screenshot index
 
-65 screenshots captured on **28 September 2026** from a local Triptel
+66 screenshots captured on **28 September 2026** from a local Triptel
 instance seeded with fictional demo data.
 
 **No production data appears in any image.** Every person, agency and
@@ -124,6 +124,7 @@ Captured at 1440 × 950 (full page), except the three mobile shots at
 | `63-admin-merchants-stacked-mobile.png` | The merchant queue restated as one card per partner at 390px — every action reachable without scrolling sideways |
 | `64-admin-merchants-desktop-unchanged.png` | The same table on desktop, still a table |
 | `65-admin-merchants-api-panel-mobile.png` | The expandable API panel inside the stacked layout |
+| `66-admin-supplier-visibility.png` | The admin supplier toggle on beta, live — Telna off with its explanatory note, eSIM Go and WorldMove on |
 
 ---
 
