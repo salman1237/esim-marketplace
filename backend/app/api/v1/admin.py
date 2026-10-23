@@ -52,6 +52,7 @@ from app.services.shurjopay_svc import ShurjoPayService
 from app.services.pricing_svc import MAX_SELLING_PROFIT_PCT, get_selling_profit_pct, retail_price_for, set_selling_profit_pct
 from app.services.audit_svc import AuditService
 from app.services.catalog_sync_svc import sync_vivape_catalog
+from app.services.supplier_settings_svc import get_enabled_suppliers, serialize_all, set_enabled_suppliers, supplier_visible_filter
 from app.services.vivape_adapter import VivaPeAdapter
 from app.services.currency_svc import CurrencyService
 from app.services.checkout_svc import provision_esim
@@ -598,7 +599,12 @@ async def admin_purchase_esim_for_customer(
     if not target:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    p_res = await db.execute(select(Product).where(Product.id == req.product_id, Product.is_active == True))
+    p_res = await db.execute(
+        select(Product).where(
+            Product.id == req.product_id, Product.is_active == True,
+            supplier_visible_filter(Product.supplier_reference, await get_enabled_suppliers(db)),
+        )
+    )
     product = p_res.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found or inactive")
@@ -1246,6 +1252,47 @@ async def export_catalog_xlsx(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/supplier-settings", dependencies=[Depends(require_admin)])
+async def get_supplier_settings(db: AsyncSession = Depends(get_db)):
+    """Every supplier catalog_parsing recognises, with its label and
+    current on/off state - what the admin console renders as checkboxes."""
+    return {"suppliers": await serialize_all(db)}
+
+
+class SupplierSettingsRequest(BaseModel):
+    enabled_suppliers: list[str]
+
+
+@router.put("/supplier-settings", dependencies=[Depends(require_super_admin)])
+async def update_supplier_settings(
+    req: SupplierSettingsRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Which suppliers' products a customer or partner can browse and buy.
+    Super-admin-only, the same gate as the global selling-profit percentage
+    (PUT /pricing) - this changes what the entire storefront offers, not one
+    product. Never deletes or deactivates anything: a disabled supplier's
+    products stay exactly as they are in the catalog, just unreachable by a
+    customer or partner until re-enabled."""
+    try:
+        change = await set_enabled_suppliers(db, req.enabled_suppliers, admin_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_ENABLED_SUPPLIERS",
+        before_state={"enabled_suppliers": change["before"]},
+        after_state={"enabled_suppliers": change["after"]},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"suppliers": await serialize_all(db)}
 
 
 @router.put("/catalog/{product_id}", dependencies=[Depends(require_admin)])

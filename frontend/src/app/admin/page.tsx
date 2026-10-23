@@ -6,6 +6,7 @@ import { api, API_BASE } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 import TranslationsManager from "@/components/TranslationsManager";
 import PricingCard from "@/components/admin/PricingCard";
+import SupplierVisibilityCard from "@/components/admin/SupplierVisibilityCard";
 import PaymentMethodsCard from "@/components/admin/PaymentMethodsCard";
 import PackagePicker, { packLabel } from "@/components/PackagePicker";
 import ShurjoPayCard from "@/components/admin/ShurjoPayCard";
@@ -1119,7 +1120,7 @@ ${deactivated} product(s) deactivated - no longer offered by the supplier after 
 
       {/* Tab: Catalog - selling profit % sets every price */}
       {activeTab === "catalog" && (
-        <div className="mb-6">
+        <div className="mb-6 space-y-6">
           <PricingCard
             isSuperAdmin={isSuperAdmin}
             onRepriced={() => {
@@ -1132,6 +1133,7 @@ ${deactivated} product(s) deactivated - no longer offered by the supplier after 
               });
             }}
           />
+          <SupplierVisibilityCard isSuperAdmin={isSuperAdmin} />
         </div>
       )}
       {activeTab === "catalog" && (

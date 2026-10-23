@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.wallet import Wallet, WalletType, LedgerRefType
+from app.services.supplier_settings_svc import get_enabled_suppliers, supplier_visible_filter
 from typing import Optional
 
 from app.models.catalog import Product
@@ -129,7 +130,13 @@ async def initiate_order_via_shurjopay(
     if req.is_buy_for_user and current_user.role not in RESELLER_ROLES:
         raise HTTPException(status_code=403, detail="Only merchants, admins, and super admins can buy for another user")
 
-    p_res = await db.execute(select(Product).where(Product.id == req.product_id, Product.is_active == True))
+    enabled_suppliers = await get_enabled_suppliers(db)
+    p_res = await db.execute(
+        select(Product).where(
+            Product.id == req.product_id, Product.is_active == True,
+            supplier_visible_filter(Product.supplier_reference, enabled_suppliers),
+        )
+    )
     product = p_res.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found or inactive")

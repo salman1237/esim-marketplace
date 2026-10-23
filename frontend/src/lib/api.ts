@@ -308,6 +308,8 @@ export const api = {
   getNotificationSettings: (token: string) => fetchApi("/api/v1/admin/notification-settings", { headers: { Authorization: `Bearer ${token}` } }),
   updateNotificationSettings: (token: string, email: string) => fetchApi("/api/v1/admin/notification-settings", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ system_notice_email: email }) }),
   sendTestEmail: (token: string, toEmail: string) => fetchApi("/api/v1/admin/notification-settings/test", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ to_email: toEmail }) }),
+  getSupplierSettings: (token: string) => fetchApi("/api/v1/admin/supplier-settings", { headers: { Authorization: `Bearer ${token}` } }),
+  updateSupplierSettings: (token: string, enabledSuppliers: string[]) => fetchApi("/api/v1/admin/supplier-settings", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ enabled_suppliers: enabledSuppliers }) }),
   getSupplierAccount: (token: string, refresh = false) => fetchApi(`/api/v1/admin/supplier/account${refresh ? "?refresh=true" : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   getAdminAgents: (token: string, status?: string) => fetchApi(`/api/v1/admin/agents${status ? `?status=${status}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   getAgentMarginCheck: (token: string, merchantPct: string, agentPct: string) =>
