@@ -160,6 +160,40 @@ async def apply_to_order(db: AsyncSession, order: Order, code: DiscountCode, use
     ))
 
 
+async def check_generic(db: AsyncSession, raw_code: str, *, now: Optional[datetime] = None) -> dict:
+    """A best-effort check for a visitor who hasn't signed in yet: does this
+    code exist, is it switched on, is it within its date window, and has it
+    hit its total redemption cap? Deliberately skips everything that needs a
+    specific product or a specific user (scope, minimum order, first-order-
+    only, per-user cap) - those are re-checked for real, authoritatively, by
+    validate() once the visitor is logged in and buying a specific package.
+    This exists only to give an honest "looks valid" / "no such code"
+    answer before that point, never a guaranteed one."""
+    now = now or datetime.now(timezone.utc)
+    code = await find_code(db, raw_code)
+    if not code or not code.is_active:
+        return {"valid": False, "reason": "That discount code isn't valid."}
+    if code.starts_at and now < code.starts_at:
+        return {"valid": False, "reason": "That code isn't active yet."}
+    if code.ends_at and now >= code.ends_at:
+        return {"valid": False, "reason": "That code has expired."}
+    if code.max_uses is not None:
+        total_uses, _ = await usage_counts(db, code.id, None, now=now)
+        if total_uses >= code.max_uses:
+            return {"valid": False, "reason": "That code has reached its usage limit."}
+    return {
+        "valid": True,
+        "code": code.code,
+        "description": code.description,
+        "discount_type": code.discount_type.value,
+        "value": str(code.value),
+        "max_discount_amount": str(code.max_discount_amount) if code.max_discount_amount is not None else None,
+        # Signals the UI to say "sign in to apply" rather than show a false
+        # all-clear - these rules can still fail the check once logged in.
+        "scoped": code.scope != DiscountScope.ALL or code.first_order_only or code.max_uses_per_user is not None,
+    }
+
+
 async def resolve_for_checkout(
     db: AsyncSession, raw_code: Optional[str], user: User, product: Product, price: Decimal
 ) -> Tuple[Optional[DiscountCode], Decimal]:

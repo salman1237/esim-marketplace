@@ -22,6 +22,7 @@ from app.models.order import Order, OrderStatus, PaymentMethod
 from app.schemas.catalog import CountryResponse, ProductResponse
 from app.services import agent_svc
 from app.services.checkout_svc import get_effective_commission_rate, resolve_beneficiary, provision_esim, distribute_commission
+from app.services.supplier_settings_svc import get_enabled_suppliers, supplier_visible_filter
 from app.services.ledger_svc import LedgerService
 from app.services.webhook_svc import deliver_webhook, build_partner_order_payload
 from app.core.logging import get_logger
@@ -93,7 +94,10 @@ async def list_country_products(
         raise HTTPException(status_code=404, detail="Country not found")
 
     p_res = await db.execute(
-        select(Product).where(Product.country_id == country.id, Product.is_active == True)
+        select(Product).where(
+            Product.country_id == country.id, Product.is_active == True,
+            supplier_visible_filter(Product.supplier_reference, await get_enabled_suppliers(db)),
+        )
         .order_by(Product.retail_price.asc(), Product.data_amount_gb.asc())
     )
     return p_res.scalars().all()
@@ -205,7 +209,12 @@ async def create_partner_order(
             payload = await build_partner_order_payload(db, existing, existing.esim_profile)
             return {**payload, "idempotent_replay": True}
 
-    p_res = await db.execute(select(Product).where(Product.id == req.product_id, Product.is_active == True))
+    p_res = await db.execute(
+        select(Product).where(
+            Product.id == req.product_id, Product.is_active == True,
+            supplier_visible_filter(Product.supplier_reference, await get_enabled_suppliers(db)),
+        )
+    )
     product = p_res.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found or inactive")

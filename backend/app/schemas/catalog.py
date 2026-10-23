@@ -12,6 +12,7 @@ class CountryResponse(BaseModel):
     flag_url: Optional[str] = None
     region: Optional[str] = None
     is_popular: bool
+    popular_order: int = 0
     is_active: bool
 
     @computed_field
@@ -34,6 +35,7 @@ class ProductResponse(BaseModel):
     currency: str
     is_unlimited: bool
     is_active: bool
+    is_featured: bool = False
     coverage_networks: Optional[str] = None
 
     class Config:

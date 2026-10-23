@@ -9,6 +9,12 @@ type Props = {
   // Set once a code has been checked against a specific package, cleared
   // when the customer edits it.
   applied?: { code: string; discountLabel: string; totalLabel: string } | null;
+  // A lighter-weight, pre-login confirmation that the code is real (see
+  // DiscountCheckBadge below) - shown instead of `applied` when there's no
+  // signed-in preview yet.
+  checkedOk?: { code: string; note: string } | null;
+  checking?: boolean;
+  onApply?: () => void;
   error?: string | null;
   onClear: () => void;
   className?: string;
@@ -18,7 +24,7 @@ type Props = {
 // because Buy Now goes straight to the gateway when the wallet can't cover
 // the price - so a field that only existed in that popup would be
 // unreachable for exactly the customers most likely to want a discount.
-export default function DiscountCodeBox({ value, onChange, applied, error, onClear, className = "" }: Props) {
+export default function DiscountCodeBox({ value, onChange, applied, checkedOk, checking, onApply, error, onClear, className = "" }: Props) {
   return (
     <div className={className}>
       <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-1.5">
@@ -51,11 +57,21 @@ export default function DiscountCodeBox({ value, onChange, applied, error, onCle
             autoComplete="off"
             className="flex-1 min-w-0 bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs font-mono uppercase text-slate-900"
           />
+          {onApply && value.trim() !== "" && !checkedOk && (
+            <button
+              type="button"
+              onClick={onApply}
+              disabled={!!checking}
+              className="px-3 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-60 text-white text-xs font-bold shrink-0"
+            >
+              {checking ? "Checking…" : "Apply"}
+            </button>
+          )}
           {value.trim() !== "" && (
             <button
               type="button"
               onClick={onClear}
-              className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-slate-600 text-xs font-bold"
+              className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-slate-600 text-xs font-bold shrink-0"
             >
               Clear
             </button>
@@ -63,10 +79,16 @@ export default function DiscountCodeBox({ value, onChange, applied, error, onCle
         </div>
       )}
 
+      {checkedOk && !applied && (
+        <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-emerald-700 font-semibold">
+          <Check className="w-3.5 h-3.5" /> {checkedOk.code} looks valid — {checkedOk.note}
+        </div>
+      )}
+
       {error ? (
         <p className="mt-1.5 text-[11px] text-rose-600">{error}</p>
-      ) : !applied ? (
-        <p className="mt-1.5 text-[11px] text-slate-500">Applied when you buy — one code per order.</p>
+      ) : !applied && !checkedOk ? (
+        <p className="mt-1.5 text-[11px] text-slate-500">Check a code, then buy — the final price is confirmed at checkout.</p>
       ) : null}
     </div>
   );

@@ -101,6 +101,8 @@ export default function Footer() {
             <li><Link href="/my-esims" className={link}>{t("common", "my_esims", "My eSIMs")}</Link></li>
             <li><Link href="/wallet" className={link}>{t("common", "wallet", "Wallet")} &amp; Top Up</Link></li>
             <li><Link href="/refer" className={link}>Refer &amp; Earn</Link></li>
+            <li><Link href="/guides/compatible-phones" className={link}>Compatible Phones</Link></li>
+            <li><Link href="/guides/esim-setup-guide" className={link}>eSIM Setup Guide</Link></li>
           </ul>
         </div>
 

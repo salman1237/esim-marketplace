@@ -6,6 +6,7 @@ from sqlalchemy import select
 from app.core.database import get_db
 from app.models.catalog import Country, Product
 from app.schemas.catalog import CountryResponse, DestinationResponse, ProductResponse
+from app.services.supplier_settings_svc import get_enabled_suppliers, supplier_visible_filter
 
 router = APIRouter(prefix="/catalog", tags=["Catalog"])
 
@@ -23,9 +24,13 @@ async def list_countries(
     # Only destinations that actually have something to sell. VivaPe lists
     # ~250 countries but most have no eSIM inventory, and surfacing those
     # gave visitors a country tile that opened to an empty package list.
+    enabled = await get_enabled_suppliers(db)
     has_products = (
         select(Product.id)
-        .where(Product.country_id == Country.id, Product.is_active == True)
+        .where(
+            Product.country_id == Country.id, Product.is_active == True,
+            supplier_visible_filter(Product.supplier_reference, enabled),
+        )
         .exists()
     )
     query = select(Country).where(Country.is_active == True, has_products)
@@ -33,8 +38,14 @@ async def list_countries(
         query = query.where(Country.is_popular == True)
     if search:
         query = query.where(Country.name_en.ilike(f"%{search}%") | Country.iso2.ilike(f"%{search}%"))
-    
-    query = query.order_by(Country.name_en.asc())
+
+    # Admin-controlled order for the home page's Popular Destinations row;
+    # irrelevant (and harmless) for the full /destinations listing, which
+    # never passes popular_only.
+    if popular_only:
+        query = query.order_by(Country.popular_order.asc(), Country.name_en.asc())
+    else:
+        query = query.order_by(Country.name_en.asc())
     res = await db.execute(query)
     return res.scalars().all()
 
@@ -45,10 +56,16 @@ async def list_country_products(iso2: str, db: AsyncSession = Depends(get_db)):
     if not country:
         raise HTTPException(status_code=404, detail="Country not found")
 
+    enabled = await get_enabled_suppliers(db)
     p_res = await db.execute(
-        select(Product).where(Product.country_id == country.id, Product.is_active == True)
-        # Cheapest first - what a traveler compares on; data amount breaks ties.
-        .order_by(Product.retail_price.asc(), Product.data_amount_gb.asc())
+        select(Product).where(
+            Product.country_id == country.id, Product.is_active == True,
+            supplier_visible_filter(Product.supplier_reference, enabled),
+        )
+        # An admin's recommended pick(s) lead, then cheapest first - what a
+        # traveler compares on once past the recommendation; data amount
+        # breaks ties.
+        .order_by(Product.is_featured.desc(), Product.retail_price.asc(), Product.data_amount_gb.asc())
     )
     return p_res.scalars().all()
 
@@ -73,16 +90,26 @@ async def get_destination(slug: str, db: AsyncSession = Depends(get_db)):
     if country is None:
         raise HTTPException(status_code=404, detail="Country not found")
 
+    enabled = await get_enabled_suppliers(db)
     p_res = await db.execute(
-        select(Product).where(Product.country_id == country.id, Product.is_active == True)
-        .order_by(Product.retail_price.asc(), Product.data_amount_gb.asc())
+        select(Product).where(
+            Product.country_id == country.id, Product.is_active == True,
+            supplier_visible_filter(Product.supplier_reference, enabled),
+        )
+        .order_by(Product.is_featured.desc(), Product.retail_price.asc(), Product.data_amount_gb.asc())
     )
     return DestinationResponse(country=country, products=p_res.scalars().all())
 
 
 @router.get("/products/{product_id}", response_model=ProductResponse)
 async def get_product(product_id: str, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Product).where(Product.id == product_id))
+    enabled = await get_enabled_suppliers(db)
+    res = await db.execute(
+        select(Product).where(
+            Product.id == product_id, Product.is_active == True,
+            supplier_visible_filter(Product.supplier_reference, enabled),
+        )
+    )
     product = res.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")

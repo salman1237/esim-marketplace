@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { ArrowRight, CheckCircle2, X } from "lucide-react";
+import { ArrowRight, CheckCircle2, Star, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
@@ -18,6 +18,7 @@ type Product = {
   validity_days: number;
   retail_price: string | number;
   is_unlimited: boolean;
+  is_featured?: boolean;
   currency?: string;
 };
 
@@ -36,6 +37,21 @@ const WORKING_STEPS = ["Payment confirmed", "Reserving your eSIM with the carrie
 const priceOf = (p: Product) => parseFloat(String(p.retail_price));
 const dataLabel = (p: Product) => (p.is_unlimited ? "Unlimited" : `${Number(p.data_amount_gb)} GB`);
 
+const PENDING_KEY = "esim_pending_purchase";
+
+// A rough, client-side estimate from the public (pre-login) code check -
+// just enough to show "you'll save about this much" on every card. The
+// real amount is always recomputed per-product, authoritatively, by
+// api.previewDiscount once the customer actually buys.
+function estimateDiscount(price: number, generic: { discount_type: string; value: string; max_discount_amount: string | null }) {
+  if (generic.discount_type === "PERCENT") {
+    let amount = (price * parseFloat(generic.value)) / 100;
+    if (generic.max_discount_amount) amount = Math.min(amount, parseFloat(generic.max_discount_amount));
+    return Math.min(amount, price);
+  }
+  return Math.min(parseFloat(generic.value), price);
+}
+
 export default function PackageBrowser({ country, products }: { country: any; products: Product[] }) {
   const { formatPrice } = useAppSettings();
   const filters = usePackageFilters(products);
@@ -45,6 +61,62 @@ export default function PackageBrowser({ country, products }: { country: any; pr
   const [code, setCode] = useState("");
   const [applied, setApplied] = useState<{ code: string; discountLabel: string; totalLabel: string } | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
+  const [checkingCode, setCheckingCode] = useState(false);
+  const [checkedOk, setCheckedOk] = useState<{ code: string; note: string } | null>(null);
+  const [genericDiscount, setGenericDiscount] = useState<{ discount_type: string; value: string; max_discount_amount: string | null } | null>(null);
+
+  const applyCode = async () => {
+    const typed = code.trim();
+    if (!typed) return;
+    setCheckingCode(true);
+    setCodeError(null);
+    try {
+      const res = await api.checkDiscountCode(typed);
+      if (res.valid) {
+        setGenericDiscount({ discount_type: res.discount_type, value: res.value, max_discount_amount: res.max_discount_amount });
+        setCheckedOk({
+          code: res.code,
+          note: res.scoped
+            ? "exact savings confirmed once you sign in to buy"
+            : `${res.discount_type === "PERCENT" ? res.value + "% off" : formatPrice(parseFloat(res.value)) + " off"}`,
+        });
+      } else {
+        setGenericDiscount(null);
+        setCheckedOk(null);
+        setCodeError(res.reason || "That code isn't valid.");
+      }
+    } catch {
+      setCodeError("Couldn't check that code. Try again.");
+    } finally {
+      setCheckingCode(false);
+    }
+  };
+
+  // After "Buy Now" sends a signed-out visitor to log in, the page comes
+  // back here with ?resume=1 - re-find the same package and continue
+  // exactly where they left off, code and all, instead of making them
+  // start over having already created an account for nothing.
+  React.useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("resume") !== "1") return;
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    let pending: { productId: string; code: string } | null = null;
+    try {
+      const raw = sessionStorage.getItem(PENDING_KEY);
+      if (raw) pending = JSON.parse(raw);
+    } catch {
+      pending = null;
+    }
+    sessionStorage.removeItem(PENDING_KEY);
+    window.history.replaceState(null, "", window.location.pathname);
+    if (!pending) return;
+    const product = products.find((p) => p.id === pending!.productId);
+    if (!product) return;
+    if (pending.code) setCode(pending.code);
+    // Let the code state settle before resuming the purchase it belongs to.
+    setTimeout(() => buyNow(product, pending!.code || undefined), 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   React.useEffect(() => {
     if (flow?.stage !== "working") {
@@ -102,10 +174,19 @@ export default function PackageBrowser({ country, products }: { country: any; pr
 
   // One Buy Now button. The wallet is offered only when it can cover the
   // plan; otherwise the customer goes straight to the payment gateway.
-  const buyNow = async (product: Product) => {
+  const buyNow = async (product: Product, overrideCode?: string) => {
     const token = localStorage.getItem("esim_token");
     if (!token) {
-      window.location.href = `/auth/login?next=${encodeURIComponent(window.location.pathname)}`;
+      // Remembered so the trip back from login/register can pick up
+      // exactly this package and code, instead of landing on the
+      // destination page with an empty cart and nothing chosen.
+      try {
+        sessionStorage.setItem(PENDING_KEY, JSON.stringify({ productId: product.id, code: code.trim() }));
+      } catch {
+        // Best effort - worst case the customer just re-picks the package.
+      }
+      const here = `${window.location.pathname}?resume=1`;
+      window.location.href = `/auth/login?next=${encodeURIComponent(here)}`;
       return;
     }
     setFlow({ stage: "checking", product });
@@ -115,7 +196,7 @@ export default function PackageBrowser({ country, products }: { country: any; pr
     // limited to a destination, a package or a minimum order. Checkout
     // re-validates under a lock, so this is a quote, not a promise.
     let discount: Discount | null = null;
-    const typed = code.trim();
+    const typed = (overrideCode ?? code).trim();
     if (typed) {
       try {
         const preview = await api.previewDiscount(token, typed, product.id);
@@ -169,6 +250,8 @@ export default function PackageBrowser({ country, products }: { country: any; pr
     setCode("");
     setApplied(null);
     setCodeError(null);
+    setCheckedOk(null);
+    setGenericDiscount(null);
   };
 
   return (
@@ -182,8 +265,11 @@ export default function PackageBrowser({ country, products }: { country: any; pr
       <div className="glass-panel rounded-2xl border border-gray-200 p-4 sm:p-5 max-w-md">
         <DiscountCodeBox
           value={code}
-          onChange={(v) => { setCode(v); setApplied(null); setCodeError(null); }}
+          onChange={(v) => { setCode(v); setApplied(null); setCodeError(null); setCheckedOk(null); setGenericDiscount(null); }}
           applied={applied}
+          checkedOk={checkedOk}
+          checking={checkingCode}
+          onApply={applyCode}
           error={codeError}
           onClear={clearCode}
         />
@@ -209,11 +295,35 @@ export default function PackageBrowser({ country, products }: { country: any; pr
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((p) => {
             const thisOne = flow?.product?.id === p.id;
+            const basePrice = priceOf(p);
+            const discountedPrice = genericDiscount ? basePrice - estimateDiscount(basePrice, genericDiscount) : null;
             return (
-              <div key={p.id} className="glass-card rounded-2xl p-5 border border-gray-200 flex flex-col">
+              <div
+                key={p.id}
+                className={`glass-card rounded-2xl p-5 border flex flex-col relative ${
+                  p.is_featured ? "border-amber-300 ring-1 ring-amber-200" : "border-gray-200"
+                }`}
+              >
+                {p.is_featured && (
+                  <span className="absolute -top-2.5 left-4 flex items-center gap-1 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow">
+                    <Star className="w-3 h-3 fill-white" /> Recommended
+                  </span>
+                )}
                 <div className="text-xl font-black text-slate-900">{dataLabel(p)}</div>
                 <div className="text-xs text-slate-500 mt-0.5">{p.validity_days} days validity · 4G/5G</div>
-                <div className="text-2xl font-black text-emerald-600 mt-4">{formatPrice(priceOf(p))}</div>
+                {discountedPrice !== null ? (
+                  <div className="mt-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-slate-400 line-through">{formatPrice(basePrice)}</span>
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 rounded-full px-2 py-0.5">
+                        SAVE {formatPrice(basePrice - discountedPrice)}
+                      </span>
+                    </div>
+                    <div className="text-2xl font-black text-emerald-600">{formatPrice(discountedPrice)}</div>
+                  </div>
+                ) : (
+                  <div className="text-2xl font-black text-emerald-600 mt-4">{formatPrice(basePrice)}</div>
+                )}
                 <button
                   onClick={() => buyNow(p)}
                   disabled={busy}

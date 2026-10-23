@@ -1,0 +1,142 @@
+# Beta environment (beta.triptel.co) — the `development` branch's own stack.
+#
+# Deliberately a SEPARATE file from docker-compose.yml rather than one
+# compose file reused twice: docker-compose.yml hardcodes container_name and
+# top-level volume names (so that prod's own redeploys are predictable), and
+# those same hardcoded names would collide with the running production
+# containers if this were deployed from the same file on the same host. Every
+# name below is suffixed "-beta" specifically to make that collision
+# impossible, not as a style choice.
+#
+# Database: beta gets its OWN Postgres container and volume, seeded ONCE on
+# first boot from a snapshot of production data (see backend/beta-db-init/).
+# After that first boot, beta's data is entirely its own — nothing it does
+# here is ever read back into production, and nothing production does after
+# the snapshot was taken appears in beta. See business/09_AI_Agent_Continuation_Guide.md
+# if you need to refresh the snapshot later.
+#
+# Credentials: VIVAPE_* and SHURJOPAY_* are set in the Dokploy UI to the same
+# values as production (an explicit choice — it means a completed purchase on
+# beta is a REAL order against the real supplier account). SHURJOPAY itself
+# still points at the sandbox gateway in production, so no real card money is
+# at risk either way. SECRET_KEY and POSTGRES_PASSWORD are beta's own, not
+# shared with production.
+
+services:
+  esim-db-beta:
+    image: postgres:16-alpine
+    container_name: esim-db-beta
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-esim_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD env var is required}
+      POSTGRES_DB: ${POSTGRES_DB:-esim_db}
+    volumes:
+      - postgres_data_beta:/var/lib/postgresql/data
+      - ./backend/beta-db-init:/docker-entrypoint-initdb.d:ro
+      # Absolute host path, outside the git checkout on purpose - this is
+      # real customer data and must never be something `git clone` can fetch.
+      # One-time use: only read on a genuinely empty data directory.
+      - /root/esim-beta-setup/prod-snapshot.dump:/snapshot/prod-snapshot.dump:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-esim_user} -d ${POSTGRES_DB:-esim_db}"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+    networks:
+      - esim-network-beta
+
+  esim-backend-beta:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: esim-backend-beta
+    restart: unless-stopped
+    depends_on:
+      esim-db-beta:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-esim_user}:${POSTGRES_PASSWORD}@esim-db-beta:5432/${POSTGRES_DB:-esim_db}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY env var is required}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
+      VIVAPE_BASE_URL: ${VIVAPE_BASE_URL:-https://app.vivape.net/api}
+      CATALOG_SYNC_INTERVAL_HOURS: ${CATALOG_SYNC_INTERVAL_HOURS:-4}
+      SUPPLIER_TIMEZONE: ${SUPPLIER_TIMEZONE:-Asia/Hong_Kong}
+      VIVAPE_EMAIL: ${VIVAPE_EMAIL:?VIVAPE_EMAIL env var is required}
+      VIVAPE_PASSWORD: ${VIVAPE_PASSWORD:?VIVAPE_PASSWORD env var is required}
+      SHURJOPAY_BASE_URL: ${SHURJOPAY_BASE_URL:-https://sandbox.shurjopayment.com}
+      SHURJOPAY_USERNAME: ${SHURJOPAY_USERNAME:?SHURJOPAY_USERNAME env var is required}
+      SHURJOPAY_PASSWORD: ${SHURJOPAY_PASSWORD:?SHURJOPAY_PASSWORD env var is required}
+      SHURJOPAY_PREFIX: ${SHURJOPAY_PREFIX:-NOKBETA}
+      SHURJOPAY_RETURN_URL: ${SHURJOPAY_RETURN_URL:-https://beta.triptel.co/api/v1/payments/shurjopay/callback}
+      SHURJOPAY_CANCEL_URL: ${SHURJOPAY_CANCEL_URL:-https://beta.triptel.co/wallet?topup=cancelled}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://beta.triptel.co}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://beta.triptel.co}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-1095507553767-hkuh44db04q1lvrnptill6frtckcb42t.apps.googleusercontent.com}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-no-reply@triptel.co}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Triptel (beta)}
+      NOTICE_BCC_EMAIL: ${NOTICE_BCC_EMAIL:-triptel.com@gmail.com}
+      UPLOADS_DIR: /app/uploads
+      KYC_UPLOADS_DIR: /app/kyc_uploads
+      WITHDRAWAL_UPLOADS_DIR: /app/withdrawal_uploads
+      SUPPORT_UPLOADS_DIR: /app/support_uploads
+    ports:
+      - "${BACKEND_PORT:-8001}:8000"
+    volumes:
+      - uploads_data_beta:/app/uploads
+      - kyc_uploads_data_beta:/app/kyc_uploads
+      - withdrawal_uploads_data_beta:/app/withdrawal_uploads
+      - support_uploads_data_beta:/app/support_uploads
+      - logs_data_beta:/var/log/esim
+    networks:
+      - esim-network-beta
+      - dokploy-network
+
+  esim-frontend-beta:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://beta.triptel.co}
+        NEXT_PUBLIC_DEFAULT_CURRENCY: ${NEXT_PUBLIC_DEFAULT_CURRENCY:-BDT}
+        NEXT_PUBLIC_DEFAULT_LOCALE: ${NEXT_PUBLIC_DEFAULT_LOCALE:-en}
+    container_name: esim-frontend-beta
+    restart: unless-stopped
+    depends_on:
+      - esim-backend-beta
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://beta.triptel.co}
+      NEXT_PUBLIC_DEFAULT_CURRENCY: ${NEXT_PUBLIC_DEFAULT_CURRENCY:-BDT}
+      NEXT_PUBLIC_DEFAULT_LOCALE: ${NEXT_PUBLIC_DEFAULT_LOCALE:-en}
+    ports:
+      - "${FRONTEND_PORT:-3002}:3000"
+    networks:
+      - esim-network-beta
+      - dokploy-network
+
+volumes:
+  postgres_data_beta:
+    name: esim_postgres_data_beta
+  uploads_data_beta:
+    name: esim_uploads_data_beta
+  kyc_uploads_data_beta:
+    name: esim_kyc_uploads_data_beta
+  withdrawal_uploads_data_beta:
+    name: esim_withdrawal_uploads_data_beta
+  support_uploads_data_beta:
+    name: esim_support_uploads_data_beta
+  logs_data_beta:
+    name: esim_logs_data_beta
+
+networks:
+  esim-network-beta:
+    name: esim-network-beta
+    driver: bridge
+  dokploy-network:
+    external: true

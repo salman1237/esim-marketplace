@@ -18,6 +18,7 @@ from app.services import discount_svc
 from app.services.checkout_svc import resolve_beneficiary, RESELLER_ROLES
 from app.services.order_fulfilment import start_fulfilment
 from app.core.logging import get_logger
+from app.services.supplier_settings_svc import get_enabled_suppliers, supplier_visible_filter
 
 logger = get_logger(__name__)
 
@@ -34,7 +35,13 @@ async def checkout_esim(
         raise HTTPException(status_code=403, detail="Only merchants, admins, and super admins can buy for another user")
 
     # 1. Fetch Product
-    p_res = await db.execute(select(Product).where(Product.id == req.product_id, Product.is_active == True))
+    enabled_suppliers = await get_enabled_suppliers(db)
+    p_res = await db.execute(
+        select(Product).where(
+            Product.id == req.product_id, Product.is_active == True,
+            supplier_visible_filter(Product.supplier_reference, enabled_suppliers),
+        )
+    )
     product = p_res.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found or inactive")

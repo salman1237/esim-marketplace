@@ -22,6 +22,7 @@ from app.services.currency_svc import CurrencyService
 from app.services.catalog_sync_svc import sync_vivape_catalog
 from app.services.webhook_svc import retry_failed_webhooks
 from app.services.order_fulfilment import recover_stuck_orders
+from app.services.trip_feedback_svc import send_due_trip_feedback_reminders
 from app.core.seed_translations import SHIPPED_LOCALE_CODES, PLACEHOLDER_LANGUAGES, load_shipped_translations, flatten, EN_TRANSLATIONS
 from app.core.logging import configure_logging, get_logger
 from app.api.v1 import api_v1_router
@@ -174,6 +175,23 @@ async def lifespan(app: FastAPI):
     # Also once at startup: a deploy is exactly the event that kills
     # in-flight background provisioning tasks.
     asyncio.create_task(_scheduled_order_recovery())
+
+    async def _scheduled_trip_feedback():
+        async with AsyncSessionLocal() as db:
+            try:
+                result = await send_due_trip_feedback_reminders(db)
+                if result["candidates"]:
+                    logger.info("scheduled_trip_feedback_completed", **result)
+            except Exception as e:
+                logger.warning("scheduled_trip_feedback_failed", error=str(e))
+
+    # Every 6 hours is frequent enough that the 36-hour lookback window
+    # (REMINDER_WINDOW in trip_feedback_svc) comfortably overlaps runs,
+    # without emailing anyone within hours of their trip actually ending.
+    scheduler.add_job(
+        _scheduled_trip_feedback, "interval", hours=6,
+        id="trip_feedback_reminder", max_instances=1,
+    )
 
     if not scheduler.running:
         scheduler.start()

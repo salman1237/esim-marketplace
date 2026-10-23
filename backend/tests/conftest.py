@@ -151,6 +151,8 @@ async def create_test_product(
     price: Decimal = Decimal("9.9900"),
     supplier_product_id: int | None = 999001,
     supplier_receiver_amount: Decimal | None = Decimal("1000.0000"),
+    supplier_reference: str | None = None,
+    is_featured: bool = False,
 ) -> Product:
     """`supplier_product_id`/`supplier_receiver_amount` default to a fake
     but non-null mapping so provision_esim takes the VivaPe branch, which
@@ -179,6 +181,8 @@ async def create_test_product(
         is_active=True,
         supplier_product_id=supplier_product_id,
         supplier_receiver_amount=supplier_receiver_amount,
+        supplier_reference=supplier_reference,
+        is_featured=is_featured,
     )
     db_session.add(product)
     await db_session.commit()

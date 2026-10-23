@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import AuthBrandMark from "@/components/AuthBrandMark";
@@ -12,6 +12,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [nextParam, setNextParam] = useState<string | null>(null);
+
+  useEffect(() => {
+    setNextParam(new URLSearchParams(window.location.search).get("next"));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,7 +26,16 @@ export default function LoginPage() {
       const res = await api.login({ email, password });
       localStorage.setItem("esim_token", res.access_token);
       localStorage.setItem("esim_role", res.role);
-      window.location.href = res.role === "SUPER_ADMIN" || res.role === "ADMIN" ? "/admin" : "/";
+      if (res.role === "SUPER_ADMIN" || res.role === "ADMIN") {
+        window.location.href = "/admin";
+        return;
+      }
+      // A "Buy Now" while signed out sends the visitor here with
+      // ?next=<the package they wanted, plus ?resume=1> - honour it so
+      // signing in actually continues the purchase instead of dropping
+      // them on the home page.
+      const next = new URLSearchParams(window.location.search).get("next");
+      window.location.href = next || "/";
     } catch (err: any) {
       setError(err.message || "Invalid credentials");
     } finally {
@@ -90,7 +104,10 @@ export default function LoginPage() {
 
         <div className="mt-6 text-center text-xs text-slate-500">
           Don't have an account?{" "}
-          <Link href="/auth/register" className="text-brand-600 font-semibold hover:underline">
+          <Link
+            href={nextParam ? `/auth/register?next=${encodeURIComponent(nextParam)}` : "/auth/register"}
+            className="text-brand-600 font-semibold hover:underline"
+          >
             Create account
           </Link>
         </div>

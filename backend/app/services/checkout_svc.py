@@ -69,7 +69,13 @@ def _extract_esim_details(esim_data: dict) -> dict | None:
     get-esim-by-trx endpoint, and each returns a differently-shaped
     response depending on the product's supplier type - there is no single
     schema. Tries each known shape in turn; returns None if none match.
-    Confirmed against real (not mocked) VivaPe responses for both shapes."""
+    Confirmed against real (not mocked) VivaPe responses for all three
+    shapes, Telna's confirmed by an actual live purchase (trx 60401, ICCID
+    8910300000064674263) on 2026-10-23 - which this parser originally
+    failed to recognise, refunding a real customer for a real eSIM that
+    VivaPe had already issued and charged us for. That gap is exactly why
+    every shape here is checked against a response VivaPe actually sent,
+    not against documentation or a guess at the pattern."""
     if not isinstance(esim_data, dict):
         return None
 
@@ -119,6 +125,21 @@ def _extract_esim_details(esim_data: dict) -> dict | None:
                         }
             except (json.JSONDecodeError, KeyError, IndexError, TypeError):
                 pass
+
+    # "telna"-type products: iccid, smdpAddress and matchingId sit directly
+    # on esim_order as their own keys - no qrcodeContent (worldmove's shape)
+    # and no JSON-string-wrapped order/esims array (esimgo's shape). Telna
+    # also sends its own "activation_code", already a full LPA string, but
+    # it is not trusted over building one from the same iccid/smdp/matching
+    # fields every other branch returns, so downstream code never has to
+    # know which supplier it came from.
+    if isinstance(esim_order, dict) and esim_order.get("iccid") and esim_order.get("smdpAddress") and esim_order.get("matchingId"):
+        return {
+            "iccid": esim_order["iccid"],
+            "lpa": f"LPA:1${esim_order['smdpAddress']}${esim_order['matchingId']}",
+            "smdp": esim_order["smdpAddress"],
+            "matching_id": esim_order["matchingId"],
+        }
 
     return None
 

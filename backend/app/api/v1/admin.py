@@ -52,6 +52,7 @@ from app.services.shurjopay_svc import ShurjoPayService
 from app.services.pricing_svc import MAX_SELLING_PROFIT_PCT, get_selling_profit_pct, retail_price_for, set_selling_profit_pct
 from app.services.audit_svc import AuditService
 from app.services.catalog_sync_svc import sync_vivape_catalog
+from app.services.supplier_settings_svc import get_enabled_suppliers, serialize_all, set_enabled_suppliers, supplier_visible_filter
 from app.services.vivape_adapter import VivaPeAdapter
 from app.services.currency_svc import CurrencyService
 from app.services.checkout_svc import provision_esim
@@ -68,6 +69,7 @@ logger = get_logger(__name__)
 class ProductUpdateRequest(BaseModel):
     retail_price: Optional[float] = None
     is_active: Optional[bool] = None
+    is_featured: Optional[bool] = None
 
 class UserRoleUpdateRequest(BaseModel):
     role: UserRole
@@ -598,7 +600,12 @@ async def admin_purchase_esim_for_customer(
     if not target:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    p_res = await db.execute(select(Product).where(Product.id == req.product_id, Product.is_active == True))
+    p_res = await db.execute(
+        select(Product).where(
+            Product.id == req.product_id, Product.is_active == True,
+            supplier_visible_filter(Product.supplier_reference, await get_enabled_suppliers(db)),
+        )
+    )
     product = p_res.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found or inactive")
@@ -1176,13 +1183,16 @@ async def get_admin_catalog(
     q: str | None = None,
     country_iso: str | None = None,
     is_active: bool | None = None,
+    featured_only: bool = False,
     limit: int = 100,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
 ):
     """Searchable, paged product list. Syncing every country (not just ten)
     grew this from ~135 rows to thousands, so returning a flat newest-200
-    slice was no longer a usable way for an admin to find one product."""
+    slice was no longer a usable way for an admin to find one product.
+    featured_only is the quick way to review every currently-recommended
+    pick across the whole catalog in one screen."""
     limit = max(1, min(limit, 200))
     filters = []
     if q:
@@ -1192,6 +1202,8 @@ async def get_admin_catalog(
         filters.append(Country.iso2 == country_iso.strip().upper())
     if is_active is not None:
         filters.append(Product.is_active == is_active)
+    if featured_only:
+        filters.append(Product.is_featured == True)  # noqa: E712
 
     base = select(Product, Country).join(Country, Product.country_id == Country.id)
     if filters:
@@ -1225,6 +1237,7 @@ async def get_admin_catalog(
                 "currency": p.currency,
                 "supplier_reference": p.supplier_reference,
                 "is_active": p.is_active,
+                "is_featured": p.is_featured,
             }
             for p, c in res.all()
         ],
@@ -1248,6 +1261,113 @@ async def export_catalog_xlsx(
     )
 
 
+@router.get("/supplier-settings", dependencies=[Depends(require_admin)])
+async def get_supplier_settings(db: AsyncSession = Depends(get_db)):
+    """Every supplier catalog_parsing recognises, with its label and
+    current on/off state - what the admin console renders as checkboxes."""
+    return {"suppliers": await serialize_all(db)}
+
+
+class SupplierSettingsRequest(BaseModel):
+    enabled_suppliers: list[str]
+
+
+@router.put("/supplier-settings", dependencies=[Depends(require_super_admin)])
+async def update_supplier_settings(
+    req: SupplierSettingsRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Which suppliers' products a customer or partner can browse and buy.
+    Super-admin-only, the same gate as the global selling-profit percentage
+    (PUT /pricing) - this changes what the entire storefront offers, not one
+    product. Never deletes or deactivates anything: a disabled supplier's
+    products stay exactly as they are in the catalog, just unreachable by a
+    customer or partner until re-enabled."""
+    try:
+        change = await set_enabled_suppliers(db, req.enabled_suppliers, admin_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_ENABLED_SUPPLIERS",
+        before_state={"enabled_suppliers": change["before"]},
+        after_state={"enabled_suppliers": change["after"]},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"suppliers": await serialize_all(db)}
+
+
+@router.get("/countries", dependencies=[Depends(require_admin)])
+async def list_admin_countries(search: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    """Every destination with inventory, for the Popular Destinations admin
+    panel - not filtered to is_popular, so an admin can both add new ones
+    and remove existing ones from the home page."""
+    has_products = select(Product.id).where(Product.country_id == Country.id, Product.is_active == True).exists()  # noqa: E712
+    query = select(Country).where(Country.is_active == True, has_products)
+    if search:
+        query = query.where(Country.name_en.ilike(f"%{search}%") | Country.iso2.ilike(f"%{search}%"))
+    res = await db.execute(query.order_by(Country.popular_order.asc(), Country.name_en.asc()))
+    countries = res.scalars().all()
+    return {
+        "countries": [
+            {"id": c.id, "iso2": c.iso2, "name_en": c.name_en, "flag_url": c.flag_url,
+             "is_popular": c.is_popular, "popular_order": c.popular_order}
+            for c in countries
+        ]
+    }
+
+
+class PopularDestinationEntry(BaseModel):
+    id: int
+    is_popular: bool
+    popular_order: int = 0
+
+
+class PopularDestinationsRequest(BaseModel):
+    # The whole set, replaced atomically - an admin reordering the list sees
+    # one save button, not a race between several per-row PATCH calls.
+    countries: list[PopularDestinationEntry]
+
+
+@router.put("/countries/popular", dependencies=[Depends(require_super_admin)])
+async def update_popular_destinations(
+    req: PopularDestinationsRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Which destinations show on the home page, and in what order. Same
+    gate as PUT /pricing and PUT /supplier-settings: this changes what
+    every visitor sees first, not one record."""
+    ids = [e.id for e in req.countries]
+    res = await db.execute(select(Country).where(Country.id.in_(ids)))
+    by_id = {c.id: c for c in res.scalars().all()}
+    before = {c.id: {"is_popular": c.is_popular, "popular_order": c.popular_order} for c in by_id.values()}
+
+    for entry in req.countries:
+        country = by_id.get(entry.id)
+        if not country:
+            raise HTTPException(status_code=404, detail=f"Country {entry.id} not found")
+        country.is_popular = entry.is_popular
+        country.popular_order = entry.popular_order
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_POPULAR_DESTINATIONS",
+        before_state=before,
+        after_state={c.id: {"is_popular": c.is_popular, "popular_order": c.popular_order} for c in by_id.values()},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return await list_admin_countries(search=None, db=db)
+
+
 @router.put("/catalog/{product_id}", dependencies=[Depends(require_admin)])
 async def update_product(
     product_id: str,
@@ -1261,21 +1381,23 @@ async def update_product(
     if not p:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    before = {"retail_price": float(p.retail_price), "is_active": p.is_active}
+    before = {"retail_price": float(p.retail_price), "is_active": p.is_active, "is_featured": p.is_featured}
     if req.retail_price is not None:
         p.retail_price = Decimal(str(req.retail_price))
     if req.is_active is not None:
         p.is_active = req.is_active
+    if req.is_featured is not None:
+        p.is_featured = req.is_featured
 
     await AuditService.log_action(
         db, actor_id=admin_user.id, actor_role=admin_user.role.value,
         action="UPDATE_CATALOG_PRODUCT", before_state=before,
-        after_state={"product_id": p.id, "retail_price": float(p.retail_price), "is_active": p.is_active},
+        after_state={"product_id": p.id, "retail_price": float(p.retail_price), "is_active": p.is_active, "is_featured": p.is_featured},
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent")
     )
     await db.commit()
-    return {"status": "success", "product_id": p.id}
+    return {"status": "success", "product_id": p.id, "is_featured": p.is_featured}
 
 # --- Pricing: global selling profit % ---
 
