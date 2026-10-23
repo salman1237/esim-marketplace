@@ -86,6 +86,56 @@ def test_extracts_from_esimgo_shape():
     assert details["matching_id"] == "4G7KK-ISDQV-YJZYN-NTF8I"
 
 
+def test_extracts_from_telna_shape():
+    """Real captured VivaPe get-esim-by-trx response for a telna-type
+    product (trx 60401, "VivaPe Test - 500MB - BGD - 7 Days") from an
+    actual live purchase on 2026-10-23, run specifically to verify Telna
+    support before any real customer could reach it. The first attempt
+    refunded this exact purchase despite VivaPe having genuinely issued
+    and charged for the eSIM (ICCID 8910300000064674263) - this parser had
+    no shape that matched iccid/smdpAddress/matchingId sitting directly on
+    esim_order, a structure distinct from both worldmove's (qrcodeContent)
+    and esimgo's (a JSON-string-wrapped order/esims array)."""
+    esim_data = {
+        "esim_order": {
+            "id": 1,
+            "order_reference": "TLN-ORD-GFDOU23MJJ",
+            "iccid": "8910300000064674263",
+            "package_id": "e399ef27-4896-4faa-ac0f-19de9cc4240d",
+            "package_template_id": "21701498",
+            "purchase_transaction_id": 60401,
+            "sku": "TELNA-BGD-500MB-7D",
+            "product_name": "VivaPe Test - 500MB - BGD - 7 Days",
+            "data_allowance_bytes": 524288000,
+            "activation_code": "LPA:1$consumer.e-sim.global$TN20260608094433A7B7962F",
+            "direct_apple_url": "https://esimsetup.apple.com/esim_qrcode_provisioning?carddata=LPA%3A1%24consumer.e-sim.global%24TN20260608094433A7B7962F",
+            "status": "active",
+            "smdpAddress": "consumer.e-sim.global",
+            "matchingId": "TN20260608094433A7B7962F",
+            "qr_code_url": "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=LPA%3A1%24consumer.e-sim.global%24TN20260608094433A7B7962F",
+            "profile_state": "active",
+        }
+    }
+    details = _extract_esim_details(esim_data)
+    assert details is not None
+    assert details["iccid"] == "8910300000064674263"
+    assert details["lpa"] == "LPA:1$consumer.e-sim.global$TN20260608094433A7B7962F"
+    assert details["smdp"] == "consumer.e-sim.global"
+    assert details["matching_id"] == "TN20260608094433A7B7962F"
+    # Telna's own "activation_code" is already the same string - confirms
+    # the two never disagree, though it is matchingId/smdpAddress that are
+    # actually trusted, not activation_code itself.
+    assert details["lpa"] == esim_data["esim_order"]["activation_code"]
+
+
+def test_telna_shape_requires_all_three_fields_not_just_iccid():
+    """esim_order.iccid alone must not be enough to match the telna shape -
+    an incomplete/partial response (e.g. mid-provisioning) must fall
+    through to None and refund, not synthesize an LPA from missing parts."""
+    assert _extract_esim_details({"esim_order": {"iccid": "8910300000064674263"}}) is None
+    assert _extract_esim_details({"esim_order": {"iccid": "x", "smdpAddress": "y"}}) is None  # no matchingId
+
+
 @pytest.mark.parametrize("esim_data", [
     {},
     {"error": "Something went wrong"},
