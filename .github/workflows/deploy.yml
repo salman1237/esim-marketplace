@@ -2,7 +2,7 @@ name: Test & Deploy
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, development ]
   pull_request:
     branches: [ main ]
 
@@ -41,19 +41,24 @@ jobs:
 
   deploy:
     needs: backend-tests
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development')
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Dokploy deployment and wait for it to finish
         env:
           DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
-          COMPOSE_ID: ${{ secrets.DOKPLOY_COMPOSE_ID }}
+          # main -> production (triptel.co), development -> beta (beta.triptel.co).
+          # Two separate Dokploy compose apps, two separate compose IDs; which
+          # one gets redeployed follows the branch that was actually pushed,
+          # never a hardcoded default.
+          COMPOSE_ID: ${{ github.ref == 'refs/heads/main' && secrets.DOKPLOY_COMPOSE_ID || secrets.DOKPLOY_BETA_COMPOSE_ID }}
           DOKPLOY_URL: http://89.116.122.118:3000
           # Passed as an env var (not interpolated into the shell command)
           # since a commit message is untrusted, multi-line content.
           COMMIT_TITLE: ${{ github.event.head_commit.message }}
         run: |
           set -e
+          echo "Branch: ${{ github.ref_name }}"
           echo "Triggering deploy via Dokploy API (the push webhook silently no-ops on a git-branch mismatch it reports as a redirect, which curl -f does not treat as failure — this endpoint gives an honest queued/error result instead)..."
           payload=$(python3 -c "import json,os; print(json.dumps({'composeId': os.environ['COMPOSE_ID'], 'title': os.environ['COMMIT_TITLE']}))")
           # --max-time/--connect-timeout so a network blip between the
