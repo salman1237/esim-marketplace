@@ -35,6 +35,7 @@ class ProductResponse(BaseModel):
     currency: str
     is_unlimited: bool
     is_active: bool
+    is_featured: bool = False
     coverage_networks: Optional[str] = None
 
     class Config:

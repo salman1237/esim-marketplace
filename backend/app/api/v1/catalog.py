@@ -62,8 +62,10 @@ async def list_country_products(iso2: str, db: AsyncSession = Depends(get_db)):
             Product.country_id == country.id, Product.is_active == True,
             supplier_visible_filter(Product.supplier_reference, enabled),
         )
-        # Cheapest first - what a traveler compares on; data amount breaks ties.
-        .order_by(Product.retail_price.asc(), Product.data_amount_gb.asc())
+        # An admin's recommended pick(s) lead, then cheapest first - what a
+        # traveler compares on once past the recommendation; data amount
+        # breaks ties.
+        .order_by(Product.is_featured.desc(), Product.retail_price.asc(), Product.data_amount_gb.asc())
     )
     return p_res.scalars().all()
 
@@ -94,7 +96,7 @@ async def get_destination(slug: str, db: AsyncSession = Depends(get_db)):
             Product.country_id == country.id, Product.is_active == True,
             supplier_visible_filter(Product.supplier_reference, enabled),
         )
-        .order_by(Product.retail_price.asc(), Product.data_amount_gb.asc())
+        .order_by(Product.is_featured.desc(), Product.retail_price.asc(), Product.data_amount_gb.asc())
     )
     return DestinationResponse(country=country, products=p_res.scalars().all())
 

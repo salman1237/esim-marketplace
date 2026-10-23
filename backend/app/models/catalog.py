@@ -39,6 +39,11 @@ class Product(Base):
     currency = Column(String(3), default="EUR", nullable=False)
     is_unlimited = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
+    # Admin-picked "recommended" package for its destination - shown first
+    # and badged on the explore page. Not unique or capped at the database
+    # level: the admin console is what keeps it to a sane couple of picks
+    # per country, the same way is_popular is self-policed on Country.
+    is_featured = Column(Boolean, default=False, server_default="false", nullable=False)
     supplier_reference = Column(String(100), nullable=True)  # esimgo_bundle or worldmove_esim
     # VivaPe's own receiver_amount_min for this product, stored verbatim
     # from the catalog sync and passed straight back to create-transaction.

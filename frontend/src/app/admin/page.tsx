@@ -23,7 +23,7 @@ import AgentsTab from "@/components/admin/AgentsTab";
 import EsimLiveStatus from "@/components/admin/EsimLiveStatus";
 import OverviewTab from "@/components/admin/overview/OverviewTab";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { Trash2, Download } from "lucide-react";
+import { Trash2, Download, Star } from "lucide-react";
 import { saveBlob } from "@/components/finance/StatementView";
 import { formatDate, formatDateTime, formatTime } from "@/lib/datetime";
 import CommissionCell from "@/components/admin/CommissionCell";
@@ -281,6 +281,17 @@ export default function AdminConsolePage() {
     try {
       await api.updateAdminCatalogProduct(token, productId, { is_active: !isActive });
       setCatalog(catalog.map(p => p.id === productId ? { ...p, is_active: !isActive } : p));
+    } catch (err: any) {
+      setCatalogNotice("Failed to update product: " + err.message);
+    }
+  };
+
+  const handleToggleFeatured = async (productId: string, isFeatured: boolean) => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    try {
+      await api.updateAdminCatalogProduct(token, productId, { is_featured: !isFeatured });
+      setCatalog(catalog.map(p => p.id === productId ? { ...p, is_featured: !isFeatured } : p));
     } catch (err: any) {
       setCatalogNotice("Failed to update product: " + err.message);
     }
@@ -1192,12 +1203,13 @@ ${deactivated} product(s) deactivated - no longer offered by the supplier after 
                   <th className="py-2">Base Cost</th>
                   <th className="py-2">Selling Price</th>
                   <th className="py-2">Status</th>
+                  <th className="py-2">Featured</th>
                   <th className="py-2">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {catalog.map((p) => (
-                  <tr key={p.id}>
+                  <tr key={p.id} className={p.is_featured ? "bg-amber-50/50" : ""}>
                     <td className="py-2.5 font-bold text-slate-900">{p.country}</td>
                     <td className="py-2.5 text-slate-700">{p.title}</td>
                     <td className="py-2.5 text-slate-500">{p.is_unlimited ? "Unlimited" : `${p.data_gb} GB`} / {p.validity_days} Days</td>
@@ -1209,7 +1221,19 @@ ${deactivated} product(s) deactivated - no longer offered by the supplier after 
                       }`}>{p.is_active ? 'ACTIVE' : 'INACTIVE'}</span>
                     </td>
                     <td className="py-2.5">
-                      <button 
+                      <button
+                        onClick={() => handleToggleFeatured(p.id, !!p.is_featured)}
+                        title={p.is_featured ? "Remove from recommended" : "Mark as recommended for this destination"}
+                        className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded ${
+                          p.is_featured ? "bg-amber-100 text-amber-700 hover:bg-amber-200" : "bg-gray-100 text-slate-500 hover:bg-gray-200"
+                        }`}
+                      >
+                        <Star className={`w-3 h-3 ${p.is_featured ? "fill-amber-500 text-amber-500" : ""}`} />
+                        {p.is_featured ? "Recommended" : "Mark"}
+                      </button>
+                    </td>
+                    <td className="py-2.5">
+                      <button
                         onClick={() => handleToggleProduct(p.id, p.is_active)}
                         className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded"
                       >

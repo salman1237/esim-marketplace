@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { ArrowRight, CheckCircle2, X } from "lucide-react";
+import { ArrowRight, CheckCircle2, Star, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
@@ -18,6 +18,7 @@ type Product = {
   validity_days: number;
   retail_price: string | number;
   is_unlimited: boolean;
+  is_featured?: boolean;
   currency?: string;
 };
 
@@ -297,7 +298,17 @@ export default function PackageBrowser({ country, products }: { country: any; pr
             const basePrice = priceOf(p);
             const discountedPrice = genericDiscount ? basePrice - estimateDiscount(basePrice, genericDiscount) : null;
             return (
-              <div key={p.id} className="glass-card rounded-2xl p-5 border border-gray-200 flex flex-col">
+              <div
+                key={p.id}
+                className={`glass-card rounded-2xl p-5 border flex flex-col relative ${
+                  p.is_featured ? "border-amber-300 ring-1 ring-amber-200" : "border-gray-200"
+                }`}
+              >
+                {p.is_featured && (
+                  <span className="absolute -top-2.5 left-4 flex items-center gap-1 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow">
+                    <Star className="w-3 h-3 fill-white" /> Recommended
+                  </span>
+                )}
                 <div className="text-xl font-black text-slate-900">{dataLabel(p)}</div>
                 <div className="text-xs text-slate-500 mt-0.5">{p.validity_days} days validity · 4G/5G</div>
                 {discountedPrice !== null ? (

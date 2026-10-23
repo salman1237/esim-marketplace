@@ -69,6 +69,7 @@ logger = get_logger(__name__)
 class ProductUpdateRequest(BaseModel):
     retail_price: Optional[float] = None
     is_active: Optional[bool] = None
+    is_featured: Optional[bool] = None
 
 class UserRoleUpdateRequest(BaseModel):
     role: UserRole
@@ -1182,13 +1183,16 @@ async def get_admin_catalog(
     q: str | None = None,
     country_iso: str | None = None,
     is_active: bool | None = None,
+    featured_only: bool = False,
     limit: int = 100,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
 ):
     """Searchable, paged product list. Syncing every country (not just ten)
     grew this from ~135 rows to thousands, so returning a flat newest-200
-    slice was no longer a usable way for an admin to find one product."""
+    slice was no longer a usable way for an admin to find one product.
+    featured_only is the quick way to review every currently-recommended
+    pick across the whole catalog in one screen."""
     limit = max(1, min(limit, 200))
     filters = []
     if q:
@@ -1198,6 +1202,8 @@ async def get_admin_catalog(
         filters.append(Country.iso2 == country_iso.strip().upper())
     if is_active is not None:
         filters.append(Product.is_active == is_active)
+    if featured_only:
+        filters.append(Product.is_featured == True)  # noqa: E712
 
     base = select(Product, Country).join(Country, Product.country_id == Country.id)
     if filters:
@@ -1231,6 +1237,7 @@ async def get_admin_catalog(
                 "currency": p.currency,
                 "supplier_reference": p.supplier_reference,
                 "is_active": p.is_active,
+                "is_featured": p.is_featured,
             }
             for p, c in res.all()
         ],
@@ -1374,21 +1381,23 @@ async def update_product(
     if not p:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    before = {"retail_price": float(p.retail_price), "is_active": p.is_active}
+    before = {"retail_price": float(p.retail_price), "is_active": p.is_active, "is_featured": p.is_featured}
     if req.retail_price is not None:
         p.retail_price = Decimal(str(req.retail_price))
     if req.is_active is not None:
         p.is_active = req.is_active
+    if req.is_featured is not None:
+        p.is_featured = req.is_featured
 
     await AuditService.log_action(
         db, actor_id=admin_user.id, actor_role=admin_user.role.value,
         action="UPDATE_CATALOG_PRODUCT", before_state=before,
-        after_state={"product_id": p.id, "retail_price": float(p.retail_price), "is_active": p.is_active},
+        after_state={"product_id": p.id, "retail_price": float(p.retail_price), "is_active": p.is_active, "is_featured": p.is_featured},
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent")
     )
     await db.commit()
-    return {"status": "success", "product_id": p.id}
+    return {"status": "success", "product_id": p.id, "is_featured": p.is_featured}
 
 # --- Pricing: global selling profit % ---
 
