@@ -28,6 +28,11 @@ type Flow =
   | { stage: "checking"; product: Product }
   | { stage: "choose"; product: Product; balance: number; promo: number; discount: Discount | null }
   | { stage: "working"; product: Product }
+  // Paid and confirmed, but the supplier issues the eSIM asynchronously and
+  // hasn't yet. Deliberately NOT the error stage: this order is fine, and
+  // showing a red failure screen for it (which is what used to happen on
+  // the polling timeout) teaches customers to retry and buy a second eSIM.
+  | { stage: "preparing"; product: Product }
   | { stage: "redirecting"; product: Product }
   | { stage: "success"; product: Product; order: any }
   | { stage: "error"; product: Product; message: string };
@@ -157,12 +162,25 @@ export default function PackageBrowser({ country, products }: { country: any; pr
       });
       let order;
       try {
-        order = await waitForOrder(token, accepted.id);
+        // Most eSIMs land within a few seconds. Waiting a short while gets
+        // the QR on screen for the common case without making everyone else
+        // watch a spinner for three minutes.
+        order = await waitForOrder(token, accepted.id, { timeoutMs: 12000 });
       } catch {
-        setFlow({
-          stage: "error", product,
-          message: "This is taking longer than usual. Your order is still being set up and will appear in My eSIMs shortly — you'll also get it by email.",
-        });
+        setFlow({ stage: "preparing", product });
+        // Keep watching quietly: if it arrives while they are still here,
+        // upgrade to the QR. Only if they haven't moved on - re-opening a
+        // modal over whatever they did next would be worse than silence.
+        waitForOrder(token, accepted.id, { timeoutMs: 170000 })
+          .then((later) => {
+            if (later.status !== "COMPLETED") return;
+            setFlow((prev) =>
+              prev && prev.stage === "preparing" && prev.product.id === product.id
+                ? { stage: "success", product, order: later }
+                : prev
+            );
+          })
+          .catch(() => {});
         return;
       }
       if (order.status === "COMPLETED") setFlow({ stage: "success", product, order });
@@ -387,6 +405,29 @@ export default function PackageBrowser({ country, products }: { country: any; pr
                       <span className={i <= workingStep ? "text-slate-900 font-medium" : "text-slate-400"}>{label}</span>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {flow.stage === "preparing" && (
+              <div className="text-center">
+                <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900">Payment confirmed</h3>
+                <p className="text-xs text-slate-500 mt-2 mb-1">
+                  Your eSIM is being issued by the network. This usually takes a minute or two.
+                </p>
+                <p className="text-xs text-slate-500 mb-5">
+                  You don&apos;t need to wait here — we&apos;ll email the QR code, and it will appear in My eSIMs.
+                  <span className="block mt-1 font-semibold text-slate-700">Please don&apos;t buy again, you have already paid for this one.</span>
+                </p>
+                <div className="flex gap-3">
+                  <button onClick={() => setFlow(null)} className="flex-1 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-slate-700 text-xs font-semibold">Close</button>
+                  <a href="/my-esims" className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold flex items-center justify-center space-x-1">
+                    <span>View My eSIMs</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </a>
                 </div>
               </div>
             )}

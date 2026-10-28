@@ -24,6 +24,7 @@ import EsimLiveStatus from "@/components/admin/EsimLiveStatus";
 import OverviewTab from "@/components/admin/overview/OverviewTab";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { Trash2, Download, Star } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { saveBlob } from "@/components/finance/StatementView";
 import { formatDate, formatDateTime, formatTime } from "@/lib/datetime";
 import CommissionCell from "@/components/admin/CommissionCell";
@@ -1721,6 +1722,46 @@ WARNING: this sync would have deactivated ${res.deactivation_candidates} product
             {inspectingLog.esim_id && (
               <div className="mb-4">
                 <EsimLiveStatus esimId={inspectingLog.esim_id} />
+              </div>
+            )}
+            {/* The QR itself, not just the ICCID: most "it won't install"
+                tickets are resolved by reading the customer the activation
+                code or re-sending this image, and an admin had no way to
+                see it from here without digging through the raw JSON. */}
+            {(inspectingLog.qr_code_data || inspectingLog.lpa_string) && (
+              <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4 flex flex-col sm:flex-row gap-4 items-center">
+                <div className="bg-white p-2 rounded-lg border border-gray-200 shrink-0">
+                  <QRCodeSVG value={inspectingLog.qr_code_data || inspectingLog.lpa_string} size={132} level="M" />
+                </div>
+                <div className="min-w-0 w-full">
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Activation code (LPA)</div>
+                  <code className="block text-[11px] font-mono text-slate-800 break-all bg-gray-50 rounded-lg p-2 border border-gray-200">
+                    {inspectingLog.lpa_string || inspectingLog.qr_code_data}
+                  </code>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard?.writeText(inspectingLog.lpa_string || inspectingLog.qr_code_data)}
+                      className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-slate-700"
+                    >
+                      Copy activation code
+                    </button>
+                    {inspectingLog.iccid && (
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard?.writeText(inspectingLog.iccid)}
+                        className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-slate-700"
+                      >
+                        Copy ICCID
+                      </button>
+                    )}
+                  </div>
+                  {inspectingLog.is_mock_fallback && (
+                    <p className="mt-2 text-[11px] text-amber-700 font-semibold">
+                      Mock profile — not a real carrier eSIM.
+                    </p>
+                  )}
+                </div>
               </div>
             )}
             <pre className="text-[11px] font-mono text-slate-700 bg-gray-50 p-4 rounded-xl overflow-x-auto whitespace-pre-wrap break-all">
