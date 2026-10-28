@@ -305,10 +305,17 @@ export default function AdminConsolePage() {
       const res = await api.syncCatalog(token);
       const deactivated = res.deactivated_products ?? 0;
       alert(
-        `Sync completed! ${res.synced_countries} new countries, ${res.synced_products} new products, ${res.updated_products ?? 0} updated.` +
+        `Sync completed! ${res.synced_countries} new countries, ${res.synced_products} new products, ` +
+        `${res.products_in_feed ?? 0} in the supplier feed, ${res.updated_products ?? 0} changed.` +
         (deactivated > 0 ? `
 
-${deactivated} product(s) deactivated - no longer offered by the supplier after several sync cycles.` : "")
+${deactivated} product(s) deactivated - no longer offered by the supplier after several sync cycles.` : "") +
+        // A refused sweep means something is wrong with us, not with the
+        // supplier, and it has to be impossible to miss: the catalog was
+        // left fully purchasable on purpose and needs a human to look.
+        (res.deactivation_skipped ? `
+
+WARNING: this sync would have deactivated ${res.deactivation_candidates} product(s) - too large a share of the catalog to be a real supplier retirement, so NOTHING was deactivated and every product is still on sale. Check the supplier feed before trusting the next sync.` : "")
       );
     } catch (err: any) {
       alert("Catalog sync error: " + err.message);

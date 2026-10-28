@@ -6,7 +6,7 @@ be called from a scheduled background job, not just an admin click.
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.catalog import Country, Product
 from app.services.vivape_adapter import VivaPeAdapter
@@ -18,11 +18,19 @@ logger = get_logger(__name__)
 
 # A product that stops appearing in VivaPe's /products response for a
 # country is never explicitly told to us - it just silently isn't in the
-# list any more. Product.updated_at already advances every time a sync
-# still sees a product (the upsert touches ORM-tracked columns, which
-# triggers the column's onupdate), so a product VivaPe has actually retired
-# is identifiable by its updated_at going stale relative to how often this
-# job runs - no new column needed.
+# list any more. So "when did the feed last list this product" is recorded
+# explicitly, in Product.last_seen_in_feed_at, by a direct UPDATE of every
+# id the feed returned.
+#
+# It must NOT be inferred from updated_at. That was the original design and
+# it emptied the production storefront: SQLAlchemy compares values at flush
+# time, so re-assigning a product the same price/data it already had
+# produces no UPDATE and no onupdate. updated_at froze on every unchanged
+# product, went stale after the grace period, and the sweep below
+# deactivated ~1430 of 1473 products at the end of the very run that had
+# just seen all of them in the feed - then the next run revived them by
+# flipping is_active, giving a ~16h cycle of the catalog emptying itself
+# (23-28 Oct 2026).
 #
 # The grace period is deliberately several sync cycles, not one: a single
 # missed country (a timeout, a transient 5xx) must not make a perfectly
@@ -35,6 +43,18 @@ logger = get_logger(__name__)
 _SYNC_INTERVAL = timedelta(hours=4)
 _STALE_GRACE_CYCLES = 3
 STALE_GRACE = _SYNC_INTERVAL * _STALE_GRACE_CYCLES
+
+# No supplier retires most of its catalogue in one go, so a sweep that
+# would is far likelier to be a bug in us than a real mass retirement -
+# which is exactly what happened. Past this share of the active
+# supplier-sourced catalogue the sweep refuses to run, leaves every product
+# purchasable, and reports itself so the admin console can raise it: an
+# alert is recoverable, a silently emptied storefront during an ad campaign
+# is not.
+MAX_DEACTIVATION_SHARE = 0.2
+# Below this many rows, share is meaningless (2 of 3 products is 67%), so
+# small sweeps are always allowed through.
+MIN_DEACTIVATION_FLOOR = 25
 
 # Which destinations get highlighted on the storefront's "popular" grid.
 # This is purely a merchandising choice - products are synced for EVERY
@@ -57,7 +77,8 @@ async def sync_vivape_catalog(db: AsyncSession) -> dict:
     profit_pct = await get_selling_profit_pct(db)
     raw_countries = await VivaPeAdapter.get_countries(db)
     synced_c = 0
-    updated_p = 0
+    seen_p = 0
+    changed_p = 0
     created_p = 0
 
     existing_res = await db.execute(select(Country.iso2))
@@ -98,6 +119,7 @@ async def sync_vivape_catalog(db: AsyncSession) -> dict:
         existing_by_supplier_id = {p.supplier_product_id: p for p in existing_res.scalars().all()}
 
         raw_products = await VivaPeAdapter.get_products(db, c.id)
+        seen_ids: list[str] = []
         for p in raw_products:
             parsed = parse_vivape_product(p, profit_pct)
             if parsed is None:
@@ -118,7 +140,15 @@ async def sync_vivape_catalog(db: AsyncSession) -> dict:
                 # cycles) - being seen in the feed again is exactly what
                 # "active" means here.
                 existing.is_active = True
-                updated_p += 1
+                seen_p += 1
+                seen_ids.append(existing.id)
+                # Counts rows the database will really change, not rows we
+                # assigned to. The old counter reported "updated 1430"
+                # every run while writing nothing, which is why the feed
+                # was trusted and the sweep's damage stayed invisible in
+                # these very logs.
+                if db.is_modified(existing):
+                    changed_p += 1
             else:
                 db.add(Product(
                     supplier_product_id=parsed["supplier_product_id"],
@@ -131,9 +161,23 @@ async def sync_vivape_catalog(db: AsyncSession) -> dict:
                     currency="EUR",  # VivaPe prices in euro
                     is_unlimited=parsed["is_unlimited"],
                     supplier_reference=parsed["supplier_reference"],
-                    supplier_receiver_amount=parsed["supplier_receiver_amount"]
+                    supplier_receiver_amount=parsed["supplier_receiver_amount"],
+                    last_seen_in_feed_at=sync_started_at,
                 ))
                 created_p += 1
+
+        # Record every id the feed just listed, as a direct UPDATE rather
+        # than ORM assignment - this is the one write that must happen even
+        # when nothing about the product changed, so it cannot be left to
+        # change detection. updated_at is explicitly set to itself to keep
+        # the column's onupdate from firing: it still means "when this
+        # product's data last changed", not "when we last looked".
+        if seen_ids:
+            await db.execute(
+                update(Product)
+                .where(Product.id.in_(seen_ids))
+                .values(last_seen_in_feed_at=sync_started_at, updated_at=Product.updated_at)
+            )
 
         # Commit per country so a long full-catalog run doesn't hold one
         # giant transaction open, and a failure partway through keeps the
@@ -149,25 +193,58 @@ async def sync_vivape_catalog(db: AsyncSession) -> dict:
     # it) is what stops it from being purchasable and failing at checkout
     # against a supplier that no longer recognises it.
     stale_cutoff = sync_started_at - STALE_GRACE
-    deactivate_res = await db.execute(
-        update(Product)
-        .where(Product.is_active.is_(True), Product.updated_at < stale_cutoff)
-        .values(is_active=False)
+    # Only supplier-sourced products: a hand-created product is never in
+    # any feed, so last_seen_in_feed_at stays NULL forever and nothing
+    # would ever revive it once deactivated.
+    stale_clause = (
+        Product.is_active.is_(True),
+        Product.supplier_product_id.isnot(None),
+        Product.last_seen_in_feed_at.isnot(None),
+        Product.last_seen_in_feed_at < stale_cutoff,
     )
-    deactivated_p = deactivate_res.rowcount or 0
-    await db.commit()
+    stale_count = (await db.execute(
+        select(func.count()).select_from(Product).where(*stale_clause)
+    )).scalar_one()
+    active_count = (await db.execute(
+        select(func.count()).select_from(Product).where(
+            Product.is_active.is_(True), Product.supplier_product_id.isnot(None)
+        )
+    )).scalar_one()
+
+    deactivated_p = 0
+    deactivation_skipped = False
+    if stale_count >= MIN_DEACTIVATION_FLOOR and stale_count > active_count * MAX_DEACTIVATION_SHARE:
+        deactivation_skipped = True
+        logger.error(
+            "vivape_catalog_mass_deactivation_refused",
+            stale_products=stale_count,
+            active_products=active_count,
+            share=round(stale_count / active_count, 3) if active_count else None,
+            message="Refused to deactivate an implausible share of the catalog - left everything purchasable",
+        )
+    elif stale_count:
+        deactivate_res = await db.execute(update(Product).where(*stale_clause).values(is_active=False))
+        deactivated_p = deactivate_res.rowcount or 0
+        await db.commit()
 
     logger.info(
         "vivape_catalog_synced",
         synced_countries=synced_c,
         created_products=created_p,
-        updated_products=updated_p,
+        products_in_feed=seen_p,
+        changed_products=changed_p,
         deactivated_products=deactivated_p,
+        deactivation_skipped=deactivation_skipped,
     )
     return {
         "status": "success",
         "synced_countries": synced_c,
         "synced_products": created_p,
-        "updated_products": updated_p,
+        "products_in_feed": seen_p,
+        # Kept under its original key so the admin console's existing sync
+        # alert keeps working, but it now counts real changes.
+        "updated_products": changed_p,
         "deactivated_products": deactivated_p,
+        "deactivation_skipped": deactivation_skipped,
+        "deactivation_candidates": stale_count,
     }
