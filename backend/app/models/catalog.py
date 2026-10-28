@@ -55,6 +55,15 @@ class Product(Base):
     # value from cost_price or the title — it must be round-tripped as-is.
     supplier_receiver_amount = Column(Numeric(18, 4), nullable=True)
     coverage_networks = Column(Text, nullable=True)
+    # When the supplier's product feed last listed this product. Tracked
+    # explicitly rather than inferred from updated_at, which only advances
+    # when a row's VALUES actually change: a product whose price and data
+    # are identical run-to-run produces no UPDATE at all, so updated_at
+    # froze and the retirement sweep deactivated 1400+ live products it had
+    # just seen in the feed (prod, 23-28 Oct 2026). Written by a direct
+    # UPDATE, never by ORM attribute assignment, so it can never again be
+    # silently skipped by change detection.
+    last_seen_in_feed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
