@@ -23,6 +23,7 @@ from app.models.order import Order, OrderStatus
 from app.models.referral import ReferralEvent
 from app.models.user import User
 from app.services.checkout_svc import (
+    EsimNotReadyYet,
     provision_esim,
     distribute_commission,
     complete_from_supplier_trx,
@@ -163,7 +164,15 @@ async def recover_stuck_orders() -> dict:
                         profile = await complete_from_supplier_trx(db, order, product, buyer.id, buyer.role.value)
                     except Exception as e:
                         if now - order.updated_at < GIVE_UP_AFTER:
-                            logger.warning("recovery_supplier_unreachable_will_retry", order_id=order.id, error=str(e))
+                            # Two very different reasons to retry, logged
+                            # apart because "pending" is the supplier working
+                            # normally and "unreachable" is not.
+                            event = (
+                                "recovery_esim_not_ready_will_retry"
+                                if isinstance(e, EsimNotReadyYet)
+                                else "recovery_supplier_unreachable_will_retry"
+                            )
+                            logger.warning(event, order_id=order.id, error=str(e))
                             await db.rollback()
                             counts["deferred"] += 1
                             continue

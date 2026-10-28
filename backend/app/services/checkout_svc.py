@@ -2,6 +2,7 @@
 ShurjoPay gateway, completed later from the payment callback) so
 provisioning behavior can't drift between them.
 """
+import asyncio
 import uuid
 import json
 import secrets
@@ -22,6 +23,24 @@ from app.services.audit_svc import AuditService
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+# How long to keep asking the supplier for an eSIM inside the purchase's own
+# background task before handing the order to recover_stuck_orders. The
+# customer is never waiting on this: checkout already returned, and the
+# browser is polling the order, so a short wait here just means the QR is
+# ready on the first poll for the common case.
+_ESIM_READY_POLL_DELAYS = (0, 2, 3, 5, 5, 5)
+
+
+class EsimNotReadyYet(Exception):
+    """The supplier took the money and has not produced the eSIM yet.
+
+    Explicitly NOT a failure: WorldMove provisions asynchronously and
+    reports "Transaction Pending" with a null iccid for the first seconds
+    or minutes. Treating that as a failure refunded the customer and
+    abandoned an eSIM we had already paid for (production, 28 Oct 2026:
+    7 eSIMs bought and thrown away, one customer retrying five times and
+    buying five of them)."""
 
 RESELLER_ROLES = {UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MERCHANT}
 
@@ -187,19 +206,33 @@ async def complete_from_supplier_trx(db: AsyncSession, order: Order, product: Pr
     details = _extract_esim_details(esim_data)
     if details:
         return _attach_profile(db, order, product, order.beneficiary_id, order.external_trx_id, details)
-    logger.warning("recovery_esim_details_unparseable_refunding_order", order_id=order.id, trx_id=order.external_trx_id)
-    await _refund_failed_order(db, order, actor_id, actor_role)
-    return None
+    # Not usable YET is not the same as never. WorldMove issues eSIMs
+    # asynchronously and answers "Transaction Pending" with a null iccid for
+    # the first seconds or minutes, so a single look is never a definitive
+    # answer. Raising hands the decision to the caller, whose GIVE_UP_AFTER
+    # window keeps retrying and only refunds once enough time has passed -
+    # time is the arbiter here, not the wording of one supplier response.
+    raise EsimNotReadyYet(
+        f"order {order.order_no}: no usable eSIM for trx {order.external_trx_id} yet"
+    )
 
 
 async def provision_esim(db: AsyncSession, order: Order, product: Product, beneficiary_id: str, actor_id: str, actor_role: str) -> ESIMProfile | None:
     """Creates the ESIMProfile for `order` from a real VivaPe purchase and
-    marks the order COMPLETED. If VivaPe is unavailable/fails, or the
-    product has no supplier mapping at all, no eSIM is created — the order
-    is marked FAILED and the buyer is refunded the full order amount to
-    their DEFAULT wallet instead, since a customer must never be charged
-    (via wallet debit or gateway payment) for an eSIM that doesn't work.
-    Returns None on failure. Caller commits either way."""
+    marks the order COMPLETED.
+
+    Two different "no eSIM" outcomes, deliberately handled differently:
+
+    - VivaPe never took the money (no transaction id, no supplier mapping,
+      or the call failed outright): the order is marked FAILED and the buyer
+      refunded in full, since a customer must never be charged for an eSIM
+      that doesn't work.
+    - VivaPe DID take the money but the eSIM isn't ready yet: the order is
+      left PROCESSING and returned as None WITHOUT a refund, so
+      recover_stuck_orders can re-fetch that same transaction. Refunding
+      here is what bought and abandoned real eSIMs.
+
+    Returns None in both cases. Caller commits either way."""
     if product.supplier_product_id and product.supplier_receiver_amount is not None:
         try:
             # receiver_amount is NOT the price — confirmed against VivaPe's
@@ -224,14 +257,27 @@ async def provision_esim(db: AsyncSession, order: Order, product: Product, benef
                 # mid-purchase), recovery can fetch this already-paid eSIM by
                 # id instead of buying a second one.
                 await db.commit()
-                esim_data = await VivaPeAdapter.get_esim_by_trx(db, trx_id)
-                details = _extract_esim_details(esim_data)
-                if details:
-                    return _attach_profile(db, order, product, beneficiary_id, trx_id, details)
-                logger.warning(
-                    "vivape_esim_details_unparseable_refunding_order",
+                # Ask a few times over ~20s rather than once immediately.
+                # The old single call happened ~300ms after the purchase,
+                # which is far sooner than an async supplier can answer.
+                for delay in _ESIM_READY_POLL_DELAYS:
+                    if delay:
+                        await asyncio.sleep(delay)
+                    esim_data = await VivaPeAdapter.get_esim_by_trx(db, trx_id)
+                    details = _extract_esim_details(esim_data)
+                    if details:
+                        return _attach_profile(db, order, product, beneficiary_id, trx_id, details)
+                # Still nothing - but VivaPe has already charged us, so this
+                # order must NOT be refunded here. Leaving it PROCESSING
+                # hands it to recover_stuck_orders, which re-fetches this
+                # same transaction (never buying again) for up to an hour
+                # before giving up. Refunding at this point is what threw
+                # away eSIMs we had paid for.
+                logger.info(
+                    "vivape_esim_not_ready_leaving_for_recovery",
                     order_id=order.id, trx_id=trx_id,
                 )
+                return None
             else:
                 logger.warning(
                     "vivape_provisioning_failed_refunding_order",
