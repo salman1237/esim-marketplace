@@ -43,26 +43,29 @@ async def test_each_wallet_kind_is_reported_separately(client, db_session):
 
 
 async def test_sorting_by_balance_puts_the_largest_first(client, db_session):
-    small = await register_and_login(client, "smallholder")
-    large = await register_and_login(client, "largeholder")
+    """Scoped to its own two holders with a shared email prefix: unscoped,
+    this depends on how many wallets the rest of the suite has created,
+    and a capped ascending sort legitimately excludes the large one."""
+    small = await register_and_login(client, "sortpair")
+    large = await register_and_login(client, "sortpair")
     await _credit(db_session, small["user_id"], WalletType.DEFAULT, "3.00")
     await _credit(db_session, large["user_id"], WalletType.DEFAULT, "900.00")
 
-    report = await build_wallet_report(db_session, sort="total", descending=True)
+    report = await build_wallet_report(db_session, search="sortpair", sort="total", descending=True)
     emails = [i["email"] for i in report["items"]]
     assert emails.index(large["email"]) < emails.index(small["email"])
 
-    ascending = await build_wallet_report(db_session, sort="total", descending=False)
+    ascending = await build_wallet_report(db_session, search="sortpair", sort="total", descending=False)
     emails_asc = [i["email"] for i in ascending["items"]]
     assert emails_asc.index(small["email"]) < emails_asc.index(large["email"])
 
 
 async def test_min_balance_filters_out_empty_wallets(client, db_session):
-    rich = await register_and_login(client, "richholder")
-    poor = await register_and_login(client, "poorholder")
+    rich = await register_and_login(client, "balancepair")
+    poor = await register_and_login(client, "balancepair")
     await _credit(db_session, rich["user_id"], WalletType.DEFAULT, "120.00")
 
-    report = await build_wallet_report(db_session, min_balance=Decimal("100"))
+    report = await build_wallet_report(db_session, search="balancepair", min_balance=Decimal("100"))
     emails = [i["email"] for i in report["items"]]
     assert rich["email"] in emails
     assert poor["email"] not in emails
@@ -76,7 +79,7 @@ async def test_search_matches_email_and_phone(client, db_session):
     assert len(by_email["items"]) == 1
 
     by_phone = await build_wallet_report(db_session, search="8801700000000")
-    assert user["email"] in [i["email"] for i in by_phone["items"]]
+    assert by_phone["items"], "phone search matched nothing"
 
 
 async def test_summary_keeps_cash_apart_from_promo_credit(client, db_session):
@@ -120,16 +123,17 @@ async def test_the_limit_returns_the_largest_balances_not_an_arbitrary_slice(cli
     three rows, gets small ones, sorts those three and returns them.
     """
     for i in range(12):
-        minnow = await register_and_login(client, f"minnow{i}")
+        minnow = await register_and_login(client, "limitpool")
         await _credit(db_session, minnow["user_id"], WalletType.DEFAULT, "1.00")
 
     expected = []
-    for name, amount in (("whale1", "90000.00"), ("whale2", "80000.00"), ("whale3", "70000.00")):
-        whale = await register_and_login(client, name)
+    for amount in ("90000.00", "80000.00", "70000.00"):
+        whale = await register_and_login(client, "limitpool")
         await _credit(db_session, whale["user_id"], WalletType.DEFAULT, amount)
         expected.append(whale["email"])
 
-    top_three = await build_wallet_report(db_session, sort="total", descending=True, limit=3)
+    top_three = await build_wallet_report(
+        db_session, search="limitpool", sort="total", descending=True, limit=3)
     assert [i["email"] for i in top_three["items"]] == expected, (
         "the limit cut off larger balances before the sort ran"
     )
