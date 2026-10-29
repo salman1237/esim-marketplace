@@ -49,6 +49,7 @@ from app.services import (
 from app.services.admin_overview_svc import build_overview
 from app.services.catalog_export_svc import build_catalog_workbook
 from app.services import report_export_svc
+from app.services.esim_search_svc import esim_counts, search_esims
 from app.services.unused_esim_report_svc import (
     build_unused_esim_report,
     get_test_identifiers,
@@ -541,6 +542,86 @@ async def search_customers(q: str = Query(..., min_length=2), db: AsyncSession =
 class RechargeWalletRequest(BaseModel):
     amount: Decimal = Field(..., gt=0)
     description: Optional[str] = None
+
+
+
+class DeductWalletRequest(BaseModel):
+    amount: Decimal = Field(..., gt=0)
+    description: Optional[str] = None
+    # A deduction and a refund are the same movement of money in opposite
+    # directions, but they are NOT the same event to an accountant or to a
+    # customer reading their ledger, so the reason is recorded rather than
+    # inferred.
+    reason: str = "ADJUSTMENT"
+
+
+@router.get("/customers/{user_id}/wallet", dependencies=[Depends(require_admin)])
+async def get_customer_wallet(user_id: str, db: AsyncSession = Depends(get_db)):
+    """Current balances before an admin moves anything - adjusting a
+    balance you cannot see is how the wrong account gets debited."""
+    res = await db.execute(select(Wallet, User).join(User, Wallet.user_id == User.id).where(Wallet.user_id == user_id))
+    rows = res.all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="Customer wallet not found")
+    user = rows[0][1]
+    return {
+        "user_id": user_id,
+        "username": user.username,
+        "email": user.email,
+        "wallets": [
+            {"wallet_type": w.wallet_type.value, "balance": float(w.balance), "currency": settings.BASE_CURRENCY}
+            for w, _ in rows
+        ],
+    }
+
+
+@router.post("/customers/{user_id}/wallet/deduct", dependencies=[Depends(require_super_admin)])
+async def deduct_customer_wallet(
+    user_id: str,
+    req: DeductWalletRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Takes money out of a customer wallet. Super-admin only: adding
+    balance can be undone by deducting it, but deducting someone else's
+    money is the half that can leave a customer unable to buy what they
+    already paid for, so it sits behind the stricter gate.
+
+    A deduction is refused rather than allowed to overdraw - a negative
+    wallet is not a state the rest of the ledger knows how to reason about.
+    """
+    w_res = await db.execute(select(Wallet).where(Wallet.user_id == user_id, Wallet.wallet_type == WalletType.DEFAULT))
+    wallet = w_res.scalar_one_or_none()
+    if not wallet:
+        raise HTTPException(status_code=404, detail="Customer wallet not found")
+
+    ref_type = LedgerRefType.REFUND if req.reason.upper() == "REFUND" else LedgerRefType.ADMIN_ADJUSTMENT
+    label = "refund" if ref_type == LedgerRefType.REFUND else "deduction"
+    try:
+        entry = await LedgerService.debit(
+            db, wallet.id, Decimal(str(req.amount)), ref_type,
+            description=req.description or f"Admin {label} by {admin_user.username}",
+            idempotency_key=None,
+        )
+    except ValueError as e:
+        # "Insufficient wallet balance" is the customer's balance being too
+        # small, not a server fault.
+        raise HTTPException(status_code=400, detail=str(e))
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="ADMIN_DEDUCT_CUSTOMER_WALLET",
+        before_state={"target_user_id": user_id, "balance": str(entry.balance_before)},
+        after_state={
+            "target_user_id": user_id, "amount": str(req.amount), "reason": req.reason,
+            "new_balance": str(entry.balance_after),
+        },
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success", "new_balance": float(entry.balance_after)}
 
 
 @router.post("/customers/{user_id}/wallet/recharge", dependencies=[Depends(require_admin)])
@@ -1142,6 +1223,26 @@ async def get_supplier_logs(limit: int = 50, db: AsyncSession = Depends(get_db))
     res = await db.execute(select(SupplierTransactionLog).order_by(SupplierTransactionLog.created_at.desc()).limit(limit))
     return res.scalars().all()
 
+
+
+
+# --- Admin: quick eSIM lookup for the dashboard widget ---
+
+@router.get("/esims/search", dependencies=[Depends(require_admin)])
+async def quick_search_esims(
+    query: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    """One box over ICCID, order number, VivaPe transaction, email, phone
+    and name - support is handed whichever of those the customer has."""
+    return await search_esims(db, query=query, status=status, limit=limit)
+
+
+@router.get("/esims/counts", dependencies=[Depends(require_admin)])
+async def quick_esim_counts(db: AsyncSession = Depends(get_db)):
+    return await esim_counts(db)
 
 
 # --- Admin Reports: eSIMs VivaPe charged us for that no customer received ---
