@@ -8,6 +8,9 @@ import TranslationsManager from "@/components/TranslationsManager";
 import PricingCard from "@/components/admin/PricingCard";
 import SupplierVisibilityCard from "@/components/admin/SupplierVisibilityCard";
 import PopularDestinationsCard from "@/components/admin/PopularDestinationsCard";
+import UnusedEsimsReport from "@/components/admin/UnusedEsimsReport";
+import EsimQuickTrack from "@/components/admin/EsimQuickTrack";
+import WalletReport from "@/components/admin/WalletReport";
 import PaymentMethodsCard from "@/components/admin/PaymentMethodsCard";
 import PackagePicker, { packLabel } from "@/components/PackagePicker";
 import ShurjoPayCard from "@/components/admin/ShurjoPayCard";
@@ -29,7 +32,7 @@ import { saveBlob } from "@/components/finance/StatementView";
 import { formatDate, formatDateTime, formatTime } from "@/lib/datetime";
 import CommissionCell from "@/components/admin/CommissionCell";
 
-type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "withdrawals" | "discounts" | "referrals" | "agents" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales" | "finance" | "support";
+type TabId = "overview" | "orders" | "unused-esims" | "catalog" | "users" | "merchants" | "payments" | "withdrawals" | "discounts" | "referrals" | "agents" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales" | "finance" | "support";
 
 export default function AdminConsolePage() {
   const { formatPrice, languages: appLanguages } = useAppSettings();
@@ -421,6 +424,38 @@ WARNING: this sync would have deactivated ${res.deactivation_candidates} product
     }
   };
 
+  const [deductAmount, setDeductAmount] = useState("");
+  const [deductNote, setDeductNote] = useState("");
+  const [deductReason, setDeductReason] = useState<"ADJUSTMENT" | "REFUND">("ADJUSTMENT");
+  const [deductingWallet, setDeductingWallet] = useState(false);
+
+  const handleDeductWallet = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = localStorage.getItem("esim_token");
+    if (!token || !selectedCustomer) return;
+    const amount = parseFloat(deductAmount);
+    if (Number.isNaN(amount) || amount <= 0) {
+      alert("Enter a valid positive amount.");
+      return;
+    }
+    if (amount > Number(selectedCustomer.wallet_balance || 0)) {
+      alert(`That is more than the balance (EUR ${Number(selectedCustomer.wallet_balance || 0).toFixed(2)}). The server will refuse it rather than let the wallet go negative.`);
+      return;
+    }
+    setDeductingWallet(true);
+    try {
+      const res = await api.deductCustomerWallet(token, selectedCustomer.id, deductAmount, deductReason, deductNote || undefined);
+      setSelectedCustomer({ ...selectedCustomer, wallet_balance: res.new_balance });
+      setCustomerResults(customerResults.map(c => c.id === selectedCustomer.id ? { ...c, wallet_balance: res.new_balance } : c));
+      setDeductAmount("");
+      setDeductNote("");
+    } catch (err: any) {
+      alert("Deduction failed: " + err.message);
+    } finally {
+      setDeductingWallet(false);
+    }
+  };
+
   const handleRechargeWallet = async (e: React.FormEvent) => {
     e.preventDefault();
     const token = localStorage.getItem("esim_token");
@@ -626,6 +661,7 @@ WARNING: this sync would have deactivated ${res.deactivation_candidates} product
           { id: "payments", label: `Manual Deposits (${payments.filter(p => p.status === "PENDING").length})` },
           { id: "withdrawals", label: `Withdrawals (${pendingWithdrawals})` },
           { id: "orders", label: "Orders" },
+          { id: "unused-esims", label: "Unused eSIMs" },
           { id: "catalog", label: "Catalog" },
           { id: "sales", label: "Sales & Profit" },
           { id: "discounts", label: "Discount Codes" },
@@ -1137,6 +1173,7 @@ WARNING: this sync would have deactivated ${res.deactivation_candidates} product
       {activeTab === "referrals" && <ReferralsTab isSuperAdmin={isSuperAdmin} />}
       {activeTab === "agents" && <AgentsTab isSuperAdmin={isSuperAdmin} />}
       {activeTab === "support" && <SupportTab onCountChange={setOpenTickets} />}
+      {activeTab === "unused-esims" && <UnusedEsimsReport />}
 
       {/* Tab: Catalog - selling profit % sets every price */}
       {activeTab === "catalog" && (
@@ -1284,6 +1321,11 @@ WARNING: this sync would have deactivated ${res.deactivation_candidates} product
           an eSIM on their behalf (charged to their own wallet), available
           to Admin and Super Admin alike. */}
       {activeTab === "customer-wallet" && (
+        <div className="mb-6">
+          <WalletReport />
+        </div>
+      )}
+      {activeTab === "customer-wallet" && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div className="glass-panel rounded-2xl p-6 border border-gray-200 lg:col-span-2">
             <h3 className="text-base font-bold text-slate-900 mb-1">Find a Customer</h3>
@@ -1364,6 +1406,56 @@ WARNING: this sync would have deactivated ${res.deactivation_candidates} product
                   <button type="submit" disabled={rechargingWallet} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl">
                     {rechargingWallet ? "Recharging..." : "Recharge Wallet"}
                   </button>
+                </form>
+              </div>
+
+              <div className="glass-panel rounded-2xl p-6 border border-gray-200">
+                <h3 className="text-base font-bold text-slate-900 mb-1">Deduct / Refund Balance</h3>
+                <p className="text-xs text-slate-500 mb-4">
+                  {selectedCustomer.username} — current balance{" "}
+                  <span className="font-mono text-emerald-600">€{Number(selectedCustomer.wallet_balance || 0).toFixed(2)}</span>
+                </p>
+                <form onSubmit={handleDeductWallet} className="space-y-3">
+                  <div>
+                    <label className="text-xs text-slate-700 font-semibold block mb-1">Amount (EUR)</label>
+                    <input
+                      type="number" min="0.01" step="0.01" required
+                      value={deductAmount}
+                      onChange={(e) => setDeductAmount(e.target.value)}
+                      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-700 font-semibold block mb-1">Reason</label>
+                    <select
+                      value={deductReason}
+                      onChange={(e) => setDeductReason(e.target.value as "ADJUSTMENT" | "REFUND")}
+                      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
+                    >
+                      <option value="ADJUSTMENT">Adjustment (correcting a balance)</option>
+                      <option value="REFUND">Refund (money returned to the customer)</option>
+                    </select>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Same movement of money, but the customer sees the reason in their own wallet history.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-700 font-semibold block mb-1">Note (optional)</label>
+                    <input
+                      type="text"
+                      value={deductNote}
+                      onChange={(e) => setDeductNote(e.target.value)}
+                      placeholder="Why this is being deducted"
+                      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs text-slate-900"
+                    />
+                  </div>
+                  <button type="submit" disabled={deductingWallet || !isSuperAdmin}
+                          className="w-full bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-xs font-bold px-4 py-2.5 rounded-xl">
+                    {deductingWallet ? "Deducting..." : "Deduct from Wallet"}
+                  </button>
+                  {!isSuperAdmin && (
+                    <p className="text-[11px] text-slate-500 text-center">Only a Super Admin can take money out of a wallet.</p>
+                  )}
                 </form>
               </div>
 
@@ -1772,6 +1864,11 @@ WARNING: this sync would have deactivated ${res.deactivation_candidates} product
       )}
 
       {/* Tab: Overview */}
+      {activeTab === "overview" && (
+        <div className="mb-6">
+          <EsimQuickTrack />
+        </div>
+      )}
       {activeTab === "overview" && <OverviewTab onNavigate={(tab) => setActiveTab(tab as any)} />}
 
       </div>

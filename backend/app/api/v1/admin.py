@@ -48,6 +48,14 @@ from app.services import (
 )
 from app.services.admin_overview_svc import build_overview
 from app.services.catalog_export_svc import build_catalog_workbook
+from app.services import report_export_svc
+from app.services.esim_search_svc import esim_counts, search_esims
+from app.services.wallet_report_svc import build_wallet_report
+from app.services.unused_esim_report_svc import (
+    build_unused_esim_report,
+    get_test_identifiers,
+    set_test_identifiers,
+)
 from app.services.shurjopay_svc import ShurjoPayService
 from app.services.pricing_svc import MAX_SELLING_PROFIT_PCT, get_selling_profit_pct, retail_price_for, set_selling_profit_pct
 from app.services.audit_svc import AuditService
@@ -535,6 +543,86 @@ async def search_customers(q: str = Query(..., min_length=2), db: AsyncSession =
 class RechargeWalletRequest(BaseModel):
     amount: Decimal = Field(..., gt=0)
     description: Optional[str] = None
+
+
+
+class DeductWalletRequest(BaseModel):
+    amount: Decimal = Field(..., gt=0)
+    description: Optional[str] = None
+    # A deduction and a refund are the same movement of money in opposite
+    # directions, but they are NOT the same event to an accountant or to a
+    # customer reading their ledger, so the reason is recorded rather than
+    # inferred.
+    reason: str = "ADJUSTMENT"
+
+
+@router.get("/customers/{user_id}/wallet", dependencies=[Depends(require_admin)])
+async def get_customer_wallet(user_id: str, db: AsyncSession = Depends(get_db)):
+    """Current balances before an admin moves anything - adjusting a
+    balance you cannot see is how the wrong account gets debited."""
+    res = await db.execute(select(Wallet, User).join(User, Wallet.user_id == User.id).where(Wallet.user_id == user_id))
+    rows = res.all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="Customer wallet not found")
+    user = rows[0][1]
+    return {
+        "user_id": user_id,
+        "username": user.username,
+        "email": user.email,
+        "wallets": [
+            {"wallet_type": w.wallet_type.value, "balance": float(w.balance), "currency": settings.BASE_CURRENCY}
+            for w, _ in rows
+        ],
+    }
+
+
+@router.post("/customers/{user_id}/wallet/deduct", dependencies=[Depends(require_super_admin)])
+async def deduct_customer_wallet(
+    user_id: str,
+    req: DeductWalletRequest,
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Takes money out of a customer wallet. Super-admin only: adding
+    balance can be undone by deducting it, but deducting someone else's
+    money is the half that can leave a customer unable to buy what they
+    already paid for, so it sits behind the stricter gate.
+
+    A deduction is refused rather than allowed to overdraw - a negative
+    wallet is not a state the rest of the ledger knows how to reason about.
+    """
+    w_res = await db.execute(select(Wallet).where(Wallet.user_id == user_id, Wallet.wallet_type == WalletType.DEFAULT))
+    wallet = w_res.scalar_one_or_none()
+    if not wallet:
+        raise HTTPException(status_code=404, detail="Customer wallet not found")
+
+    ref_type = LedgerRefType.REFUND if req.reason.upper() == "REFUND" else LedgerRefType.ADMIN_ADJUSTMENT
+    label = "refund" if ref_type == LedgerRefType.REFUND else "deduction"
+    try:
+        entry = await LedgerService.debit(
+            db, wallet.id, Decimal(str(req.amount)), ref_type,
+            description=req.description or f"Admin {label} by {admin_user.username}",
+            idempotency_key=None,
+        )
+    except ValueError as e:
+        # "Insufficient wallet balance" is the customer's balance being too
+        # small, not a server fault.
+        raise HTTPException(status_code=400, detail=str(e))
+
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="ADMIN_DEDUCT_CUSTOMER_WALLET",
+        before_state={"target_user_id": user_id, "balance": str(entry.balance_before)},
+        after_state={
+            "target_user_id": user_id, "amount": str(req.amount), "reason": req.reason,
+            "new_balance": str(entry.balance_after),
+        },
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    await db.commit()
+    return {"status": "success", "new_balance": float(entry.balance_after)}
 
 
 @router.post("/customers/{user_id}/wallet/recharge", dependencies=[Depends(require_admin)])
@@ -1136,6 +1224,228 @@ async def get_supplier_logs(limit: int = 50, db: AsyncSession = Depends(get_db))
     res = await db.execute(select(SupplierTransactionLog).order_by(SupplierTransactionLog.created_at.desc()).limit(limit))
     return res.scalars().all()
 
+
+
+
+
+# --- Admin Reports: who is holding wallet balance ---
+
+_WALLET_COLUMNS = [
+    report_export_svc.Column("customer_name", "Customer", 22),
+    report_export_svc.Column("email", "Email", 30),
+    report_export_svc.Column("phone", "Phone", 16),
+    report_export_svc.Column("role", "Role", 12),
+    report_export_svc.Column("status", "Status", 10),
+    report_export_svc.Column("default_balance", "Cash (EUR)", 13, number_format='"€"#,##0.00'),
+    report_export_svc.Column("reward_balance", "Reward (EUR)", 13, number_format='"€"#,##0.00'),
+    report_export_svc.Column("commission_balance", "Commission (EUR)", 16, number_format='"€"#,##0.00'),
+    report_export_svc.Column("total_balance", "Total (EUR)", 13, number_format='"€"#,##0.00'),
+    report_export_svc.Column("last_activity", "Last activity", 20),
+    report_export_svc.Column("created_at", "Joined", 20),
+]
+
+_WALLET_TITLE = "Customer wallet balances"
+
+
+def _wallet_summary(summary: dict) -> list:
+    return [
+        ("Wallet holders:", summary["wallet_holders"]),
+        ("Cash held:", f"€{summary['total_default_eur']}"),
+        ("Reward credit:", f"€{summary['total_reward_eur']}"),
+        ("Commission owed:", f"€{summary['total_commission_eur']}"),
+        ("All wallets:", f"€{summary['total_all_eur']}"),
+    ]
+
+
+@router.get("/reports/wallets", dependencies=[Depends(require_admin)])
+async def wallet_balances_report(
+    search: str | None = None,
+    sort: str = "total",
+    descending: bool = True,
+    min_balance: Decimal | None = None,
+    limit: int = 500,
+    db: AsyncSession = Depends(get_db),
+):
+    """Every wallet holder with each balance kept separate - cash, reward
+    credit and commission are not interchangeable."""
+    return await build_wallet_report(
+        db, search=search, sort=sort, descending=descending,
+        min_balance=min_balance, limit=limit,
+    )
+
+
+@router.get("/reports/wallets/export", dependencies=[Depends(require_admin)])
+async def wallet_balances_export(
+    fmt: str = "csv",
+    search: str | None = None,
+    sort: str = "total",
+    descending: bool = True,
+    min_balance: Decimal | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    data = await build_wallet_report(
+        db, search=search, sort=sort, descending=descending, min_balance=min_balance, limit=2000)
+    rows, summary = data["items"], data["summary"]
+    name = f"wallet-balances-{bd_datestamp()}"
+
+    if fmt == "xlsx":
+        content = report_export_svc.to_xlsx(
+            _WALLET_COLUMNS, rows, title=_WALLET_TITLE, summary=_wallet_summary(summary))
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = f"{name}.xlsx"
+    elif fmt == "pdf":
+        content = report_export_svc.to_pdf(
+            _WALLET_COLUMNS, rows, title=_WALLET_TITLE, summary=_wallet_summary(summary))
+        media = "application/pdf"
+        filename = f"{name}.pdf"
+    else:
+        content = report_export_svc.to_csv(_WALLET_COLUMNS, rows)
+        media = "text/csv"
+        filename = f"{name}.csv"
+
+    return Response(content=content, media_type=media,
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+# --- Admin: quick eSIM lookup for the dashboard widget ---
+
+@router.get("/esims/search", dependencies=[Depends(require_admin)])
+async def quick_search_esims(
+    query: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    """One box over ICCID, order number, VivaPe transaction, email, phone
+    and name - support is handed whichever of those the customer has."""
+    return await search_esims(db, query=query, status=status, limit=limit)
+
+
+@router.get("/esims/counts", dependencies=[Depends(require_admin)])
+async def quick_esim_counts(db: AsyncSession = Depends(get_db)):
+    return await esim_counts(db)
+
+
+# --- Admin Reports: eSIMs VivaPe charged us for that no customer received ---
+
+_UNUSED_ESIM_COLUMNS = [
+    report_export_svc.Column("type", "Type", 8),
+    report_export_svc.Column("reason", "Reason", 18),
+    report_export_svc.Column("order_status", "Order status", 13),
+    report_export_svc.Column("order_no", "Order No", 22),
+    report_export_svc.Column("purchased_at", "Purchased (BD time)", 20),
+    report_export_svc.Column("customer_name", "Customer", 20),
+    report_export_svc.Column("customer_email", "Email", 28),
+    report_export_svc.Column("customer_phone", "Phone", 16),
+    report_export_svc.Column("country", "Destination", 16),
+    report_export_svc.Column("product", "Package", 32),
+    report_export_svc.Column("vivape_trx_id", "VivaPe Trx", 12),
+    report_export_svc.Column("iccid", "ICCID", 24),
+    report_export_svc.Column("supplier_status", "Supplier status", 22),
+    report_export_svc.Column("data_used_mb", "Data used (MB)", 14),
+    report_export_svc.Column("supplier_cost_eur", "Cost (EUR)", 12, number_format='"€"#,##0.00'),
+    report_export_svc.Column("customer_refunded_eur", "Refunded (EUR)", 14, number_format='"€"#,##0.00'),
+]
+
+_UNUSED_ESIM_TITLE = "Unused eSIMs — paid to VivaPe, never delivered to a customer"
+
+
+def _unused_esim_summary(summary: dict) -> list:
+    return [
+        ("Generated:", summary["generated_at"]),
+        ("Total eSIMs:", summary["count"]),
+        ("Real customers:", f"{summary['real_count']} (€{summary['real_cost_eur']})"),
+        ("Testing:", f"{summary['test_count']} (€{summary['test_cost_eur']})"),
+        ("Total supplier cost:", f"€{summary['supplier_cost_eur']}"),
+        ("ICCIDs resolved:", f"{summary['iccids_resolved']} of {summary['count']}"),
+    ]
+
+
+async def _unused_esim_data(db, search, date_from, date_to, report_type, resolve_iccids=True):
+    return await build_unused_esim_report(
+        db, search=search, date_from=date_from, date_to=date_to,
+        include_type=report_type, resolve_iccids=resolve_iccids,
+    )
+
+
+@router.get("/reports/unused-esims", dependencies=[Depends(require_admin)])
+async def unused_esims_report(
+    search: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    report_type: str | None = None,
+    resolve_iccids: bool = True,
+    db: AsyncSession = Depends(get_db),
+):
+    """Every order VivaPe billed us for whose customer never received an
+    eSIM. ICCIDs are fetched live from VivaPe because no ESIMProfile was
+    ever created for these - resolve_iccids=false skips that for a fast
+    on-screen list."""
+    return await _unused_esim_data(db, search, date_from, date_to, report_type, resolve_iccids)
+
+
+@router.get("/reports/unused-esims/export", dependencies=[Depends(require_admin)])
+async def unused_esims_export(
+    fmt: str = "csv",
+    search: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    report_type: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    data = await _unused_esim_data(db, search, date_from, date_to, report_type)
+    rows, summary = data["items"], data["summary"]
+    stamp = bd_datestamp()
+    name = f"unused-esims-{stamp}"
+
+    if fmt == "xlsx":
+        content = report_export_svc.to_xlsx(
+            _UNUSED_ESIM_COLUMNS, rows, title=_UNUSED_ESIM_TITLE, summary=_unused_esim_summary(summary))
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = f"{name}.xlsx"
+    elif fmt == "pdf":
+        content = report_export_svc.to_pdf(
+            _UNUSED_ESIM_COLUMNS, rows, title=_UNUSED_ESIM_TITLE, summary=_unused_esim_summary(summary))
+        media = "application/pdf"
+        filename = f"{name}.pdf"
+    else:
+        content = report_export_svc.to_csv(_UNUSED_ESIM_COLUMNS, rows)
+        media = "text/csv"
+        filename = f"{name}.csv"
+
+    return Response(content=content, media_type=media,
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+class TestIdentifiersRequest(BaseModel):
+    identifiers: list[str]
+
+
+@router.get("/reports/test-identifiers", dependencies=[Depends(require_admin)])
+async def get_test_esim_identifiers(db: AsyncSession = Depends(get_db)):
+    """Emails and ICCIDs the business has marked as their own testing, so
+    the supplier report can separate real sales from test purchases."""
+    return {"identifiers": sorted(await get_test_identifiers(db))}
+
+
+@router.put("/reports/test-identifiers", dependencies=[Depends(require_admin)])
+async def update_test_esim_identifiers(
+    req: TestIdentifiersRequest,
+    request: Request,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    before = sorted(await get_test_identifiers(db))
+    after = await set_test_identifiers(db, req.identifiers, admin_user.id)
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_TEST_ESIM_IDENTIFIERS",
+        before_state={"identifiers": before}, after_state={"identifiers": after},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    await db.commit()
+    return {"identifiers": after}
 
 # --- Admin Operations: Customer Orders Viewer ---
 @router.get("/orders", dependencies=[Depends(require_admin)])

@@ -315,6 +315,22 @@ export const api = {
   sendTestEmail: (token: string, toEmail: string) => fetchApi("/api/v1/admin/notification-settings/test", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ to_email: toEmail }) }),
   getSupplierSettings: (token: string) => fetchApi("/api/v1/admin/supplier-settings", { headers: { Authorization: `Bearer ${token}` } }),
   updateSupplierSettings: (token: string, enabledSuppliers: string[]) => fetchApi("/api/v1/admin/supplier-settings", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ enabled_suppliers: enabledSuppliers }) }),
+  deductCustomerWallet: (token: string, userId: string, amount: string, reason: string, description?: string) =>
+    fetchApi(`/api/v1/admin/customers/${userId}/wallet/deduct`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ amount, reason, description }) }),
+  getCustomerWallet: (token: string, userId: string) =>
+    fetchApi(`/api/v1/admin/customers/${userId}/wallet`, { headers: { Authorization: `Bearer ${token}` } }),
+  getWalletReport: (token: string, query = "") =>
+    fetchApi(`/api/v1/admin/reports/wallets${query ? `?${query}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
+  searchEsims: (token: string, query = "") =>
+    fetchApi(`/api/v1/admin/esims/search${query ? `?${query}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
+  getEsimCounts: (token: string) =>
+    fetchApi("/api/v1/admin/esims/counts", { headers: { Authorization: `Bearer ${token}` } }),
+  getUnusedEsimsReport: (token: string, query = "") =>
+    fetchApi(`/api/v1/admin/reports/unused-esims${query ? `?${query}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
+  getTestEsimIdentifiers: (token: string) =>
+    fetchApi("/api/v1/admin/reports/test-identifiers", { headers: { Authorization: `Bearer ${token}` } }),
+  updateTestEsimIdentifiers: (token: string, identifiers: string[]) =>
+    fetchApi("/api/v1/admin/reports/test-identifiers", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ identifiers }) }),
   getAdminCountries: (token: string, search?: string) =>
     fetchApi(`/api/v1/admin/countries${search ? `?search=${encodeURIComponent(search)}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   updatePopularDestinations: (token: string, countries: { id: number; is_popular: boolean; popular_order: number }[]) =>

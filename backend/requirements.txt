@@ -26,3 +26,4 @@ slowapi>=0.1.9
 # depending on the base image carrying it is how a container ends up showing
 # every customer the wrong local time after an unrelated rebuild.
 tzdata
+reportlab>=4.0.0
