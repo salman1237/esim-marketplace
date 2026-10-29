@@ -22,6 +22,7 @@ from typing import Optional
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
 from app.core.timeutil import fmt_bd
 from app.models.catalog import Country, Product
@@ -86,12 +87,22 @@ def _supplier_status_from(payload) -> Optional[str]:
     return order.get("resultmsg") or order.get("note") or order.get("msg")
 
 
-async def _lookup(db: AsyncSession, trx_id: str, semaphore: asyncio.Semaphore) -> dict:
+async def _lookup(trx_id: str, semaphore: asyncio.Semaphore) -> dict:
     """Never raises: a lookup that fails must leave a row in the report
-    saying so, not remove an order we were charged for from the claim."""
+    saying so, not remove an order we were charged for from the claim.
+
+    Runs on its OWN session, never the caller's. The adapter records every
+    supplier call in supplier_transaction_logs, and an AsyncSession cannot
+    be used from several tasks at once - sharing the request session made
+    those writes interleave, one flush failed, and the whole session was
+    left in "current transaction is aborted" for the rest of the request
+    (production 500s, 29 Oct 2026). A session per lookup also means one
+    bad call cannot poison the others.
+    """
     async with semaphore:
         try:
-            payload = await VivaPeAdapter.get_esim_by_trx(db, trx_id)
+            async with AsyncSessionLocal() as lookup_db:
+                payload = await VivaPeAdapter.get_esim_by_trx(lookup_db, trx_id)
             return {
                 "iccid": _iccid_from(payload),
                 "supplier_status": _supplier_status_from(payload),
@@ -160,7 +171,7 @@ async def build_unused_esim_report(
             return {"iccid": profile.iccid, "supplier_status": "Delivered", "lookup_error": None}
         if not resolve_iccids:
             return {"iccid": None, "supplier_status": None, "lookup_error": None}
-        return await _lookup(db, order.external_trx_id, semaphore)
+        return await _lookup(order.external_trx_id, semaphore)
 
     lookups = await asyncio.gather(*[_resolve(o, prof) for o, _, _, _, prof, _ in rows]) if rows else []
 

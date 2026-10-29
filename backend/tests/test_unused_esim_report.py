@@ -191,3 +191,54 @@ async def test_a_real_customers_delivered_order_is_never_in_the_claim(client, db
 
     report = await build_unused_esim_report(db_session)
     assert delivered.order_no not in [i["order_no"] for i in report["items"]]
+
+
+async def test_supplier_lookups_never_use_the_request_session(client, db_session, mock_vivape):
+    """Production 500s, 29 Oct 2026.
+
+    The adapter writes every supplier call into supplier_transaction_logs
+    using whichever session it is handed. Four lookups ran concurrently on
+    the request session, the writes interleaved, one flush failed and the
+    session spent the rest of the request in "current transaction is
+    aborted" - so the report rendered its summary and then 500'd.
+
+    Each lookup must therefore get its own session.
+    """
+    seen_sessions = []
+
+    async def _capture(session, trx_id):
+        seen_sessions.append(session)
+        return VIVAPE_ESIM
+
+    mock_vivape.get_esim_by_trx.side_effect = _capture
+
+    user = await register_and_login(client, "sessionbuyer")
+    product = await create_test_product(db_session)
+    for trx in ("70020", "70021", "70022", "70023", "70024"):
+        await _abandoned_order(db_session, user, product, trx_id=trx)
+
+    report = await build_unused_esim_report(db_session, search="sessionbuyer")
+    assert report["items"], "no rows were looked up, so this proves nothing"
+    assert seen_sessions, "the adapter was never called"
+    assert all(s is not db_session for s in seen_sessions), (
+        "a supplier lookup was handed the request session"
+    )
+    # And distinct sessions, so one failing lookup cannot poison another.
+    assert len({id(s) for s in seen_sessions}) == len(seen_sessions)
+
+
+async def test_the_request_session_still_works_after_the_lookups(client, db_session, mock_vivape):
+    """The symptom as the admin console saw it: the summary came back and
+    the next query on the same session blew up."""
+    mock_vivape.get_esim_by_trx.side_effect = None
+    mock_vivape.get_esim_by_trx.return_value = VIVAPE_ESIM
+
+    user = await register_and_login(client, "stillworksbuyer")
+    product = await create_test_product(db_session)
+    await _abandoned_order(db_session, user, product, trx_id="70030")
+
+    await build_unused_esim_report(db_session, search="70030")
+
+    # Would raise PendingRollbackError if the lookups had poisoned it.
+    again = await build_unused_esim_report(db_session, search="70030")
+    assert again["summary"]["count"] == 1
