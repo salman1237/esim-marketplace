@@ -8,6 +8,7 @@ import TranslationsManager from "@/components/TranslationsManager";
 import PricingCard from "@/components/admin/PricingCard";
 import SupplierVisibilityCard from "@/components/admin/SupplierVisibilityCard";
 import PopularDestinationsCard from "@/components/admin/PopularDestinationsCard";
+import UnusedEsimsReport from "@/components/admin/UnusedEsimsReport";
 import PaymentMethodsCard from "@/components/admin/PaymentMethodsCard";
 import PackagePicker, { packLabel } from "@/components/PackagePicker";
 import ShurjoPayCard from "@/components/admin/ShurjoPayCard";
@@ -29,7 +30,7 @@ import { saveBlob } from "@/components/finance/StatementView";
 import { formatDate, formatDateTime, formatTime } from "@/lib/datetime";
 import CommissionCell from "@/components/admin/CommissionCell";
 
-type TabId = "overview" | "orders" | "catalog" | "users" | "merchants" | "payments" | "withdrawals" | "discounts" | "referrals" | "agents" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales" | "finance" | "support";
+type TabId = "overview" | "orders" | "unused-esims" | "catalog" | "users" | "merchants" | "payments" | "withdrawals" | "discounts" | "referrals" | "agents" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales" | "finance" | "support";
 
 export default function AdminConsolePage() {
   const { formatPrice, languages: appLanguages } = useAppSettings();
@@ -626,6 +627,7 @@ WARNING: this sync would have deactivated ${res.deactivation_candidates} product
           { id: "payments", label: `Manual Deposits (${payments.filter(p => p.status === "PENDING").length})` },
           { id: "withdrawals", label: `Withdrawals (${pendingWithdrawals})` },
           { id: "orders", label: "Orders" },
+          { id: "unused-esims", label: "Unused eSIMs" },
           { id: "catalog", label: "Catalog" },
           { id: "sales", label: "Sales & Profit" },
           { id: "discounts", label: "Discount Codes" },
@@ -1137,6 +1139,7 @@ WARNING: this sync would have deactivated ${res.deactivation_candidates} product
       {activeTab === "referrals" && <ReferralsTab isSuperAdmin={isSuperAdmin} />}
       {activeTab === "agents" && <AgentsTab isSuperAdmin={isSuperAdmin} />}
       {activeTab === "support" && <SupportTab onCountChange={setOpenTickets} />}
+      {activeTab === "unused-esims" && <UnusedEsimsReport />}
 
       {/* Tab: Catalog - selling profit % sets every price */}
       {activeTab === "catalog" && (

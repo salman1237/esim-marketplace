@@ -48,6 +48,12 @@ from app.services import (
 )
 from app.services.admin_overview_svc import build_overview
 from app.services.catalog_export_svc import build_catalog_workbook
+from app.services import report_export_svc
+from app.services.unused_esim_report_svc import (
+    build_unused_esim_report,
+    get_test_identifiers,
+    set_test_identifiers,
+)
 from app.services.shurjopay_svc import ShurjoPayService
 from app.services.pricing_svc import MAX_SELLING_PROFIT_PCT, get_selling_profit_pct, retail_price_for, set_selling_profit_pct
 from app.services.audit_svc import AuditService
@@ -1136,6 +1142,128 @@ async def get_supplier_logs(limit: int = 50, db: AsyncSession = Depends(get_db))
     res = await db.execute(select(SupplierTransactionLog).order_by(SupplierTransactionLog.created_at.desc()).limit(limit))
     return res.scalars().all()
 
+
+
+# --- Admin Reports: eSIMs VivaPe charged us for that no customer received ---
+
+_UNUSED_ESIM_COLUMNS = [
+    report_export_svc.Column("type", "Type", 8),
+    report_export_svc.Column("reason", "Reason", 18),
+    report_export_svc.Column("order_status", "Order status", 13),
+    report_export_svc.Column("order_no", "Order No", 22),
+    report_export_svc.Column("purchased_at", "Purchased (BD time)", 20),
+    report_export_svc.Column("customer_name", "Customer", 20),
+    report_export_svc.Column("customer_email", "Email", 28),
+    report_export_svc.Column("customer_phone", "Phone", 16),
+    report_export_svc.Column("country", "Destination", 16),
+    report_export_svc.Column("product", "Package", 32),
+    report_export_svc.Column("vivape_trx_id", "VivaPe Trx", 12),
+    report_export_svc.Column("iccid", "ICCID", 24),
+    report_export_svc.Column("supplier_status", "Supplier status", 22),
+    report_export_svc.Column("data_used_mb", "Data used (MB)", 14),
+    report_export_svc.Column("supplier_cost_eur", "Cost (EUR)", 12, number_format='"€"#,##0.00'),
+    report_export_svc.Column("customer_refunded_eur", "Refunded (EUR)", 14, number_format='"€"#,##0.00'),
+]
+
+_UNUSED_ESIM_TITLE = "Unused eSIMs — paid to VivaPe, never delivered to a customer"
+
+
+def _unused_esim_summary(summary: dict) -> list:
+    return [
+        ("Generated:", summary["generated_at"]),
+        ("Total eSIMs:", summary["count"]),
+        ("Real customers:", f"{summary['real_count']} (€{summary['real_cost_eur']})"),
+        ("Testing:", f"{summary['test_count']} (€{summary['test_cost_eur']})"),
+        ("Total supplier cost:", f"€{summary['supplier_cost_eur']}"),
+        ("ICCIDs resolved:", f"{summary['iccids_resolved']} of {summary['count']}"),
+    ]
+
+
+async def _unused_esim_data(db, search, date_from, date_to, report_type, resolve_iccids=True):
+    return await build_unused_esim_report(
+        db, search=search, date_from=date_from, date_to=date_to,
+        include_type=report_type, resolve_iccids=resolve_iccids,
+    )
+
+
+@router.get("/reports/unused-esims", dependencies=[Depends(require_admin)])
+async def unused_esims_report(
+    search: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    report_type: str | None = None,
+    resolve_iccids: bool = True,
+    db: AsyncSession = Depends(get_db),
+):
+    """Every order VivaPe billed us for whose customer never received an
+    eSIM. ICCIDs are fetched live from VivaPe because no ESIMProfile was
+    ever created for these - resolve_iccids=false skips that for a fast
+    on-screen list."""
+    return await _unused_esim_data(db, search, date_from, date_to, report_type, resolve_iccids)
+
+
+@router.get("/reports/unused-esims/export", dependencies=[Depends(require_admin)])
+async def unused_esims_export(
+    fmt: str = "csv",
+    search: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    report_type: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    data = await _unused_esim_data(db, search, date_from, date_to, report_type)
+    rows, summary = data["items"], data["summary"]
+    stamp = bd_datestamp()
+    name = f"unused-esims-{stamp}"
+
+    if fmt == "xlsx":
+        content = report_export_svc.to_xlsx(
+            _UNUSED_ESIM_COLUMNS, rows, title=_UNUSED_ESIM_TITLE, summary=_unused_esim_summary(summary))
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = f"{name}.xlsx"
+    elif fmt == "pdf":
+        content = report_export_svc.to_pdf(
+            _UNUSED_ESIM_COLUMNS, rows, title=_UNUSED_ESIM_TITLE, summary=_unused_esim_summary(summary))
+        media = "application/pdf"
+        filename = f"{name}.pdf"
+    else:
+        content = report_export_svc.to_csv(_UNUSED_ESIM_COLUMNS, rows)
+        media = "text/csv"
+        filename = f"{name}.csv"
+
+    return Response(content=content, media_type=media,
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+class TestIdentifiersRequest(BaseModel):
+    identifiers: list[str]
+
+
+@router.get("/reports/test-identifiers", dependencies=[Depends(require_admin)])
+async def get_test_esim_identifiers(db: AsyncSession = Depends(get_db)):
+    """Emails and ICCIDs the business has marked as their own testing, so
+    the supplier report can separate real sales from test purchases."""
+    return {"identifiers": sorted(await get_test_identifiers(db))}
+
+
+@router.put("/reports/test-identifiers", dependencies=[Depends(require_admin)])
+async def update_test_esim_identifiers(
+    req: TestIdentifiersRequest,
+    request: Request,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    before = sorted(await get_test_identifiers(db))
+    after = await set_test_identifiers(db, req.identifiers, admin_user.id)
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="UPDATE_TEST_ESIM_IDENTIFIERS",
+        before_state={"identifiers": before}, after_state={"identifiers": after},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    await db.commit()
+    return {"identifiers": after}
 
 # --- Admin Operations: Customer Orders Viewer ---
 @router.get("/orders", dependencies=[Depends(require_admin)])
