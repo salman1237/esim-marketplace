@@ -16,16 +16,7 @@ from app.core.timeutil import fmt_bd
 from app.models.user import User
 from app.models.wallet import Wallet, WalletLedgerEntry, WalletType
 
-SORTABLE = {
-    "total": "total_balance",
-    "default": "default_balance",
-    "reward": "reward_balance",
-    "commission": "commission_balance",
-    "name": "customer_name",
-    "email": "email",
-    "created": "created_at_iso",
-    "last_activity": "last_activity_iso",
-}
+SORTABLE = ("total", "default", "reward", "commission", "name", "email", "created", "last_activity")
 
 
 async def build_wallet_report(
@@ -51,13 +42,18 @@ async def build_wallet_report(
         .subquery()
     )
 
+    default_sum = func.coalesce(func.sum(Wallet.balance).filter(Wallet.wallet_type == WalletType.DEFAULT), 0)
+    reward_sum = func.coalesce(func.sum(Wallet.balance).filter(Wallet.wallet_type == WalletType.REWARD), 0)
+    commission_sum = func.coalesce(func.sum(Wallet.balance).filter(Wallet.wallet_type == WalletType.COMMISSION), 0)
+    total_sum = func.coalesce(func.sum(Wallet.balance), 0)
+
     stmt = (
         select(
             User,
-            func.coalesce(func.sum(Wallet.balance).filter(Wallet.wallet_type == WalletType.DEFAULT), 0).label("default_balance"),
-            func.coalesce(func.sum(Wallet.balance).filter(Wallet.wallet_type == WalletType.REWARD), 0).label("reward_balance"),
-            func.coalesce(func.sum(Wallet.balance).filter(Wallet.wallet_type == WalletType.COMMISSION), 0).label("commission_balance"),
-            func.coalesce(func.sum(Wallet.balance), 0).label("total_balance"),
+            default_sum.label("default_balance"),
+            reward_sum.label("reward_balance"),
+            commission_sum.label("commission_balance"),
+            total_sum.label("total_balance"),
             last_activity.c.last_activity,
         )
         .join(Wallet, Wallet.user_id == User.id)
@@ -72,7 +68,25 @@ async def build_wallet_report(
                 User.full_name.ilike(term), User.phone.ilike(term))
         )
     if min_balance is not None:
-        stmt = stmt.having(func.coalesce(func.sum(Wallet.balance), 0) >= min_balance)
+        stmt = stmt.having(total_sum >= min_balance)
+
+    # Ordering has to happen in SQL, BEFORE the limit. Sorting in Python
+    # afterwards silently reorders only whichever rows the database
+    # happened to return, so "the ten largest balances" would be the ten
+    # largest of an arbitrary slice - wrong in exactly the case the sort
+    # exists for, and invisible until there are more holders than `limit`.
+    order_exprs = {
+        "total": total_sum,
+        "default": default_sum,
+        "reward": reward_sum,
+        "commission": commission_sum,
+        "name": func.coalesce(User.full_name, User.username),
+        "email": User.email,
+        "created": User.created_at,
+        "last_activity": last_activity.c.last_activity,
+    }
+    order_by = order_exprs.get(sort, total_sum)
+    stmt = stmt.order_by(order_by.desc() if descending else order_by.asc(), User.id.asc())
 
     rows = (await db.execute(stmt.limit(limit))).all()
 
@@ -96,13 +110,6 @@ async def build_wallet_report(
             "created_at_iso": user.created_at.isoformat() if user.created_at else "",
         })
 
-    key = SORTABLE.get(sort, "total_balance")
-    numeric = key in ("total_balance", "default_balance", "reward_balance", "commission_balance")
-    items.sort(
-        key=(lambda i: Decimal(i[key])) if numeric else (lambda i: (i[key] or "").lower()),
-        reverse=descending,
-    )
-
     def _sum(field: str) -> str:
         return str(sum((Decimal(i[field]) for i in items), Decimal("0")).quantize(Decimal("0.01")))
 
@@ -116,7 +123,7 @@ async def build_wallet_report(
             "total_reward_eur": _sum("reward_balance"),
             "total_commission_eur": _sum("commission_balance"),
             "total_all_eur": _sum("total_balance"),
-            "sorted_by": sort,
+            "sorted_by": sort if sort in SORTABLE else "total",
             "descending": descending,
         },
     }

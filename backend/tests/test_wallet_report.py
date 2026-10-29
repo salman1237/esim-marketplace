@@ -104,3 +104,32 @@ async def test_last_activity_reflects_the_most_recent_ledger_entry(client, db_se
 async def test_report_requires_admin(client):
     res = await client.get("/api/v1/admin/reports/wallets")
     assert res.status_code in (401, 403)
+
+
+async def test_the_limit_returns_the_largest_balances_not_an_arbitrary_slice(client, db_session):
+    """Caught by CI, not locally: the limit was applied in SQL while the
+    sort ran in Python afterwards, so the report reordered only whichever
+    rows the database happened to return. With more holders than the
+    limit, "the largest balances" were the largest of an arbitrary slice -
+    wrong in exactly the case the sort exists for.
+
+    Built to discriminate rather than to pass: the small holders are
+    created FIRST so an unordered LIMIT returns them by heap order, and
+    the three large ones are created last and are far larger than anything
+    else the suite makes. Under the old code this asks the database for
+    three rows, gets small ones, sorts those three and returns them.
+    """
+    for i in range(12):
+        minnow = await register_and_login(client, f"minnow{i}")
+        await _credit(db_session, minnow["user_id"], WalletType.DEFAULT, "1.00")
+
+    expected = []
+    for name, amount in (("whale1", "90000.00"), ("whale2", "80000.00"), ("whale3", "70000.00")):
+        whale = await register_and_login(client, name)
+        await _credit(db_session, whale["user_id"], WalletType.DEFAULT, amount)
+        expected.append(whale["email"])
+
+    top_three = await build_wallet_report(db_session, sort="total", descending=True, limit=3)
+    assert [i["email"] for i in top_three["items"]] == expected, (
+        "the limit cut off larger balances before the sort ran"
+    )
