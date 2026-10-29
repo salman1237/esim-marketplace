@@ -319,6 +319,8 @@ export const api = {
     fetchApi(`/api/v1/admin/customers/${userId}/wallet/deduct`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ amount, reason, description }) }),
   getCustomerWallet: (token: string, userId: string) =>
     fetchApi(`/api/v1/admin/customers/${userId}/wallet`, { headers: { Authorization: `Bearer ${token}` } }),
+  getWalletReport: (token: string, query = "") =>
+    fetchApi(`/api/v1/admin/reports/wallets${query ? `?${query}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   searchEsims: (token: string, query = "") =>
     fetchApi(`/api/v1/admin/esims/search${query ? `?${query}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   getEsimCounts: (token: string) =>

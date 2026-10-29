@@ -10,6 +10,7 @@ import SupplierVisibilityCard from "@/components/admin/SupplierVisibilityCard";
 import PopularDestinationsCard from "@/components/admin/PopularDestinationsCard";
 import UnusedEsimsReport from "@/components/admin/UnusedEsimsReport";
 import EsimQuickTrack from "@/components/admin/EsimQuickTrack";
+import WalletReport from "@/components/admin/WalletReport";
 import PaymentMethodsCard from "@/components/admin/PaymentMethodsCard";
 import PackagePicker, { packLabel } from "@/components/PackagePicker";
 import ShurjoPayCard from "@/components/admin/ShurjoPayCard";
@@ -1319,6 +1320,11 @@ WARNING: this sync would have deactivated ${res.deactivation_candidates} product
       {/* Tab: Customer Wallet — recharge any customer's balance or purchase
           an eSIM on their behalf (charged to their own wallet), available
           to Admin and Super Admin alike. */}
+      {activeTab === "customer-wallet" && (
+        <div className="mb-6">
+          <WalletReport />
+        </div>
+      )}
       {activeTab === "customer-wallet" && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div className="glass-panel rounded-2xl p-6 border border-gray-200 lg:col-span-2">

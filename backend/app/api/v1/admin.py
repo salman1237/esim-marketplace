@@ -50,6 +50,7 @@ from app.services.admin_overview_svc import build_overview
 from app.services.catalog_export_svc import build_catalog_workbook
 from app.services import report_export_svc
 from app.services.esim_search_svc import esim_counts, search_esims
+from app.services.wallet_report_svc import build_wallet_report
 from app.services.unused_esim_report_svc import (
     build_unused_esim_report,
     get_test_identifiers,
@@ -1224,6 +1225,86 @@ async def get_supplier_logs(limit: int = 50, db: AsyncSession = Depends(get_db))
     return res.scalars().all()
 
 
+
+
+
+# --- Admin Reports: who is holding wallet balance ---
+
+_WALLET_COLUMNS = [
+    report_export_svc.Column("customer_name", "Customer", 22),
+    report_export_svc.Column("email", "Email", 30),
+    report_export_svc.Column("phone", "Phone", 16),
+    report_export_svc.Column("role", "Role", 12),
+    report_export_svc.Column("status", "Status", 10),
+    report_export_svc.Column("default_balance", "Cash (EUR)", 13, number_format='"€"#,##0.00'),
+    report_export_svc.Column("reward_balance", "Reward (EUR)", 13, number_format='"€"#,##0.00'),
+    report_export_svc.Column("commission_balance", "Commission (EUR)", 16, number_format='"€"#,##0.00'),
+    report_export_svc.Column("total_balance", "Total (EUR)", 13, number_format='"€"#,##0.00'),
+    report_export_svc.Column("last_activity", "Last activity", 20),
+    report_export_svc.Column("created_at", "Joined", 20),
+]
+
+_WALLET_TITLE = "Customer wallet balances"
+
+
+def _wallet_summary(summary: dict) -> list:
+    return [
+        ("Wallet holders:", summary["wallet_holders"]),
+        ("Cash held:", f"€{summary['total_default_eur']}"),
+        ("Reward credit:", f"€{summary['total_reward_eur']}"),
+        ("Commission owed:", f"€{summary['total_commission_eur']}"),
+        ("All wallets:", f"€{summary['total_all_eur']}"),
+    ]
+
+
+@router.get("/reports/wallets", dependencies=[Depends(require_admin)])
+async def wallet_balances_report(
+    search: str | None = None,
+    sort: str = "total",
+    descending: bool = True,
+    min_balance: Decimal | None = None,
+    limit: int = 500,
+    db: AsyncSession = Depends(get_db),
+):
+    """Every wallet holder with each balance kept separate - cash, reward
+    credit and commission are not interchangeable."""
+    return await build_wallet_report(
+        db, search=search, sort=sort, descending=descending,
+        min_balance=min_balance, limit=limit,
+    )
+
+
+@router.get("/reports/wallets/export", dependencies=[Depends(require_admin)])
+async def wallet_balances_export(
+    fmt: str = "csv",
+    search: str | None = None,
+    sort: str = "total",
+    descending: bool = True,
+    min_balance: Decimal | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    data = await build_wallet_report(
+        db, search=search, sort=sort, descending=descending, min_balance=min_balance, limit=2000)
+    rows, summary = data["items"], data["summary"]
+    name = f"wallet-balances-{bd_datestamp()}"
+
+    if fmt == "xlsx":
+        content = report_export_svc.to_xlsx(
+            _WALLET_COLUMNS, rows, title=_WALLET_TITLE, summary=_wallet_summary(summary))
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = f"{name}.xlsx"
+    elif fmt == "pdf":
+        content = report_export_svc.to_pdf(
+            _WALLET_COLUMNS, rows, title=_WALLET_TITLE, summary=_wallet_summary(summary))
+        media = "application/pdf"
+        filename = f"{name}.pdf"
+    else:
+        content = report_export_svc.to_csv(_WALLET_COLUMNS, rows)
+        media = "text/csv"
+        filename = f"{name}.csv"
+
+    return Response(content=content, media_type=media,
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 # --- Admin: quick eSIM lookup for the dashboard widget ---
