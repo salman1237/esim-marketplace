@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 from app.schemas.auth import (
     UserRegister, UserLogin, Token, UserResponse, MerchantApplicationRequest,
     ForgotPasswordRequest, ResetPasswordRequest, GoogleLoginRequest,
+    ChangePasswordRequest,
 )
 from app.services.google_auth import GoogleTokenError, GoogleUnavailableError, verify_google_id_token
 from app.services.ledger_svc import LedgerService
@@ -111,7 +112,11 @@ async def register(request: Request, req: UserRegister, db: AsyncSession = Depen
         )
 
     token = create_access_token(subject=user.id, role=user.role.value)
-    return Token(access_token=token, token_type="bearer", role=user.role.value, user_id=user.id, username=user.username)
+    return Token(
+        access_token=token, token_type="bearer", role=user.role.value,
+        user_id=user.id, username=user.username,
+        must_change_password=bool(user.must_change_password),
+    )
 
 @router.post("/login", response_model=Token)
 @limiter.limit("10/minute")
@@ -125,7 +130,39 @@ async def login(request: Request, req: UserLogin, db: AsyncSession = Depends(get
         raise HTTPException(status_code=403, detail="Account suspended")
 
     token = create_access_token(subject=user.id, role=user.role.value)
-    return Token(access_token=token, token_type="bearer", role=user.role.value, user_id=user.id, username=user.username)
+    return Token(
+        access_token=token, token_type="bearer", role=user.role.value,
+        user_id=user.id, username=user.username,
+        must_change_password=bool(user.must_change_password),
+    )
+
+
+@router.post("/change-password")
+@limiter.limit("10/minute")
+async def change_password(
+    request: Request,
+    req: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Replace your own password while signed in.
+
+    This is also how a customer clears must_change_password - the account a
+    merchant opened for them, whose password is their phone number. The
+    current password is still required: being signed in is not proof of
+    anything when the credential in play is one other people may know.
+    """
+    if not verify_password(req.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Your current password is not correct")
+    if len(req.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    if verify_password(req.new_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Please choose a different password from your current one")
+
+    current_user.hashed_password = get_password_hash(req.new_password)
+    current_user.must_change_password = False
+    await db.commit()
+    return {"status": "success", "message": "Password updated."}
 
 @router.post("/forgot-password")
 @limiter.limit("5/minute")
@@ -277,7 +314,11 @@ async def google_login(request: Request, req: GoogleLoginRequest, db: AsyncSessi
     logger.info("google_login_succeeded", user_id=user.id, created=created)
 
     token = create_access_token(subject=user.id, role=user.role.value)
-    return Token(access_token=token, token_type="bearer", role=user.role.value, user_id=user.id, username=user.username)
+    return Token(
+        access_token=token, token_type="bearer", role=user.role.value,
+        user_id=user.id, username=user.username,
+        must_change_password=bool(user.must_change_password),
+    )
 
 
 @router.get("/me")

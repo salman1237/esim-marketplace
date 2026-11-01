@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_password_changed
 from app.models.user import User
 from app.models.wallet import Wallet, WalletType, LedgerRefType
 from app.services.supplier_settings_svc import get_enabled_suppliers, supplier_visible_filter
@@ -24,6 +24,7 @@ from app.services import discount_svc
 from app.services.checkout_svc import resolve_beneficiary, RESELLER_ROLES
 from app.services.order_fulfilment import start_fulfilment
 from app.core.logging import get_logger
+from app.services.email_svc import EmailService
 
 logger = get_logger(__name__)
 
@@ -58,7 +59,7 @@ async def topup_via_shurjopay(
     amount: Decimal,
     request: Request,
     currency: Optional[str] = None,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_password_changed),
     db: AsyncSession = Depends(get_db)
 ):
     """`amount` is in `currency` - the customer's own, defaulting to the base
@@ -116,7 +117,7 @@ async def topup_via_shurjopay(
 async def initiate_order_via_shurjopay(
     req: OrderCreateRequest,
     request: Request,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_password_changed),
     db: AsyncSession = Depends(get_db)
 ):
     """Pays for a specific eSIM directly via ShurjoPay instead of wallet
@@ -142,9 +143,9 @@ async def initiate_order_via_shurjopay(
         raise HTTPException(status_code=404, detail="Product not found or inactive")
 
     try:
-        beneficiary_id = await resolve_beneficiary(
+        beneficiary_id, new_account = await resolve_beneficiary(
             db, current_user, req.is_buy_for_user, req.auto_create_user,
-            req.beneficiary_username, req.beneficiary_email
+            req.beneficiary_username, req.beneficiary_email, req.beneficiary_phone
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -204,6 +205,25 @@ async def initiate_order_via_shurjopay(
         _require_checkout_url(pay_res)
 
     await db.commit()
+
+    # Sent here rather than from the payment callback because the plaintext
+    # password only exists in this request - the database has nothing but
+    # its hash, so a credential not emailed now is lost for good. The
+    # account is real from this point whether or not the card payment
+    # completes, and the mail says it was opened for them.
+    if new_account:
+        try:
+            await EmailService.send_account_created(
+                db, new_account["email"],
+                username=new_account["username"],
+                password=new_account["password"],
+                password_is_phone=new_account["password_is_phone"],
+                created_by=current_user.full_name or current_user.username,
+                for_order=order.order_no,
+            )
+        except Exception as e:
+            logger.warning("beneficiary_account_email_failed", order_id=order.id, error=str(e))
+
     return {**pay_res, "order_id": order.id, "order_no": order.order_no}
 
 

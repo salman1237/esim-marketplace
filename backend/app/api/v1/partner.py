@@ -219,7 +219,7 @@ async def create_partner_order(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found or inactive")
 
-    beneficiary_id = await resolve_beneficiary(db, ctx.user, True, True, None, None)
+    beneficiary_id, _ = await resolve_beneficiary(db, ctx.user, True, True, None, None)
 
     total_cost = Decimal(str(product.retail_price))
     if not wallet or Decimal(str(wallet.balance)) < total_cost:

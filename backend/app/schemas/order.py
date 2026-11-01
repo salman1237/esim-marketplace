@@ -14,6 +14,9 @@ class OrderCreateRequest(BaseModel):
     is_buy_for_user: bool = False
     beneficiary_username: Optional[str] = None
     beneficiary_email: Optional[str] = None
+    # Becomes the new customer's first password, so the merchant standing
+    # in front of them can say how to sign in.
+    beneficiary_phone: Optional[str] = None
     auto_create_user: bool = False
 
 class ESIMProfileResponse(BaseModel):

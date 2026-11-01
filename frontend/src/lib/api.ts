@@ -319,6 +319,8 @@ export const api = {
     fetchApi(`/api/v1/admin/customers/${userId}/wallet/deduct`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ amount, reason, description }) }),
   getCustomerWallet: (token: string, userId: string) =>
     fetchApi(`/api/v1/admin/customers/${userId}/wallet`, { headers: { Authorization: `Bearer ${token}` } }),
+  changePassword: (token: string, currentPassword: string, newPassword: string) =>
+    fetchApi("/api/v1/auth/change-password", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }),
   getWalletReport: (token: string, query = "") =>
     fetchApi(`/api/v1/admin/reports/wallets${query ? `?${query}` : ""}`, { headers: { Authorization: `Bearer ${token}` } }),
   searchEsims: (token: string, query = "") =>

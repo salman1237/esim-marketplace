@@ -3,12 +3,13 @@ ShurjoPay gateway, completed later from the payment callback) so
 provisioning behavior can't drift between them.
 """
 import asyncio
+import re
 import uuid
 import json
 import secrets
 from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import func, or_, select
 from app.core.security import get_password_hash
 from app.models.user import User, UserRole
 from app.models.merchant import MerchantProfile
@@ -52,35 +53,107 @@ def new_share_token() -> str:
     return secrets.token_hex(16)
 
 
-async def resolve_beneficiary(db: AsyncSession, current_user: User, is_buy_for_user: bool, auto_create_user: bool, beneficiary_username: str | None, beneficiary_email: str | None) -> str:
-    if not is_buy_for_user:
-        return current_user.id
+def _password_from_phone(phone: str | None) -> tuple[str, bool]:
+    """The customer's phone number as their first password, so the merchant
+    standing in front of them can say how to sign in. Returns the password
+    and whether it came from the phone.
 
-    if auto_create_user:
-        auto_username = f"user_{uuid.uuid4().hex[:8]}"
-        auto_email = f"{auto_username}@customer.esim.local"
+    Falls back to a random one when there is no usable phone: a 3-digit
+    "password" would be worse than making them read an email.
+    """
+    digits = re.sub(r"\D", "", phone or "")
+    if len(digits) >= 6:
+        return digits, True
+    # Unambiguous alphabet - these get read aloud and copied by hand, and
+    # a password nobody can transcribe is a support call.
+    alphabet = "abcdefghjkmnpqrstuvwxyz23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(8)), False
+
+
+async def resolve_beneficiary(
+    db: AsyncSession,
+    current_user: User,
+    is_buy_for_user: bool,
+    auto_create_user: bool,
+    beneficiary_username: str | None,
+    beneficiary_email: str | None,
+    beneficiary_phone: str | None = None,
+) -> tuple[str, dict | None]:
+    """Who the eSIM belongs to, and the credentials if an account was made.
+
+    An email given here is used as the customer's real address. The old
+    version discarded it whenever auto_create_user was set and invented
+    user_<random>@customer.esim.local instead, so the delivery email went
+    to a domain that does not exist, the order showed a meaningless name,
+    and the customer could never sign in to see what they had paid for.
+
+    Returns (beneficiary_id, new_account) where new_account is None unless
+    an account was created, in which case the caller emails the customer
+    their credentials.
+    """
+    if not is_buy_for_user:
+        return current_user.id, None
+
+    email = (beneficiary_email or "").strip().lower() or None
+    username = (beneficiary_username or "").strip() or None
+
+    if email or username:
+        # Look for an existing account BEFORE creating anything: a repeat
+        # customer must get the eSIM on the account they already have,
+        # rather than a second account they do not know about.
+        matches = []
+        if email:
+            matches.append(func.lower(User.email) == email)
+        if username:
+            matches.append(User.username == username)
+        target = (await db.execute(select(User).where(or_(*matches)))).scalars().first()
+        if target:
+            return target.id, None
+
+        if not auto_create_user:
+            raise ValueError("Beneficiary user account not found")
+        if not email:
+            raise ValueError("An email address is required to create a customer account")
+
+        password, from_phone = _password_from_phone(beneficiary_phone)
+        from app.api.v1.auth import _unique_username
+
         new_user = User(
-            email=auto_email,
-            username=auto_username,
-            hashed_password=get_password_hash(uuid.uuid4().hex),
-            role=UserRole.USER
+            email=email,
+            username=await _unique_username(db, email),
+            hashed_password=get_password_hash(password),
+            phone=(beneficiary_phone or "").strip() or None,
+            role=UserRole.USER,
+            # The phone is a way in, not a password they chose.
+            must_change_password=True,
         )
         db.add(new_user)
         await db.flush()
         await LedgerService.ensure_wallets_for_user(db, new_user.id, new_user.role)
-        return new_user.id
+        return new_user.id, {
+            "email": email,
+            "username": new_user.username,
+            "password": password,
+            "password_is_phone": from_phone,
+        }
 
-    if beneficiary_username or beneficiary_email:
-        u_query = select(User).where(
-            (User.username == beneficiary_username) | (User.email == beneficiary_email)
+    if auto_create_user:
+        # No identity given at all - the Partner API sells to end customers
+        # it never names, and their own reference ties the order back. A
+        # placeholder is right here and wrong anywhere an email was typed.
+        auto_username = f"user_{uuid.uuid4().hex[:8]}"
+        new_user = User(
+            email=f"{auto_username}@customer.esim.local",
+            username=auto_username,
+            hashed_password=get_password_hash(uuid.uuid4().hex),
+            role=UserRole.USER,
         )
-        b_res = await db.execute(u_query)
-        target = b_res.scalar_one_or_none()
-        if not target:
-            raise ValueError("Beneficiary user account not found")
-        return target.id
+        db.add(new_user)
+        await db.flush()
+        await LedgerService.ensure_wallets_for_user(db, new_user.id, new_user.role)
+        return new_user.id, None
 
-    return current_user.id
+    return current_user.id, None
 
 
 def _extract_esim_details(esim_data: dict) -> dict | None:

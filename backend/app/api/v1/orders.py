@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.timeutil import bd_datestamp
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_password_changed
 from app.models.user import User
 from app.models.catalog import Product
 from app.models.wallet import Wallet, WalletType, LedgerRefType
@@ -16,6 +16,7 @@ from app.schemas.order import OrderCreateRequest, OrderResponse, ESIMProfileResp
 from app.services.ledger_svc import LedgerService
 from app.services import discount_svc
 from app.services.checkout_svc import resolve_beneficiary, RESELLER_ROLES
+from app.services.email_svc import EmailService
 from app.services.order_fulfilment import start_fulfilment
 from app.core.logging import get_logger
 from app.services.supplier_settings_svc import get_enabled_suppliers, supplier_visible_filter
@@ -28,7 +29,7 @@ router = APIRouter(prefix="/orders", tags=["Orders & eSIMs"])
 @router.post("/checkout", response_model=OrderResponse, status_code=202)
 async def checkout_esim(
     req: OrderCreateRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_password_changed),
     db: AsyncSession = Depends(get_db)
 ):
     if req.is_buy_for_user and current_user.role not in RESELLER_ROLES:
@@ -48,9 +49,9 @@ async def checkout_esim(
 
     # 2. Determine Beneficiary
     try:
-        beneficiary_id = await resolve_beneficiary(
+        beneficiary_id, new_account = await resolve_beneficiary(
             db, current_user, req.is_buy_for_user, req.auto_create_user,
-            req.beneficiary_username, req.beneficiary_email
+            req.beneficiary_username, req.beneficiary_email, req.beneficiary_phone
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -125,6 +126,23 @@ async def checkout_esim(
     # the task partway.
     await db.commit()
     start_fulfilment(order.id)
+
+    # The customer did not open this account, so the credentials mail has
+    # to go out as soon as the order is real - before the eSIM arrives, so
+    # the delivery email lands somewhere they can already sign in to.
+    # Never lets an email failure undo a paid order.
+    if new_account:
+        try:
+            await EmailService.send_account_created(
+                db, new_account["email"],
+                username=new_account["username"],
+                password=new_account["password"],
+                password_is_phone=new_account["password_is_phone"],
+                created_by=current_user.full_name or current_user.username,
+                for_order=order.order_no,
+            )
+        except Exception as e:
+            logger.warning("beneficiary_account_email_failed", order_id=order.id, error=str(e))
 
     # Re-fetch with the eSIM profile eagerly loaded: Pydantic's response
     # serialization is synchronous and can't trigger an async lazy load.

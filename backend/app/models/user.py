@@ -48,6 +48,12 @@ class User(Base):
     google_sub = Column(String(255), unique=True, index=True, nullable=True)
     avatar_url = Column(String(1024), nullable=True)
     email_verified = Column(Boolean, default=False, server_default=false(), nullable=False)
+    # Set on an account a merchant or admin created FOR a customer, where
+    # the password is the customer's own phone number. A phone number is
+    # often public, and these accounts hold wallet balance and eSIMs, so
+    # the credential is treated as single-use: it gets the customer in,
+    # and nothing that moves money works until they replace it.
+    must_change_password = Column(Boolean, default=False, server_default=false(), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

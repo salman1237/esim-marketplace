@@ -328,6 +328,39 @@ class EmailService:
                         text_body=text, inline_images={"brand_logo": logo_png} if logo_png else None)
 
     @classmethod
+    async def send_account_created(
+        cls, db: AsyncSession, to_email: str, *, username: str, password: str,
+        password_is_phone: bool, created_by: str, for_order: str | None = None,
+    ):
+        """Credentials for an account a merchant or admin opened on a
+        customer's behalf. The customer never asked for this account, so
+        the mail has to say who made it and why, or it reads as phishing -
+        which is also why it names the shop rather than just appearing."""
+        platform_name = await cls._get_platform_name(db)
+        how = "your phone number" if password_is_phone else "the password below"
+        rows = [("Email", to_email), ("Username", username), ("Password", password)]
+        if for_order:
+            rows.append(("Order", for_order))
+        intro = (
+            f"{created_by} set up a {platform_name} account for you so you can see the eSIM "
+            f"they bought for you, track your data and buy again yourself. Sign in with "
+            f"{how}."
+        )
+        return await cls.send_notice(
+            db, to_email,
+            subject=f"Your {platform_name} account",
+            title="Your account is ready",
+            intro=intro,
+            rows=rows,
+            cta_label="Sign in",
+            cta_url=f"{settings.FRONTEND_BASE_URL}/auth/login",
+            footnote=(
+                "For your security you will be asked to choose your own password the first "
+                "time you sign in. Until then, buying and wallet transfers stay locked."
+            ),
+        )
+
+    @classmethod
     async def send_order_confirmation(
         cls,
         db: AsyncSession,
