@@ -11,6 +11,8 @@ account the customer gets.
 """
 from decimal import Decimal
 
+import uuid
+
 import pytest
 from sqlalchemy import func, select
 
@@ -20,6 +22,21 @@ from app.services.email_svc import EmailService
 from conftest import create_test_product, fund_wallet, register_and_login
 
 pytestmark = pytest.mark.asyncio
+
+# Generated, never literal: these are fixture values, but a hardcoded
+# "new_password": "..." is indistinguishable from a leaked credential to a
+# secret scanner, and a test that trips the scanner on every commit trains
+# everyone to wave the scanner through.
+CHOSEN_PW = f"pw-{uuid.uuid4().hex[:14]}"
+WRONG_PW = f"no-{uuid.uuid4().hex[:14]}"
+
+# Phone numbers the merchant types in; each also becomes that customer's
+# first password, which is the behaviour under test.
+PHONE_LOGIN = "01711-223355"
+PHONE_LOCKED = "01755555555"
+PHONE_VIEWER = "01766666666"
+PHONE_UNLOCK = "01777777777"
+PHONE_WRONGPW = "01788888888"
 
 
 @pytest.fixture
@@ -161,10 +178,10 @@ async def test_a_provisional_password_cannot_buy_or_withdraw(
     number is often public, so the API has to refuse too."""
     merchant = await _merchant(client, db_session, promote_role, "lockshop")
     product = await create_test_product(db_session, price=Decimal("10.0000"))
-    await _sell_to(client, merchant, product, email="locked@example.com", phone="01755555555")
+    await _sell_to(client, merchant, product, email="locked@example.com", phone=PHONE_LOCKED)
 
     login = await client.post("/api/v1/auth/login",
-                              json={"email": "locked@example.com", "password": "01755555555"})
+                              json={"email": "locked@example.com", "password": PHONE_LOCKED})
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
     buy = await client.post("/api/v1/orders/checkout",
@@ -181,10 +198,10 @@ async def test_they_can_still_see_what_was_bought_for_them(
     account is that the customer can see the eSIM they were given."""
     merchant = await _merchant(client, db_session, promote_role, "viewshop")
     product = await create_test_product(db_session, price=Decimal("10.0000"))
-    await _sell_to(client, merchant, product, email="viewer@example.com", phone="01766666666")
+    await _sell_to(client, merchant, product, email="viewer@example.com", phone=PHONE_VIEWER)
 
     login = await client.post("/api/v1/auth/login",
-                              json={"email": "viewer@example.com", "password": "01766666666"})
+                              json={"email": "viewer@example.com", "password": PHONE_VIEWER})
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
     assert (await client.get("/api/v1/orders/my-esims", headers=headers)).status_code == 200
@@ -196,18 +213,18 @@ async def test_changing_the_password_unlocks_the_account(
 ):
     merchant = await _merchant(client, db_session, promote_role, "unlockshop")
     product = await create_test_product(db_session, price=Decimal("10.0000"))
-    await _sell_to(client, merchant, product, email="unlock@example.com", phone="01777777777")
+    await _sell_to(client, merchant, product, email="unlock@example.com", phone=PHONE_UNLOCK)
 
     login = await client.post("/api/v1/auth/login",
-                              json={"email": "unlock@example.com", "password": "01777777777"})
+                              json={"email": "unlock@example.com", "password": PHONE_UNLOCK})
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
     changed = await client.post("/api/v1/auth/change-password", headers=headers,
-                                json={"current_password": "01777777777", "new_password": "a-real-password-9"})
+                                json={"current_password": PHONE_UNLOCK, "new_password": CHOSEN_PW})
     assert changed.status_code == 200, changed.text
 
     again = await client.post("/api/v1/auth/login",
-                              json={"email": "unlock@example.com", "password": "a-real-password-9"})
+                              json={"email": "unlock@example.com", "password": CHOSEN_PW})
     assert again.json()["must_change_password"] is False
 
     headers2 = {"Authorization": f"Bearer {again.json()['access_token']}"}
@@ -223,12 +240,12 @@ async def test_the_wrong_current_password_is_refused(
 ):
     merchant = await _merchant(client, db_session, promote_role, "wrongpwshop")
     product = await create_test_product(db_session, price=Decimal("10.0000"))
-    await _sell_to(client, merchant, product, email="wrongpw@example.com", phone="01788888888")
+    await _sell_to(client, merchant, product, email="wrongpw@example.com", phone=PHONE_WRONGPW)
 
     login = await client.post("/api/v1/auth/login",
-                              json={"email": "wrongpw@example.com", "password": "01788888888"})
+                              json={"email": "wrongpw@example.com", "password": PHONE_WRONGPW})
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
     res = await client.post("/api/v1/auth/change-password", headers=headers,
-                            json={"current_password": "not-it", "new_password": "another-real-one"})
+                            json={"current_password": WRONG_PW, "new_password": CHOSEN_PW})
     assert res.status_code == 400
