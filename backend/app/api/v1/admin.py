@@ -1450,10 +1450,15 @@ async def update_test_esim_identifiers(
 # --- Admin Operations: Customer Orders Viewer ---
 @router.get("/orders", dependencies=[Depends(require_admin)])
 async def get_all_orders(limit: int = 100, db: AsyncSession = Depends(get_db)):
+    # Orders carry a buyer AND a beneficiary, which are the same person for
+    # a normal sale and different ones whenever a shop or an admin bought
+    # for a customer. Two aliases of users, so both can be named.
+    beneficiary = aliased(User)
     res = await db.execute(
-        select(Order, User, Product, ESIMProfile)
+        select(Order, User, Product, ESIMProfile, beneficiary)
         .join(User, Order.buyer_id == User.id)
         .join(Product, Order.product_id == Product.id)
+        .join(beneficiary, Order.beneficiary_id == beneficiary.id)
         .outerjoin(ESIMProfile, Order.id == ESIMProfile.order_id)
         .order_by(Order.created_at.desc())
         .limit(limit)
@@ -1462,8 +1467,16 @@ async def get_all_orders(limit: int = 100, db: AsyncSession = Depends(get_db)):
         {
             "id": o.id,
             "order_no": o.order_no,
+            # The buyer - who paid. For a merchant sale that is the shop,
+            # not the traveller, which is why the two are reported apart:
+            # a list showing only one of them cannot answer "who is this
+            # eSIM actually for".
             "username": u.username,
             "email": u.email,
+            "bought_for_username": b.username,
+            "bought_for_email": b.email,
+            "bought_for_phone": b.phone,
+            "bought_for_self": o.buyer_id == o.beneficiary_id,
             "product_title": p.title_en,
             "total_amount": float(o.total_amount),
             "currency": o.currency,
@@ -1484,7 +1497,7 @@ async def get_all_orders(limit: int = 100, db: AsyncSession = Depends(get_db)):
             "activated_at": profile.activated_at if profile else None,
             "expires_at": profile.expires_at if profile else None,
         }
-        for o, u, p, profile in res.all()
+        for o, u, p, profile, b in res.all()
     ]
 
 # --- Admin Operations: Catalog Editor ---

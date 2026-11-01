@@ -16,7 +16,6 @@ type Props = {
   onOrderSettled: () => void;
 };
 
-const NOT_FOUND = "Beneficiary user account not found";
 
 export default function ProvisionTab({ commissionRatePct, showCommission, formatPrice, onOrderSettled }: Props) {
   const [countries, setCountries] = useState<any[]>([]);
@@ -88,15 +87,23 @@ export default function ProvisionTab({ commissionRatePct, showCommission, format
   const payable = applied ? applied.total : price;
 
   // Same beneficiary rule for both payment methods: issue to the customer's
-  // existing account by email, or create one if there isn't any.
-  const withBeneficiary = async <T,>(send: (extra: Record<string, any>) => Promise<T>): Promise<T> => {
-    try {
-      return await send({ is_buy_for_user: true, beneficiary_email: customerEmail, auto_create_user: false });
-    } catch (err: any) {
-      if (!String(err.message || "").includes(NOT_FOUND)) throw err;
-      return await send({ is_buy_for_user: true, auto_create_user: true });
-    }
-  };
+  // existing account by email, or create one on that same email if there
+  // isn't any. One call - the server looks the email up before creating.
+  //
+  // This used to retry WITHOUT the email when the first attempt reported
+  // "not found", which is how new customers ended up owning an eSIM on a
+  // fabricated user_xxxx@customer.esim.local address they could never
+  // sign in to and were never emailed. It also keyed that retry off the
+  // text of an error message, so rewording the error silently changed
+  // what the merchant portal did.
+  const withBeneficiary = async <T,>(send: (extra: Record<string, any>) => Promise<T>): Promise<T> =>
+    send({
+      is_buy_for_user: true,
+      auto_create_user: true,
+      beneficiary_email: customerEmail,
+      // Becomes the customer's first password when the account is new.
+      beneficiary_phone: customerPhone || undefined,
+    });
 
   const payByWallet = async (discountCode?: string | null) => {
     const token = getToken();

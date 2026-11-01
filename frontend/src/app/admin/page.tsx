@@ -1109,7 +1109,8 @@ WARNING: this sync would have deactivated ${res.deactivation_candidates} product
                 <tr>
                   <th className="py-2">Order No</th>
                   <th className="py-2">Date</th>
-                  <th className="py-2">Customer</th>
+                  <th className="py-2">Bought by</th>
+                  <th className="py-2">For customer</th>
                   <th className="py-2">Product</th>
                   <th className="py-2">Amount</th>
                   <th className="py-2">Status</th>
@@ -1122,6 +1123,18 @@ WARNING: this sync would have deactivated ${res.deactivation_candidates} product
                     <td className="py-2.5 font-mono text-admin-600">{o.order_no}</td>
                     <td className="py-2.5 text-slate-500">{formatDateTime(o.created_at)}</td>
                     <td className="py-2.5 text-slate-700">{o.email}</td>
+                    <td className="py-2.5 text-slate-700">
+                      {o.bought_for_self ? (
+                        <span className="text-[11px] text-slate-400">themselves</span>
+                      ) : (
+                        <>
+                          <div>{o.bought_for_email}</div>
+                          {o.bought_for_phone && (
+                            <div className="text-[10px] text-slate-500">{o.bought_for_phone}</div>
+                          )}
+                        </>
+                      )}
+                    </td>
                     <td className="py-2.5 text-slate-700">{o.product_title}</td>
                     <td className="py-2.5 font-bold text-emerald-600">{formatPrice(o.total_amount)}</td>
                     <td className="py-2.5">

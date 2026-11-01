@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings as app_settings
 from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_password_changed
 from app.models.user import User
 from app.models.withdrawal import BankAccount, PayoutAccountType, WithdrawalRequest, WithdrawalStatus
 from app.services import withdrawal_svc
@@ -204,7 +204,7 @@ async def my_withdrawals(
 @router.post("")
 async def create_withdrawal(
     req: WithdrawalCreateRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_password_changed),
     db: AsyncSession = Depends(get_db),
 ):
     accounts = await _my_accounts(db, current_user.id)

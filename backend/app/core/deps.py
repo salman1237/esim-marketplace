@@ -50,6 +50,24 @@ def require_roles(allowed_roles: List[UserRole]):
         return current_user
     return role_checker
 
+
+async def require_password_changed(current_user: User = Depends(get_current_user)) -> User:
+    """Blocks the money paths for an account whose password is still the
+    one a merchant was given to hand over.
+
+    Forcing the change in the browser alone would be theatre: the phone
+    number is often public, and anyone who guessed it could simply call
+    the API directly. So the credential signs them in and lets them look
+    at what was bought for them, and nothing that moves money works until
+    they have chosen their own password.
+    """
+    if getattr(current_user, "must_change_password", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please set your own password before buying or moving money.",
+        )
+    return current_user
+
 require_super_admin = require_roles([UserRole.SUPER_ADMIN])
 require_admin = require_roles([UserRole.SUPER_ADMIN, UserRole.ADMIN])
 require_merchant = require_roles([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MERCHANT])

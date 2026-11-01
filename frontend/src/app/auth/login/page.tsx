@@ -30,6 +30,14 @@ export default function LoginPage() {
         window.location.href = "/admin";
         return;
       }
+      // An account a shop opened for this customer: the password is still
+      // their phone number, and the server refuses to let it spend
+      // anything, so send them to replace it before they hit that wall.
+      if (res.must_change_password) {
+        const next = new URLSearchParams(window.location.search).get("next");
+        window.location.href = `/auth/set-password${next ? `?next=${encodeURIComponent(next)}` : ""}`;
+        return;
+      }
       // A "Buy Now" while signed out sends the visitor here with
       // ?next=<the package they wanted, plus ?resume=1> - honour it so
       // signing in actually continues the purchase instead of dropping

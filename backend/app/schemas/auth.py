@@ -21,6 +21,10 @@ class Token(BaseModel):
     role: str
     user_id: str
     username: str
+    # True for an account a merchant opened for a customer: they are signed
+    # in, but buying and wallet transfers stay blocked until they choose a
+    # password of their own.
+    must_change_password: bool = False
 
 class UserResponse(BaseModel):
     id: str
@@ -54,3 +58,8 @@ class MerchantApplicationRequest(BaseModel):
     # An agent's referral code, if an agent brought this partner in. Ignored
     # if it doesn't match an approved agent.
     agent_code: Optional[str] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
