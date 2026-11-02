@@ -1,13 +1,13 @@
 "use client";
 
 import React, { useState } from "react";
-import { QRCodeSVG } from "qrcode.react";
 import {
   Activity, AlertTriangle, CheckCircle2, Check, Clock, Copy, Database,
   RefreshCw, Signal, Smartphone, WifiOff,
 } from "lucide-react";
 import { esimInstallLinks } from "@/lib/esimInstall";
 import { formatDateTimeZoned, formatDayLabel } from "@/lib/datetime";
+import EsimQr from "@/components/EsimQr";
 
 export type EsimStatus = {
   esim_id: string;
@@ -204,7 +204,7 @@ export default function EsimStatusView({
         <div className="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-6 items-start">
           {data.qr_code_data && (
             <div className="bg-white border border-gray-200 rounded-xl p-4 text-center">
-              <QRCodeSVG value={data.qr_code_data} size={160} level="M" />
+              <EsimQr value={data.qr_code_data} size={160} />
               <p className="text-[10px] text-slate-500 mt-2">Scan with the phone&apos;s camera</p>
             </div>
           )}

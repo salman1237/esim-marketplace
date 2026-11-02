@@ -10,8 +10,6 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 import aiosmtplib
-import qrcode
-from qrcode.image.pil import PilImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
@@ -24,6 +22,7 @@ from app.core.timeutil import fmt_bd
 from app.core.logging import get_logger
 from app.models.settings import PlatformSetting
 from app.services.esim_links import esim_install_links
+from app.services.qr_branding import qr_png
 
 logger = get_logger(__name__)
 
@@ -78,22 +77,34 @@ class EmailService:
             return None
 
     @staticmethod
-    def _qr_png(payload: str) -> bytes | None:
-        """QR image for an eSIM activation string. Returns None rather than
-        raising: a missing QR must never stop the delivery email, which
-        also carries the activation code as copyable text."""
-        try:
-            # Pin the PIL factory explicitly: without Pillow, qrcode falls
-            # back to a pure-python PNG writer whose save() takes no format
-            # kwarg. Pillow is a hard dependency here, so this is always
-            # available and removes the guesswork.
-            img = qrcode.make(payload, image_factory=PilImage)
-            buf = io.BytesIO()
-            img.save(buf, format="PNG")
-            return buf.getvalue()
-        except Exception as e:
-            logger.warning("qr_generation_failed", error=str(e))
-            return None
+    async def _qr_mark_png(db: AsyncSession) -> bytes | None:
+        """The image to put in the middle of a QR code.
+
+        The favicon first, because it is the square mark: the main logo is
+        a ~3:1 wordmark, and scaled into a small circle it becomes a few
+        pixels tall and unreadable. Falls back to the wordmark only if no
+        favicon is set, and to nothing at all if neither is.
+        """
+        for key in ("favicon", "logo_light"):
+            res = await db.execute(select(PlatformSetting).where(PlatformSetting.key == key))
+            row = res.scalar_one_or_none()
+            if not row or not row.value:
+                continue
+            try:
+                path = Path(settings.UPLOADS_DIR) / "branding" / Path(row.value).name
+                if path.is_file():
+                    return path.read_bytes()
+            except Exception as e:
+                logger.warning("qr_mark_read_failed", key=key, error=str(e))
+        return None
+
+    @staticmethod
+    def _qr_png(payload: str, logo_bytes: bytes | None = None) -> bytes | None:
+        """QR image for an eSIM activation string, carrying the brand mark
+        when a logo is available. See qr_branding: the logo is only safe
+        because the code is generated at error-correction H and the mark is
+        capped at a fraction of its width."""
+        return qr_png(payload, logo_bytes)
 
     # The most recent send failure, surfaced to the admin console. In-process
     # and best-effort: this is a diagnostic, not a record.
@@ -376,8 +387,8 @@ class EmailService:
         status_url: str | None = None,
     ):
         platform_name = await cls._get_platform_name(db)
-        qr_png = cls._qr_png(lpa_string) if lpa_string else None
         logo_png = await cls._logo_png(db)
+        qr_image = cls._qr_png(lpa_string, await cls._qr_mark_png(db)) if lpa_string else None
         install = esim_install_links(lpa_string)
 
         # Only rows we actually have a value for - a table with blank cells
@@ -394,7 +405,7 @@ class EmailService:
 
         html = _env.get_template("order_confirmation.html").render(
             platform_name=platform_name, order_no=order_no, product_title=product_title,
-            iccid=iccid, lpa_string=lpa_string, has_qr=qr_png is not None, details=details,
+            iccid=iccid, lpa_string=lpa_string, has_qr=qr_image is not None, details=details,
             has_logo=logo_png is not None, status_url=status_url, validity_days=validity_days,
             ios_install_url=install["ios"], android_install_url=install["android"],
             frontend_base_url=settings.FRONTEND_BASE_URL, year=datetime.now(timezone.utc).year,
@@ -410,8 +421,8 @@ class EmailService:
             + f"{settings.FRONTEND_BASE_URL}/my-esims\n"
         )
         images = {}
-        if qr_png:
-            images["esim_qr"] = qr_png
+        if qr_image:
+            images["esim_qr"] = qr_image
         if logo_png:
             images["brand_logo"] = logo_png
         await cls._send(

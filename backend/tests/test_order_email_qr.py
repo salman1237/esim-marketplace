@@ -109,7 +109,7 @@ async def test_order_email_still_sends_when_qr_generation_fails(db_session, smtp
     """A broken QR must never cost the customer their delivery email - the
     activation code is in the body as copyable text regardless."""
     sender = AsyncMock()
-    with patch("app.services.email_svc.qrcode.make", side_effect=RuntimeError("boom")), \
+    with patch("app.services.qr_branding.qrcode.QRCode", side_effect=RuntimeError("boom")), \
          patch("app.services.email_svc.aiosmtplib.send", sender):
         await EmailService.send_order_confirmation(
             db_session, "customer@example.test", "ORD-3", "Singapore 3GB", "8986210115", LPA

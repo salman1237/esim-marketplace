@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import { ArrowRight, CheckCircle2, Star, X } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
 import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 import { esimInstallLinks } from "@/lib/esimInstall";
@@ -10,6 +9,7 @@ import { waitForOrder } from "@/lib/waitForOrder";
 import PaymentMethodChooser from "@/components/PaymentMethodChooser";
 import DiscountCodeBox from "@/components/DiscountCodeBox";
 import { usePackageFilters, PackageFilterChips } from "@/components/explore/PackageFilters";
+import EsimQr from "@/components/EsimQr";
 
 type Product = {
   id: string;
@@ -441,7 +441,7 @@ export default function PackageBrowser({ country, products }: { country: any; pr
                 <p className="text-xs text-slate-500 mt-1 mb-4">Order #{flow.order?.order_no}</p>
                 {flow.order?.esim_profile?.qr_code_data && (
                   <div className="bg-white border border-gray-200 rounded-xl p-4 inline-block mb-4">
-                    <QRCodeSVG value={flow.order.esim_profile.qr_code_data} size={150} level="M" />
+                    <EsimQr value={flow.order.esim_profile.qr_code_data} size={150} />
                   </div>
                 )}
                 {(() => {

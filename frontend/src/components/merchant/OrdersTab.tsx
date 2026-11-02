@@ -2,9 +2,9 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Search, Smartphone, X } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
 import { api } from "@/lib/api";
 import { CopyButton, Panel, SourceBadge, StatusBadge, dataLabel, formatDateTime, getToken } from "./shared";
+import EsimQr from "@/components/EsimQr";
 
 const PAGE_SIZE = 20;
 
@@ -194,7 +194,7 @@ function OrderDetail({ orderId, formatPrice, onClose }: { orderId: string; forma
             {order.status === "COMPLETED" && order.qr_code_data && (
               <div className="flex flex-col items-center">
                 <div className="bg-white p-3 rounded-xl border border-gray-200">
-                  <QRCodeSVG value={order.qr_code_data} size={170} level="M" />
+                  <EsimQr value={order.qr_code_data} size={170} />
                 </div>
                 {(order.install_links?.ios || order.install_links?.android) && (
                   <div className="flex gap-2 w-full mt-3">

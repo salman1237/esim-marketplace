@@ -2,10 +2,10 @@
 
 import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { QRCodeSVG } from "qrcode.react";
 import { api, API_BASE } from "@/lib/api";
 import { esimInstallLinks } from "@/lib/esimInstall";
 import { formatDate } from "@/lib/datetime";
+import EsimQr from "@/components/EsimQr";
 
 // Deliberately light and self-contained: this page exists to be printed or
 // saved as a PDF, so it avoids the app chrome, dark panels and animations
@@ -116,7 +116,7 @@ export default function PrintEsimPage() {
 
       <div style={{ display: "flex", gap: 28, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 24 }}>
         <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 16, textAlign: "center" }}>
-          <QRCodeSVG value={item.qr_code_data || item.lpa_string || ""} size={180} level="M" />
+          <EsimQr value={item.qr_code_data || item.lpa_string || ""} size={180} />
           <p style={{ margin: "10px 0 0 0", fontSize: 11, color: "#64748b" }}>Scan with the phone that will use the eSIM</p>
         </div>
         <div style={{ flex: 1, minWidth: 260 }}>
