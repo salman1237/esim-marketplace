@@ -27,10 +27,10 @@ import EsimLiveStatus from "@/components/admin/EsimLiveStatus";
 import OverviewTab from "@/components/admin/overview/OverviewTab";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { Trash2, Download, Star } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
 import { saveBlob } from "@/components/finance/StatementView";
 import { formatDate, formatDateTime, formatTime } from "@/lib/datetime";
 import CommissionCell from "@/components/admin/CommissionCell";
+import EsimQr from "@/components/EsimQr";
 
 type TabId = "overview" | "orders" | "unused-esims" | "catalog" | "users" | "merchants" | "payments" | "withdrawals" | "discounts" | "referrals" | "agents" | "branding" | "translations" | "logs" | "kyc" | "customer-wallet" | "sales" | "finance" | "support";
 
@@ -1836,7 +1836,7 @@ WARNING: this sync would have deactivated ${res.deactivation_candidates} product
             {(inspectingLog.qr_code_data || inspectingLog.lpa_string) && (
               <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4 flex flex-col sm:flex-row gap-4 items-center">
                 <div className="bg-white p-2 rounded-lg border border-gray-200 shrink-0">
-                  <QRCodeSVG value={inspectingLog.qr_code_data || inspectingLog.lpa_string} size={132} level="M" />
+                  <EsimQr value={inspectingLog.qr_code_data || inspectingLog.lpa_string} size={132} />
                 </div>
                 <div className="min-w-0 w-full">
                   <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Activation code (LPA)</div>

@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from "react";
 import { QrCode, Copy, Check, Smartphone, Sparkles, Clock, Printer, Activity, ChevronRight } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
 import { api } from "@/lib/api";
@@ -11,6 +10,7 @@ import { EsimListSkeleton } from "@/components/Skeleton";
 import { esimInstallLinks } from "@/lib/esimInstall";
 import { waitForOrder } from "@/lib/waitForOrder";
 import { formatDate } from "@/lib/datetime";
+import EsimQr from "@/components/EsimQr";
 
 function EsimCard({ item }: { item: any }) {
   const { t } = useAppSettings();
@@ -102,7 +102,7 @@ function EsimCard({ item }: { item: any }) {
           >
             <div className="flex flex-col md:flex-row items-center gap-8">
               <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm shrink-0 flex flex-col items-center">
-                <QRCodeSVG value={item.qr_code_data || item.lpa_string || "LPA:1$esim.local$demo"} size={160} level="M" />
+                <EsimQr value={item.qr_code_data || item.lpa_string || "LPA:1$esim.local$demo"} size={160} />
                 <span className="text-[10px] font-bold text-slate-700 mt-2 uppercase tracking-wider">{t("esim", "scan_qr", "Scan this QR Code")}</span>
               </div>
 
