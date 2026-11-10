@@ -1,9 +1,10 @@
-"""sync_esimaccess_catalog - deliberately narrow scope (fixed-data,
-single-country only; see parse_esimaccess_package's docstring for why Day
-Passes and multi-country bundles are excluded), the country auto-creation
-path, the upsert-by-supplier_package_code path, and the circuit breaker
+"""sync_esimaccess_catalog - fixed-data AND Day Pass, single-country AND
+multi-country/regional/global, the country/pseudo-country auto-creation
+path, the upsert-by-(packageCode,periodNum) path, and the circuit breaker
 reused from VivaPe's sync but scoped to supplier_reference == "esimaccess"
-only.
+only. Day Pass and regional support were added in the same pass as each
+other (see parse_esimaccess_package's docstring) because eSIM Access's
+real catalog mixes the two freely.
 """
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -19,7 +20,9 @@ from app.services.catalog_sync_svc import sync_esimaccess_catalog, MIN_DEACTIVAT
 pytestmark = pytest.mark.asyncio
 
 
-def _raw_package(iso2, code, name, price_scaled, volume_gb, duration, data_type=1, duration_unit="DAY", location=None):
+def _raw_package(iso2, code, name, price_scaled, volume_gb, duration, data_type=1, duration_unit="DAY",
+                  location=None, location_code=None):
+    loc = location if location is not None else iso2
     return {
         "packageCode": code,
         "name": name,
@@ -28,7 +31,8 @@ def _raw_package(iso2, code, name, price_scaled, volume_gb, duration, data_type=
         "dataType": data_type,
         "duration": duration,
         "durationUnit": duration_unit,
-        "location": location if location is not None else iso2,
+        "location": loc,
+        "locationCode": location_code if location_code is not None else loc,
         "ipExport": iso2,
         "locationNetworkList": [{"locationName": f"{iso2}land"}],
     }
@@ -119,23 +123,108 @@ async def test_two_new_countries_in_one_sync_get_distinct_ids(db_session):
     assert len(ids) == 2  # distinct, not collided
 
 
-async def test_day_pass_and_multi_country_packages_are_not_synced(db_session):
-    """The deliberate scope decision, verified: a Day Pass and a regional
-    bundle in the raw feed must produce zero Product rows, not a
-    mis-modeled one."""
+async def test_day_pass_package_syncs_as_two_priced_duration_variants(db_session):
+    """A Day Pass has no single "the" product - DAY_PASS_VARIANT_DAYS (7,
+    15) is synced as two separate, correctly fixed-looking Product rows
+    sharing one supplier_package_code, each priced through the real
+    tiered-discount formula (not price_scaled * days)."""
     suffix = uuid.uuid4().hex[:4].upper()
-    day_pass = _raw_package(f"Y{suffix[:1]}", f"DP{suffix}", "Day Pass", 9000, 1, 1, data_type=2)
-    bundle = _raw_package("XX", f"BND{suffix}", "Regional Bundle", 50000, 5, 30,
-                          location="QA,EG,IL,MA,AE,JO,BH,TN,KW,SA,TR,OM")
+    iso2 = f"Y{suffix[:1]}"
+    code = f"DP{suffix}"
+    day_pass = _raw_package(iso2, code, f"{iso2}land 1GB/Day", 9000, 1, 1, data_type=2)
 
-    with await _patched_list_packages([day_pass, bundle]):
+    with await _patched_list_packages([day_pass]):
         result = await sync_esimaccess_catalog(db_session)
 
-    assert result["synced_products"] == 0
-    assert result["skipped_out_of_scope"] == 2
-    assert (await db_session.execute(
-        select(Product).where(Product.supplier_package_code.in_([f"DP{suffix}", f"BND{suffix}"]))
-    )).scalar_one_or_none() is None
+    assert result["synced_products"] == 2
+    assert result["skipped_out_of_scope"] == 0
+
+    rows = (await db_session.execute(
+        select(Product).where(Product.supplier_package_code == code).order_by(Product.validity_days)
+    )).scalars().all()
+    assert len(rows) == 2
+    assert [r.supplier_period_num for r in rows] == [7, 15]
+    assert [r.validity_days for r in rows] == [7, 15]
+    # Tiered discount, not linear: 7 days at the 5-9 day band (92%) of a
+    # $0.90/day rate, not flat 7 x $0.90 = $6.30.
+    assert rows[0].cost_price == Decimal("5.7960")
+    assert rows[0].data_amount_gb == Decimal("7.00")  # 1GB/day x 7 days
+
+
+async def test_regional_package_creates_a_pseudo_country_keyed_on_location_code(db_session):
+    """A multi-country/regional package has no single ISO2 - gets its own
+    Country row keyed on eSIM Access's own stable locationCode, named from
+    the package's own name (stripped of the data/duration suffix), with no
+    flag_url (there is no single flag for a 41-country bundle)."""
+    suffix = uuid.uuid4().hex[:4].upper()
+    code = f"RG{suffix}"
+    loc_code = f"EUTEST{suffix}"
+    regional = _raw_package("XX", code, "Europe Test 3GB 30Days", 50000, 3, 30,
+                            location="NO,RS,DE", location_code=loc_code)
+
+    with await _patched_list_packages([regional]):
+        result = await sync_esimaccess_catalog(db_session)
+
+    assert result["synced_countries"] == 1
+    assert result["synced_products"] == 1
+
+    country = (await db_session.execute(select(Country).where(Country.iso2 == loc_code))).scalar_one()
+    assert country.name_en == "Europe Test"
+    assert country.flag_url is None
+    assert country.region == "Regional"
+
+    product = (await db_session.execute(
+        select(Product).where(Product.supplier_package_code == code)
+    )).scalar_one()
+    assert product.country_id == country.id
+    assert product.supplier_period_num is None  # fixed-data, not a Day Pass variant
+
+
+async def test_a_regional_day_pass_shares_the_pseudo_country_with_a_regional_fixed_package(db_session):
+    """Confirmed live: eSIM Access's real catalog mixes Day Pass and
+    regional freely (e.g. a Day Pass and a fixed-data package under the
+    same "EU-42" locationCode) - both must resolve to the SAME
+    pseudo-country, not create a duplicate."""
+    suffix = uuid.uuid4().hex[:4].upper()
+    loc_code = f"EUMIX{suffix}"
+    fixed = _raw_package("XX", f"FX{suffix}", "Mix Region 3GB 30Days", 50000, 3, 30,
+                         location="NO,RS,DE", location_code=loc_code)
+    day_pass = _raw_package("XX", f"DPX{suffix}", "Mix Region 500MB/Day", 14400, 0.5, 1,
+                            data_type=2, location="NO,RS,DE", location_code=loc_code)
+
+    with await _patched_list_packages([fixed, day_pass]):
+        result = await sync_esimaccess_catalog(db_session)
+
+    assert result["synced_countries"] == 1  # one pseudo-country, not two
+    assert result["synced_products"] == 3  # 1 fixed + 2 Day Pass variants
+
+    countries = (await db_session.execute(select(Country).where(Country.iso2 == loc_code))).scalars().all()
+    assert len(countries) == 1
+
+
+async def test_re_syncing_a_day_pass_updates_both_variants_not_duplicates_them(db_session):
+    """The composite (packageCode, periodNum) upsert key, verified: both
+    variants of the SAME Day Pass package must each update in place on a
+    re-sync, not be treated as new because they share a packageCode."""
+    suffix = uuid.uuid4().hex[:4].upper()
+    iso2 = f"Z{suffix[:1]}"
+    code = f"RDP{suffix}"
+    v1 = _raw_package(iso2, code, f"{iso2}land 1GB/Day", 9000, 1, 1, data_type=2)
+
+    with await _patched_list_packages([v1]):
+        await sync_esimaccess_catalog(db_session)
+
+    v2 = _raw_package(iso2, code, f"{iso2}land 1GB/Day", 10000, 1, 1, data_type=2)  # price changed
+    with await _patched_list_packages([v2]):
+        result = await sync_esimaccess_catalog(db_session)
+
+    assert result["synced_products"] == 0  # not created again
+    assert result["updated_products"] == 2  # both variants updated
+
+    rows = (await db_session.execute(
+        select(Product).where(Product.supplier_package_code == code)
+    )).scalars().all()
+    assert len(rows) == 2  # never duplicated despite sharing one packageCode
 
 
 async def test_re_syncing_an_existing_package_updates_it_not_duplicates_it(db_session):

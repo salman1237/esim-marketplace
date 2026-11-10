@@ -8,7 +8,13 @@ class Country(Base):
     __tablename__ = "countries"
 
     id = Column(Integer, primary_key=True)  # matching VivaPe country id if available or auto
-    iso2 = Column(String(10), unique=True, index=True, nullable=False)
+    # Widened from 10 (migration b2d5f93a8e61): still every real ISO2 (2
+    # chars), but eSIM Access's own stable regional identifiers need up to
+    # 14 - e.g. "EU-42" (Europe, 42 countries), "SAAEQAKWOMBH-6". A
+    # multi-country/regional package has no single ISO2 to key on, so it
+    # gets its own pseudo-Country row keyed on this code instead - see
+    # catalog_parsing.py's region handling.
+    iso2 = Column(String(20), unique=True, index=True, nullable=False)
     iso3 = Column(String(3), nullable=True)
     name_en = Column(String(100), nullable=False)
     name_bn = Column(String(100), nullable=True)
@@ -36,6 +42,19 @@ class Product(Base):
     # NULL for every VivaPe-sourced row; only ever set for
     # supplier_reference == "esimaccess" rows.
     supplier_package_code = Column(String(100), index=True, nullable=True)
+    # A Day Pass's packageCode is the SAME regardless of how many days a
+    # customer buys - periodNum is an order-time parameter, not a separate
+    # catalog entry (confirmed live, see esimaccess_adapter.py's
+    # day_pass_total_price and backend/docs/esimaccess_integration_
+    # reference.md section 4.2). Syncing a Day Pass as several
+    # fixed-looking Product variants (one per offered duration) means
+    # several rows legitimately share one supplier_package_code,
+    # distinguished only by this field - see catalog_parsing.py. NULL for
+    # every fixed-data (dataType 1) row and every VivaPe row. A partial
+    # unique index (migration b2d5f93a8e61) enforces
+    # (supplier_package_code, this column) can't collide among eSIM
+    # Access rows.
+    supplier_period_num = Column(Integer, nullable=True)
     country_id = Column(Integer, ForeignKey("countries.id"), nullable=False, index=True)
     title_en = Column(String(150), nullable=False)
     title_bn = Column(String(150), nullable=True)

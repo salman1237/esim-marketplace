@@ -168,20 +168,29 @@ class ESIMAccessAdapter:
 
     @classmethod
     async def create_order(cls, db: AsyncSession, transaction_id: str, package_code: str,
-                            amount_scaled: int, count: int = 1) -> dict:
+                            amount_scaled: int, count: int = 1, period_num: int | None = None) -> dict:
         """transaction_id is the idempotency key (max 50 chars, confirmed
         sent in the body, not a header - see reference doc §4.2). Caller is
         responsible for generating a transaction_id that is actually unique
         per attempt (mirroring how checkout_svc.py already has to generate
         one for other suppliers) and for computing amount_scaled correctly
         for a Day Pass via day_pass_total_price() rather than passing a
-        package's bare daily rate."""
+        package's bare daily rate.
+
+        period_num is the Day Pass duration in days (periodNum, reference
+        doc §4.2) - required for a Day Pass packageCode, omitted entirely
+        for fixed-data (the key is left out of the request rather than
+        sent as null, since that's unconfirmed and the fixed-data path has
+        already been proven live without it)."""
         if len(transaction_id) > 50:
             raise ValueError(f"transactionId must be <=50 chars, got {len(transaction_id)}")
+        package_info = {"packageCode": package_code, "count": count}
+        if period_num is not None:
+            package_info["periodNum"] = period_num
         result = await cls.call_api(db, "esim/order", data={
             "transactionId": transaction_id,
             "amount": amount_scaled,
-            "packageInfoList": [{"packageCode": package_code, "count": count}],
+            "packageInfoList": [package_info],
         })
         return result.get("obj")
 

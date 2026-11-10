@@ -216,6 +216,32 @@ async def test_create_order_sends_transaction_id_in_the_body_not_a_header(db_ses
     assert kwargs["json"]["packageInfoList"] == [{"packageCode": "TOPUP_CKH491", "count": 1}]
 
 
+async def test_create_order_includes_period_num_for_a_day_pass(db_session):
+    """periodNum (the Day Pass duration in days) is required to buy the
+    right duration - omitted entirely for fixed-data orders (confirmed
+    live without it), included only when the caller actually passes one."""
+    resp = _resp({"success": True, "errorCode": "0", "errorMsg": None, "obj": {"orderNo": "ORD456"}})
+    client = _client_returning(resp)
+    with patch("httpx.AsyncClient", return_value=client):
+        await ESIMAccessAdapter.create_order(
+            db_session, transaction_id="txn-daypass-1", package_code="P7YECLII9",
+            amount_scaled=57960, period_num=7,
+        )
+    _, kwargs = client.post.call_args
+    assert kwargs["json"]["packageInfoList"] == [{"packageCode": "P7YECLII9", "count": 1, "periodNum": 7}]
+
+
+async def test_create_order_omits_period_num_for_fixed_data(db_session):
+    resp = _resp({"success": True, "errorCode": "0", "errorMsg": None, "obj": {"orderNo": "ORD789"}})
+    client = _client_returning(resp)
+    with patch("httpx.AsyncClient", return_value=client):
+        await ESIMAccessAdapter.create_order(
+            db_session, transaction_id="txn-fixed-1", package_code="CKH002", amount_scaled=16000,
+        )
+    _, kwargs = client.post.call_args
+    assert "periodNum" not in kwargs["json"]["packageInfoList"][0]
+
+
 async def test_create_order_rejects_a_transaction_id_over_fifty_chars(db_session):
     with pytest.raises(ValueError, match="50"):
         await ESIMAccessAdapter.create_order(

@@ -282,7 +282,7 @@ async def sync_esimaccess_catalog(db: AsyncSession) -> dict:
     profit_pct = await get_selling_profit_pct(db)
 
     existing_country_res = await db.execute(select(Country.iso2, Country.id))
-    country_id_by_iso2 = {iso2: cid for iso2, cid in existing_country_res.all()}
+    country_id_by_location = {iso2: cid for iso2, cid in existing_country_res.all()}
 
     # Country.id has no reliable auto-increment to fall back on: VivaPe's own
     # sync has always supplied an explicit id (its own numeric country id -
@@ -303,7 +303,19 @@ async def sync_esimaccess_catalog(db: AsyncSession) -> dict:
             Product.supplier_package_code.isnot(None),
         )
     )
-    existing_by_package_code = {p.supplier_package_code: p for p in existing_product_res.scalars().all()}
+    # Keyed on (packageCode, periodNum), not packageCode alone: a Day Pass
+    # package is synced as several Product rows sharing one
+    # supplier_package_code (see parse_esimaccess_package and
+    # DAY_PASS_VARIANT_DAYS), distinguished only by supplier_period_num.
+    # Keying on packageCode alone would make this dict collapse every
+    # variant down to whichever one happened to be seen last, so a re-sync
+    # would treat all but one variant as brand new every single run -
+    # migration b2d5f93a8e61's own partial unique index enforces this same
+    # pairing can't collide at the database level either.
+    existing_by_code_period = {
+        (p.supplier_package_code, p.supplier_period_num): p
+        for p in existing_product_res.scalars().all()
+    }
 
     raw_packages = await ESIMAccessAdapter.list_packages(db)
 
@@ -315,76 +327,92 @@ async def sync_esimaccess_catalog(db: AsyncSession) -> dict:
     seen_ids: list[str] = []
 
     for raw in raw_packages:
-        parsed = parse_esimaccess_package(raw, profit_pct)
-        if parsed is None:
+        variants = parse_esimaccess_package(raw, profit_pct)
+        if not variants:
             skipped_out_of_scope += 1
             continue
 
-        iso2 = parsed["iso2"]
-        country_id = country_id_by_iso2.get(iso2)
-        if country_id is None:
-            # A country eSIM Access covers that isn't in Triptel's Country
-            # table yet (eSIM Access's 202 countries vs. VivaPe's ~132 means
-            # this is expected, not an error). Mirrors sync_vivape_catalog's
-            # own country auto-creation - same flag_url convention, and
-            # not flagged is_popular (that's a merchandising choice made
-            # separately, the same way it already is for VivaPe).
-            networks = raw.get("locationNetworkList") or []
-            name = networks[0].get("locationName") if networks else iso2
-            new_country = Country(
-                id=next_country_id,
-                iso2=iso2,
-                name_en=name or iso2,
-                flag_url=f"https://flagcdn.com/w80/{iso2.lower()}.png",
-                is_popular=False,
-                is_active=True,
-            )
-            db.add(new_country)
-            await db.flush()
-            country_id = new_country.id
-            country_id_by_iso2[iso2] = country_id
-            created_countries += 1
-            next_country_id += 1
+        for parsed in variants:
+            location_key = parsed["location_key"]
+            country_id = country_id_by_location.get(location_key)
+            if country_id is None:
+                # A location eSIM Access covers that isn't in Triptel's
+                # Country table yet - a real country (eSIM Access's 202 vs.
+                # VivaPe's ~132 means this is expected, not an error) or a
+                # multi-country/regional/global pseudo-country keyed on
+                # eSIM Access's own stable locationCode (confirmed live:
+                # every package sharing one locationCode shares the exact
+                # same country set - see parse_esimaccess_package). Mirrors
+                # sync_vivape_catalog's own country auto-creation for the
+                # real-country case; a regional pseudo-country gets no
+                # flag_url (nullable - there is no single flag for "Europe,
+                # 41 countries") and its name from region_name instead of
+                # locationNetworkList.
+                if parsed["is_regional"]:
+                    name = parsed["region_name"]
+                    flag_url = None
+                else:
+                    networks = raw.get("locationNetworkList") or []
+                    name = networks[0].get("locationName") if networks else location_key
+                    flag_url = f"https://flagcdn.com/w80/{location_key.lower()}.png"
+                new_country = Country(
+                    id=next_country_id,
+                    iso2=location_key,
+                    name_en=name or location_key,
+                    flag_url=flag_url,
+                    region="Regional" if parsed["is_regional"] else None,
+                    is_popular=False,
+                    is_active=True,
+                )
+                db.add(new_country)
+                await db.flush()
+                country_id = new_country.id
+                country_id_by_location[location_key] = country_id
+                created_countries += 1
+                next_country_id += 1
 
-        existing = existing_by_package_code.get(parsed["supplier_package_code"])
-        if existing:
-            existing.title_en = parsed["title"] or existing.title_en
-            existing.data_amount_gb = parsed["data_amount_gb"]
-            existing.validity_days = parsed["validity_days"]
-            existing.cost_price = parsed["cost_price"]
-            existing.retail_price = parsed["retail_price"]
-            existing.currency = parsed["currency"]
-            existing.is_unlimited = parsed["is_unlimited"]
-            existing.coverage_networks = parsed["coverage_networks"]
-            existing.country_id = country_id
-            # Reappeared after being deactivated below, or was only ever
-            # absent for a few cycles - being seen in the feed again is
-            # exactly what "active" means here (same reasoning as VivaPe's
-            # sync, see its own comment on this exact line).
-            existing.is_active = True
-            seen_p += 1
-            seen_ids.append(existing.id)
-            if db.is_modified(existing):
-                changed_p += 1
-        else:
-            new_product = Product(
-                country_id=country_id,
-                title_en=parsed["title"],
-                data_amount_gb=parsed["data_amount_gb"],
-                validity_days=parsed["validity_days"],
-                cost_price=parsed["cost_price"],
-                retail_price=parsed["retail_price"],
-                currency=parsed["currency"],
-                is_unlimited=parsed["is_unlimited"],
-                supplier_reference=parsed["supplier_reference"],
-                supplier_package_code=parsed["supplier_package_code"],
-                coverage_networks=parsed["coverage_networks"],
-                last_seen_in_feed_at=sync_started_at,
-            )
-            db.add(new_product)
-            await db.flush()
-            created_p += 1
-            seen_ids.append(new_product.id)
+            key = (parsed["supplier_package_code"], parsed["supplier_period_num"])
+            existing = existing_by_code_period.get(key)
+            if existing:
+                existing.title_en = parsed["title"] or existing.title_en
+                existing.data_amount_gb = parsed["data_amount_gb"]
+                existing.validity_days = parsed["validity_days"]
+                existing.cost_price = parsed["cost_price"]
+                existing.retail_price = parsed["retail_price"]
+                existing.currency = parsed["currency"]
+                existing.is_unlimited = parsed["is_unlimited"]
+                existing.coverage_networks = parsed["coverage_networks"]
+                existing.country_id = country_id
+                # Reappeared after being deactivated below, or was only
+                # ever absent for a few cycles - being seen in the feed
+                # again is exactly what "active" means here (same
+                # reasoning as VivaPe's sync, see its own comment on this
+                # exact line).
+                existing.is_active = True
+                seen_p += 1
+                seen_ids.append(existing.id)
+                if db.is_modified(existing):
+                    changed_p += 1
+            else:
+                new_product = Product(
+                    country_id=country_id,
+                    title_en=parsed["title"],
+                    data_amount_gb=parsed["data_amount_gb"],
+                    validity_days=parsed["validity_days"],
+                    cost_price=parsed["cost_price"],
+                    retail_price=parsed["retail_price"],
+                    currency=parsed["currency"],
+                    is_unlimited=parsed["is_unlimited"],
+                    supplier_reference=parsed["supplier_reference"],
+                    supplier_package_code=parsed["supplier_package_code"],
+                    supplier_period_num=parsed["supplier_period_num"],
+                    coverage_networks=parsed["coverage_networks"],
+                    last_seen_in_feed_at=sync_started_at,
+                )
+                db.add(new_product)
+                await db.flush()
+                created_p += 1
+                seen_ids.append(new_product.id)
 
     await db.commit()
 

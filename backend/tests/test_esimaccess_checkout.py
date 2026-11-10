@@ -128,6 +128,35 @@ async def test_create_order_is_called_with_the_products_own_package_code_and_cos
     assert kwargs["amount_scaled"] == 3000  # $0.30 -> x10,000 encoding
 
 
+async def test_create_order_passes_the_products_period_num_for_a_day_pass(client, db_session, mock_esimaccess):
+    """A Day Pass product is synced with supplier_period_num set to the
+    specific duration variant (see catalog_parsing.py); checkout must pass
+    that through to create_order so eSIM Access knows which duration was
+    bought, not just which package code."""
+    user = await register_and_login(client, "esimaccessdaypass")
+    product = await _esimaccess_product(db_session)
+    product.supplier_period_num = 7
+    await db_session.flush()
+    order = await _order_for(db_session, product, user["user_id"])
+
+    await checkout_svc.provision_esim(db_session, order, product, user["user_id"], user["user_id"], "USER")
+
+    _, kwargs = mock_esimaccess.create_order.call_args
+    assert kwargs["period_num"] == 7
+
+
+async def test_create_order_passes_none_period_num_for_fixed_data(client, db_session, mock_esimaccess):
+    user = await register_and_login(client, "esimaccessfixed")
+    product = await _esimaccess_product(db_session)
+    assert product.supplier_period_num is None
+    order = await _order_for(db_session, product, user["user_id"])
+
+    await checkout_svc.provision_esim(db_session, order, product, user["user_id"], user["user_id"], "USER")
+
+    _, kwargs = mock_esimaccess.create_order.call_args
+    assert kwargs["period_num"] is None
+
+
 async def test_transaction_id_is_the_orders_own_id_for_idempotent_retries(client, db_session, mock_esimaccess):
     """Unlike VivaPe (no idempotency key at all), eSIM Access's
     transactionId is designed to be reused on a retry - using order.id

@@ -384,7 +384,7 @@ async def _provision_via_esimaccess(db: AsyncSession, order: Order, product: Pro
     try:
         order_obj = await ESIMAccessAdapter.create_order(
             db, transaction_id=transaction_id, package_code=product.supplier_package_code,
-            amount_scaled=amount_scaled,
+            amount_scaled=amount_scaled, period_num=product.supplier_period_num,
         )
         order_no = (order_obj or {}).get("orderNo")
         if not order_no:
