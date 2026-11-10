@@ -86,6 +86,48 @@ def mock_vivape():
         })()
 
 
+@pytest.fixture(autouse=True)
+def mock_esimaccess():
+    """Same reasoning as mock_vivape above, for the second supplier:
+    ESIMAccessAdapter's real methods hit a live third-party API (and a real
+    account balance - this project already spent and recovered real money
+    confirming the shapes below, see backend/docs/
+    esimaccess_integration_reference.md and checkout_svc._provision_via_
+    esimaccess's docstring). Defaults to simulating a successful order,
+    shaped exactly like the real esim/order + esim/query responses
+    confirmed live on 2026-11-10 (packageCode PFRQ8FIBC, refunded via
+    esim/cancel afterwards) - a test exercising the failure/refund path
+    reconfigures the yielded mocks the same way mock_vivape's are."""
+    from unittest.mock import AsyncMock, patch
+    import app.services.checkout_svc as checkout_svc_module
+
+    create_order_mock = AsyncMock(side_effect=lambda *a, **kw: {
+        "orderNo": f"B{uuid.uuid4().hex[:15].upper()}",
+        "transactionId": kw.get("transaction_id") or (a[1] if len(a) > 1 else None),
+    })
+
+    def _fake_query_esim(*args, **kwargs):
+        unique_suffix = uuid.uuid4().hex[:14]
+        matching_id = uuid.uuid4().hex[:32].upper()
+        return {
+            "esimList": [{
+                "iccid": f"8948{unique_suffix}",
+                "ac": f"LPA:1$rsp-eu.simlessly.com${matching_id}",
+                "esimStatus": "GOT_RESOURCE",
+                "smdpStatus": "RELEASED",
+            }]
+        }
+
+    query_esim_mock = AsyncMock(side_effect=_fake_query_esim)
+
+    with patch.object(checkout_svc_module.ESIMAccessAdapter, "create_order", create_order_mock), \
+         patch.object(checkout_svc_module.ESIMAccessAdapter, "query_esim", query_esim_mock):
+        yield type("ESIMAccessMocks", (), {
+            "create_order": create_order_mock,
+            "query_esim": query_esim_mock,
+        })()
+
+
 @pytest_asyncio.fixture
 async def promote_role(db_session):
     """Returns an async fn(user_id, role_str) that sets a user's role directly

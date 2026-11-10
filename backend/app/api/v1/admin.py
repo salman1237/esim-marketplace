@@ -59,7 +59,7 @@ from app.services.unused_esim_report_svc import (
 from app.services.shurjopay_svc import ShurjoPayService
 from app.services.pricing_svc import MAX_SELLING_PROFIT_PCT, get_selling_profit_pct, retail_price_for, set_selling_profit_pct
 from app.services.audit_svc import AuditService
-from app.services.catalog_sync_svc import sync_vivape_catalog
+from app.services.catalog_sync_svc import sync_vivape_catalog, sync_esimaccess_catalog
 from app.services.supplier_settings_svc import get_enabled_suppliers, serialize_all, set_enabled_suppliers, supplier_visible_filter
 from app.services.vivape_adapter import VivaPeAdapter
 from app.services.currency_svc import CurrencyService
@@ -121,6 +121,10 @@ async def get_admin_stats(db: AsyncSession = Depends(get_db)):
 @router.post("/catalog/sync", dependencies=[Depends(require_admin)])
 async def sync_catalog_from_vivape(db: AsyncSession = Depends(get_db)):
     return await sync_vivape_catalog(db)
+
+@router.post("/catalog/sync-esimaccess", dependencies=[Depends(require_admin)])
+async def sync_catalog_from_esimaccess(db: AsyncSession = Depends(get_db)):
+    return await sync_esimaccess_catalog(db)
 
 # --- Merchant Approval Queue ---
 @router.get("/merchants/queue", dependencies=[Depends(require_admin)])

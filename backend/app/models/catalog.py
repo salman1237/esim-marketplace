@@ -29,6 +29,13 @@ class Product(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     supplier_product_id = Column(Integer, index=True, nullable=True)
+    # supplier_product_id is Integer-typed, which fits VivaPe (plain integer
+    # ids) but not eSIM Access, whose packageCode is a string like
+    # "TOPUP_CKH491" - see migration a1c4e82f7d93 for why this is a new,
+    # purely additive column rather than a retype of supplier_product_id.
+    # NULL for every VivaPe-sourced row; only ever set for
+    # supplier_reference == "esimaccess" rows.
+    supplier_package_code = Column(String(100), index=True, nullable=True)
     country_id = Column(Integer, ForeignKey("countries.id"), nullable=False, index=True)
     title_en = Column(String(150), nullable=False)
     title_bn = Column(String(150), nullable=True)

@@ -101,3 +101,89 @@ def parse_vivape_product(p: dict, profit_pct: Decimal = DEFAULT_SELLING_PROFIT_P
         "supplier_reference": ref,
         "supplier_receiver_amount": supplier_receiver_amount,
     }
+
+
+# eSIM Access dataType values a single Product row can represent today - see
+# backend/docs/esimaccess_integration_reference.md section 6. Only fixed
+# data (1) is a stable-price, fixed-validity SKU the way every existing
+# Product already is. Day Passes (2/3/4) sell a *daily* rate for a
+# *customer-chosen* number of days at a tiered discount - a genuinely
+# different product shape Product has no column for (no "pick a duration at
+# purchase" concept anywhere in checkout today) and are deliberately not
+# synced by this function. Confirmed live (2026-11-10): of 3,283 real
+# packages, 1,817 are dataType 1, and of those, 1,583 are single-country
+# (the rest are multi-country/regional bundles - see
+# _esimaccess_single_country below for why those are excluded too).
+ESIMACCESS_SYNCABLE_DATA_TYPE = 1
+
+
+def _esimaccess_single_country(location: str) -> Optional[str]:
+    """Returns the ISO2 if `location` names exactly one country, else None.
+    eSIM Access's `location` field is a bare ISO2 for a single-country
+    package ("ES") or a comma-separated list for a multi-country/regional
+    bundle ("QA,EG,IL,MA,AE,JO,BH,TN,KW,SA,TR,OM", confirmed live). Product
+    has one country_id FK - no multi-country representation exists - so a
+    bundle has nowhere correct to go yet and is skipped, not forced onto
+    one arbitrarily-chosen member country."""
+    loc = (location or "").strip().upper()
+    if loc and "," not in loc and len(loc) == 2:
+        return loc
+    return None
+
+
+def parse_esimaccess_package(p: dict, profit_pct: Decimal = DEFAULT_SELLING_PROFIT_PCT) -> Optional[dict]:
+    """Returns None for anything outside today's deliberately narrow sync
+    scope (see ESIMACCESS_SYNCABLE_DATA_TYPE's comment: fixed-data,
+    single-country only), else a dict of fields ready to build a Product
+    row. Field names and encoding confirmed live, not assumed from docs -
+    see backend/docs/esimaccess_integration_reference.md and the real
+    $0.30 test purchase (packageCode PFRQ8FIBC) this sync path was built
+    against."""
+    if p.get("dataType") != ESIMACCESS_SYNCABLE_DATA_TYPE:
+        return None
+    iso2 = _esimaccess_single_country(p.get("location"))
+    if iso2 is None:
+        return None
+    # durationUnit is "DAY" on every single package observed in a live,
+    # unfiltered pull (3,283/3,283) - guard against ever silently
+    # misreading validity_days if that ever isn't true, rather than assume
+    # it always will be.
+    if p.get("durationUnit") != "DAY":
+        return None
+
+    package_code = p.get("packageCode")
+    if not package_code:
+        return None
+
+    # USD x10,000 encoding, confirmed live (balance/query: 500000 == $50.00;
+    # this real test purchase: 3000 == $0.30 actually charged). Never 2-decimal
+    # cents.
+    cost = Decimal(str(p.get("price") or 0)) / Decimal(10000)
+    retail = retail_price_for(cost, profit_pct)
+
+    volume_bytes = p.get("volume") or 0
+    data_amount_gb = (Decimal(volume_bytes) / Decimal(1024 ** 3)).quantize(Decimal("0.01"))
+    validity_days = int(p.get("duration") or 0)
+
+    title = str(p.get("name") or f"{iso2} eSIM")
+
+    return {
+        "iso2": iso2,
+        "supplier_package_code": package_code,
+        "title": title,
+        "data_amount_gb": data_amount_gb,
+        "validity_days": validity_days,
+        "cost_price": cost,
+        "retail_price": retail,
+        "currency": "USD",  # eSIM Access bills in USD, unlike VivaPe's EUR
+        "is_unlimited": False,  # dataType 1 is always a fixed total, never unlimited
+        "supplier_reference": "esimaccess",
+        # ipExport (the exit-IP distinction - e.g. HK vs SG for China,
+        # confirmed to carry a real 15-44% price difference between
+        # otherwise-identical packages) lives in the package `name` itself
+        # already (e.g. "China 10GB 30Days (nonhkip)"), which becomes
+        # title_en verbatim above - so the distinction is preserved without
+        # inventing a new column for it, matching the reference doc's
+        # warning not to fold it away as a name-string oddity.
+        "coverage_networks": p.get("ipExport") or None,
+    }

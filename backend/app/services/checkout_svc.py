@@ -20,6 +20,7 @@ from app.models.wallet import Wallet, WalletType, LedgerRefType
 from app.services.ledger_svc import LedgerService
 from app.services import agent_svc, referral_svc
 from app.services.vivape_adapter import VivaPeAdapter
+from app.services.esimaccess_adapter import ESIMAccessAdapter, ESIMAccessError, decimal_to_scaled
 from app.services.audit_svc import AuditService
 from app.core.logging import get_logger
 
@@ -156,6 +157,40 @@ async def resolve_beneficiary(
     return current_user.id, None
 
 
+def _parse_lpa_string(lpa: str) -> tuple[str | None, str | None]:
+    """A standard activation code is LPA:1$<smdp>$<matching_id>. Real
+    values live inside it; this is the one place that decomposes it,
+    shared by every supplier branch that receives a ready-made LPA string
+    rather than separate smdp/matching_id fields, so the two can't quietly
+    drift apart."""
+    parts = lpa.split("$")
+    if len(parts) == 3 and parts[0].upper().startswith("LPA:"):
+        return parts[1] or None, parts[2] or None
+    return None, None
+
+
+def _extract_esimaccess_details(entry: dict) -> dict | None:
+    """One entry from eSIM Access's esim/query obj.esimList[]. `ac` is the
+    full LPA string - confirmed live (2026-11-10, a real $0.30 test
+    purchase, refunded via esim/cancel) in exactly the LPA:1$<smdp>$<id>
+    shape _parse_lpa_string already handles, so no new parsing logic was
+    needed, only a new field name to read it from. Returns None for an
+    entry with no iccid/ac yet - esim/order is confirmed asynchronous
+    (it returns only orderNo/transactionId, never profile details), so an
+    empty/partial esimList is a normal "not ready yet" state, not an
+    error."""
+    if not isinstance(entry, dict) or not entry.get("iccid") or not entry.get("ac"):
+        return None
+    lpa = entry["ac"]
+    smdp, matching_id = _parse_lpa_string(lpa)
+    return {
+        "iccid": entry["iccid"],
+        "lpa": lpa,
+        "smdp": smdp,
+        "matching_id": matching_id,
+    }
+
+
 def _extract_esim_details(esim_data: dict) -> dict | None:
     """VivaPe proxies multiple underlying eSIM suppliers through the same
     get-esim-by-trx endpoint, and each returns a differently-shaped
@@ -184,12 +219,7 @@ def _extract_esim_details(esim_data: dict) -> dict | None:
     for candidate in (esim_order, esim_data):
         if isinstance(candidate, dict) and candidate.get("iccid") and candidate.get("qrcodeContent"):
             lpa = candidate["qrcodeContent"]
-            # Real values live inside the LPA itself (LPA:1$<smdp>$<id>);
-            # parse them out rather than storing fabricated placeholders.
-            smdp, matching_id = None, None
-            parts = lpa.split("$")
-            if len(parts) == 3 and parts[0].upper().startswith("LPA:"):
-                smdp, matching_id = parts[1] or None, parts[2] or None
+            smdp, matching_id = _parse_lpa_string(lpa)
             return {
                 "iccid": candidate["iccid"],
                 "lpa": lpa,
@@ -265,6 +295,22 @@ def _attach_profile(db: AsyncSession, order: Order, product: Product, beneficiar
     return profile
 
 
+async def _complete_esimaccess_from_order_no(db: AsyncSession, order: Order, product: Product) -> ESIMProfile | None:
+    """eSIM Access's half of complete_from_supplier_trx - recovery for an
+    order whose esim/order call already went through (external_trx_id holds
+    the orderNo) but whose delivery never finished. Queries by orderNo and
+    never calls create_order again, so a recovered order cannot be charged
+    twice."""
+    result = await ESIMAccessAdapter.query_esim(db, order_no=order.external_trx_id)
+    esim_list = (result or {}).get("esimList") or []
+    details = _extract_esimaccess_details(esim_list[0]) if esim_list else None
+    if details:
+        return _attach_profile(db, order, product, order.beneficiary_id, order.external_trx_id, details)
+    raise EsimNotReadyYet(
+        f"order {order.order_no}: no usable eSIM for eSIM Access orderNo {order.external_trx_id} yet"
+    )
+
+
 async def complete_from_supplier_trx(db: AsyncSession, order: Order, product: Product, actor_id: str, actor_role: str) -> ESIMProfile | None:
     """Recovery for an order whose supplier purchase already went through
     (external_trx_id is set) but whose delivery never finished - typically
@@ -275,6 +321,9 @@ async def complete_from_supplier_trx(db: AsyncSession, order: Order, product: Pr
     only on a definitive answer (VivaPe responded but there's no usable
     eSIM); a network error propagates so the caller can retry later rather
     than refunding an eSIM that may well exist."""
+    if product.supplier_reference == "esimaccess":
+        return await _complete_esimaccess_from_order_no(db, order, product)
+
     esim_data = await VivaPeAdapter.get_esim_by_trx(db, order.external_trx_id)
     details = _extract_esim_details(esim_data)
     if details:
@@ -288,6 +337,80 @@ async def complete_from_supplier_trx(db: AsyncSession, order: Order, product: Pr
     raise EsimNotReadyYet(
         f"order {order.order_no}: no usable eSIM for trx {order.external_trx_id} yet"
     )
+
+
+async def _provision_via_esimaccess(db: AsyncSession, order: Order, product: Product, beneficiary_id: str, actor_id: str, actor_role: str) -> ESIMProfile | None:
+    """eSIM Access's half of provision_esim(). Structurally mirrors the
+    VivaPe branch (commit the supplier reference before polling, poll over
+    _ESIM_READY_POLL_DELAYS, never refund once the supplier has been asked
+    to charge us) but the specifics differ in ways confirmed live
+    (2026-11-10, a real $0.30 test purchase against packageCode PFRQ8FIBC,
+    refunded via esim/cancel afterwards) rather than assumed from docs:
+
+    - transaction_id is order.id itself, not a freshly generated string.
+      Unlike VivaPe (no idempotency key at all - see the big comment on the
+      VivaPe branch below about why that's dangerous), eSIM Access's
+      transactionId is designed to be reused on a retry of the same
+      request. Using order.id means every retry of THIS order (including
+      recover_stuck_orders re-entering this path) sends the identical
+      transactionId, which is what makes that protection actually apply
+      here instead of generating a fresh id and losing it.
+    - esim/order's response is confirmed to carry ONLY orderNo/
+      transactionId - never iccid/LPA - so there is no "found it
+      immediately" fast path to check before polling, unlike VivaPe's
+      occasional same-call answer. Every eSIM Access purchase polls
+      esim/query at least once.
+    - amount_scaled is derived from product.cost_price (kept in lockstep
+      with the live catalog by the sync job), not round-tripped from a
+      separate supplier-specific field the way VivaPe's
+      supplier_receiver_amount is - eSIM Access's own request shape takes
+      a real price, not an opaque supplier-defined quantity.
+    """
+    transaction_id = order.id
+    amount_scaled = decimal_to_scaled(Decimal(str(product.cost_price)))
+    try:
+        order_obj = await ESIMAccessAdapter.create_order(
+            db, transaction_id=transaction_id, package_code=product.supplier_package_code,
+            amount_scaled=amount_scaled,
+        )
+        order_no = (order_obj or {}).get("orderNo")
+        if not order_no:
+            logger.warning(
+                "esimaccess_provisioning_failed_refunding_order",
+                order_id=order.id, esimaccess_response=order_obj,
+            )
+            await _refund_failed_order(db, order, actor_id, actor_role)
+            return None
+
+        # Durable BEFORE polling - esim/order has already charged us at this
+        # point (confirmed live: balance dropped immediately on order, and
+        # only came back on a later, separate esim/cancel call - the refund
+        # itself was not instant either). If the process dies now, recovery
+        # must re-query this orderNo, never call create_order a second time.
+        order.external_trx_id = str(order_no)
+        await db.commit()
+
+        for delay in _ESIM_READY_POLL_DELAYS:
+            if delay:
+                await asyncio.sleep(delay)
+            result = await ESIMAccessAdapter.query_esim(db, order_no=order_no)
+            esim_list = (result or {}).get("esimList") or []
+            details = _extract_esimaccess_details(esim_list[0]) if esim_list else None
+            if details:
+                return _attach_profile(db, order, product, beneficiary_id, order_no, details)
+
+        # Still nothing - but eSIM Access has already charged us, so this
+        # order must NOT be refunded here. Leaving it PROCESSING hands it to
+        # recover_stuck_orders, which re-queries this same orderNo (never
+        # buying again) - same reasoning as the VivaPe branch below, and the
+        # same real-money mistake it already cost this project once on a
+        # different supplier.
+        logger.info("esimaccess_esim_not_ready_leaving_for_recovery", order_id=order.id, order_no=order_no)
+        return None
+    except ESIMAccessError as e:
+        logger.warning("esimaccess_provisioning_failed_refunding_order", order_id=order.id, error=str(e))
+        await _refund_failed_order(db, order, actor_id, actor_role)
+        return None
 
 
 async def provision_esim(db: AsyncSession, order: Order, product: Product, beneficiary_id: str, actor_id: str, actor_role: str) -> ESIMProfile | None:
@@ -305,7 +428,14 @@ async def provision_esim(db: AsyncSession, order: Order, product: Product, benef
       recover_stuck_orders can re-fetch that same transaction. Refunding
       here is what bought and abandoned real eSIMs.
 
-    Returns None in both cases. Caller commits either way."""
+    Returns None in both cases. Caller commits either way.
+
+    eSIM Access products (product.supplier_reference == "esimaccess") take
+    a structurally similar but differently-detailed path - see
+    _provision_via_esimaccess for what's actually different and why."""
+    if product.supplier_reference == "esimaccess":
+        return await _provision_via_esimaccess(db, order, product, beneficiary_id, actor_id, actor_role)
+
     if product.supplier_product_id and product.supplier_receiver_amount is not None:
         try:
             # receiver_amount is NOT the price — confirmed against VivaPe's

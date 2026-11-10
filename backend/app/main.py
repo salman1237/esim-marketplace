@@ -19,7 +19,7 @@ from app.models.user import User, UserRole, UserStatus
 from app.models.settings import PlatformSetting, CurrencyRate, Language, Translation
 from app.services.ledger_svc import LedgerService
 from app.services.currency_svc import CurrencyService
-from app.services.catalog_sync_svc import sync_vivape_catalog
+from app.services.catalog_sync_svc import sync_vivape_catalog, sync_esimaccess_catalog
 from app.services.webhook_svc import retry_failed_webhooks
 from app.services.order_fulfilment import recover_stuck_orders
 from app.services.trip_feedback_svc import send_due_trip_feedback_reminders
@@ -137,14 +137,37 @@ async def lifespan(app: FastAPI):
             hours=settings.CATALOG_SYNC_INTERVAL_HOURS,
             id="vivape_catalog_sync", max_instances=1,
         )
+
+        async def _scheduled_esimaccess_catalog_sync():
+            async with AsyncSessionLocal() as db:
+                try:
+                    result = await sync_esimaccess_catalog(db)
+                    logger.info("scheduled_esimaccess_catalog_sync_completed", **result)
+                except Exception as e:
+                    # Same reasoning as VivaPe's job above: a failed sync
+                    # (eSIM Access down, network blip) must not crash the
+                    # scheduler - log and let the next run try again. A
+                    # separate try/except per supplier also means one
+                    # supplier being down can never stop the other's sync
+                    # from running.
+                    logger.warning("scheduled_esimaccess_catalog_sync_failed", error=str(e))
+
+        scheduler.add_job(
+            _scheduled_esimaccess_catalog_sync, "interval",
+            hours=settings.CATALOG_SYNC_INTERVAL_HOURS,
+            id="esimaccess_catalog_sync", max_instances=1,
+        )
+
         scheduler.start()
         logger.info("catalog_sync_scheduler_started", interval_hours=settings.CATALOG_SYNC_INTERVAL_HOURS)
         # APScheduler's interval trigger only fires after a full interval
         # has elapsed, not on registration - without this, a deploy would
         # otherwise wait up to CATALOG_SYNC_INTERVAL_HOURS before the
         # catalog ever refreshed automatically. Backgrounded so a slow
-        # VivaPe response doesn't delay the app's own startup/health check.
+        # VivaPe/eSIM Access response doesn't delay the app's own
+        # startup/health check.
         asyncio.create_task(_scheduled_catalog_sync())
+        asyncio.create_task(_scheduled_esimaccess_catalog_sync())
 
     async def _scheduled_webhook_retry():
         async with AsyncSessionLocal() as db:

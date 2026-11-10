@@ -34,12 +34,21 @@ async def _admin(client, promote_role, role="SUPER_ADMIN", name="supplieradmin")
 async def test_defaults_to_the_two_proven_suppliers_telna_off(db_session):
     """Not a neutral default: Telna starts disabled because most of its real
     catalog failed a live purchase test, while the other two have been
-    selling real orders since launch."""
+    selling real orders since launch. eSIM Access is different again - not
+    a cautious default pending proof, but the primary supplier, so it
+    launches enabled from day one. This is the only test in this file
+    entitled to check the untouched blank-slate default (every other test
+    that cares about a specific enabled-set state sets it explicitly first,
+    the same discipline test_disabled_suppliers_product_disappears_from_
+    the_storefront's own docstring states) - it must stay the first test in
+    this file, or its assumption about nothing having touched the setting
+    yet no longer holds."""
     enabled = await get_enabled_suppliers(db_session)
     assert enabled == DEFAULT_ENABLED_SUPPLIERS
     assert "telna_esim" not in enabled
     assert "esimgo_bundle" in enabled
     assert "worldmove_esim" in enabled
+    assert "esimaccess" in enabled
 
 
 async def test_an_unrecognised_supplier_is_rejected_not_silently_dropped(db_session):
@@ -64,6 +73,10 @@ async def test_serialize_all_lists_every_known_supplier_with_its_state(db_sessio
     assert by_ref["telna_esim"]["enabled"] is False
     # Human labels, not raw reference strings - what the checkboxes show.
     assert by_ref["telna_esim"]["label"] == "Telna"
+    # eSIM Access is a separate top-level supplier, not a VivaPe wholesaler,
+    # but it appears in this same list through the identical mechanism.
+    assert by_ref["esimaccess"]["label"] == "eSIM Access"
+    assert by_ref["esimaccess"]["enabled"] is False  # this call only enabled esimgo_bundle
 
 
 # --- the actual control surface: does disabling a supplier really hide it --
@@ -83,6 +96,30 @@ async def test_disabled_suppliers_product_disappears_from_the_storefront(client,
     assert any(p["id"] == product.id for p in res.json())
 
     await set_enabled_suppliers(db_session, ["esimgo_bundle", "worldmove_esim"], admin_id=None)
+    await db_session.commit()
+    res = await client.get(f"/api/v1/catalog/countries/{country.iso2}/products")
+    assert res.status_code == 200
+    assert not any(p["id"] == product.id for p in res.json())
+
+
+async def test_esim_access_product_sells_when_enabled_then_can_be_turned_off(client, db_session):
+    """eSIM Access defaults ON (see test_defaults_to_the_two_proven_
+    suppliers_telna_off), but this test does not rely on that ambient
+    state - like test_disabled_suppliers_product_disappears_from_the_
+    storefront, it sets the enabled list explicitly first, so it stays
+    correct regardless of what any earlier test in this file left behind.
+    Proves the default actually results in a sellable product, not just a
+    checkbox state, and that turning it off genuinely removes it."""
+    product = await create_test_product(db_session, supplier_reference="esimaccess")
+    country = (await db_session.execute(select(Country).where(Country.id == product.country_id))).scalar_one()
+
+    await set_enabled_suppliers(db_session, ["esimgo_bundle", "worldmove_esim", "esimaccess"], admin_id=None)
+    await db_session.commit()
+    res = await client.get(f"/api/v1/catalog/countries/{country.iso2}/products")
+    assert res.status_code == 200
+    assert any(p["id"] == product.id for p in res.json())
+
+    await set_enabled_suppliers(db_session, ["esimgo_bundle", "worldmove_esim"], admin_id=None)  # esimaccess off
     await db_session.commit()
     res = await client.get(f"/api/v1/catalog/countries/{country.iso2}/products")
     assert res.status_code == 200

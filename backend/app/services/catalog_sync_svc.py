@@ -10,7 +10,8 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.catalog import Country, Product
 from app.services.vivape_adapter import VivaPeAdapter
-from app.services.catalog_parsing import parse_vivape_product
+from app.services.esimaccess_adapter import ESIMAccessAdapter
+from app.services.catalog_parsing import parse_vivape_product, parse_esimaccess_package
 from app.services.pricing_svc import get_selling_profit_pct
 from app.core.logging import get_logger
 
@@ -244,6 +245,196 @@ async def sync_vivape_catalog(db: AsyncSession) -> dict:
         # Kept under its original key so the admin console's existing sync
         # alert keeps working, but it now counts real changes.
         "updated_products": changed_p,
+        "deactivated_products": deactivated_p,
+        "deactivation_skipped": deactivation_skipped,
+        "deactivation_candidates": stale_count,
+    }
+
+
+async def sync_esimaccess_catalog(db: AsyncSession) -> dict:
+    """Syncs the local catalog from eSIM Access's package/list.
+
+    Deliberately narrower in scope than sync_vivape_catalog, by design, not
+    oversight - see parse_esimaccess_package's docstring: only fixed-data
+    (dataType 1), single-country packages are synced. Day Passes and
+    multi-country/regional bundles are real eSIM Access products this
+    function does not create Product rows for, because Product has no
+    column for "pick your own duration at purchase" or "one package, many
+    countries" - adding either is its own design decision, not something to
+    improvise here.
+
+    Structurally simpler than VivaPe's sync in one respect: package/list
+    with an empty locationCode returns the ENTIRE catalogue in one call
+    (confirmed live, 2026-11-10: a single unfiltered call returned all
+    3,283 packages, with no pager field anywhere in the response) - there is
+    no per-country loop, no pagination, and therefore no per-call rate-limit
+    pacing needed the way VivaPe's _PER_COUNTRY_DELAY_SECONDS is.
+
+    Shares the same circuit breaker (MAX_DEACTIVATION_SHARE,
+    MIN_DEACTIVATION_FLOOR, STALE_GRACE) as VivaPe's sync - a supplier
+    emptying its catalog is exactly as implausible and exactly as dangerous
+    regardless of which supplier it is - but scoped to eSIM Access's own
+    rows (Product.supplier_reference == "esimaccess") throughout, so a
+    VivaPe-side hiccup and an eSIM Access-side hiccup can never share the
+    same active/stale denominator and mask or trigger each other.
+    """
+    sync_started_at = datetime.now(timezone.utc)
+    profit_pct = await get_selling_profit_pct(db)
+
+    existing_country_res = await db.execute(select(Country.iso2, Country.id))
+    country_id_by_iso2 = {iso2: cid for iso2, cid in existing_country_res.all()}
+
+    existing_product_res = await db.execute(
+        select(Product).where(
+            Product.supplier_reference == "esimaccess",
+            Product.supplier_package_code.isnot(None),
+        )
+    )
+    existing_by_package_code = {p.supplier_package_code: p for p in existing_product_res.scalars().all()}
+
+    raw_packages = await ESIMAccessAdapter.list_packages(db)
+
+    created_countries = 0
+    created_p = 0
+    seen_p = 0
+    changed_p = 0
+    skipped_out_of_scope = 0
+    seen_ids: list[str] = []
+
+    for raw in raw_packages:
+        parsed = parse_esimaccess_package(raw, profit_pct)
+        if parsed is None:
+            skipped_out_of_scope += 1
+            continue
+
+        iso2 = parsed["iso2"]
+        country_id = country_id_by_iso2.get(iso2)
+        if country_id is None:
+            # A country eSIM Access covers that isn't in Triptel's Country
+            # table yet (eSIM Access's 202 countries vs. VivaPe's ~132 means
+            # this is expected, not an error). Mirrors sync_vivape_catalog's
+            # own country auto-creation - same flag_url convention, and
+            # not flagged is_popular (that's a merchandising choice made
+            # separately, the same way it already is for VivaPe).
+            networks = raw.get("locationNetworkList") or []
+            name = networks[0].get("locationName") if networks else iso2
+            new_country = Country(
+                iso2=iso2,
+                name_en=name or iso2,
+                flag_url=f"https://flagcdn.com/w80/{iso2.lower()}.png",
+                is_popular=False,
+                is_active=True,
+            )
+            db.add(new_country)
+            await db.flush()  # need new_country.id before using it below
+            country_id = new_country.id
+            country_id_by_iso2[iso2] = country_id
+            created_countries += 1
+
+        existing = existing_by_package_code.get(parsed["supplier_package_code"])
+        if existing:
+            existing.title_en = parsed["title"] or existing.title_en
+            existing.data_amount_gb = parsed["data_amount_gb"]
+            existing.validity_days = parsed["validity_days"]
+            existing.cost_price = parsed["cost_price"]
+            existing.retail_price = parsed["retail_price"]
+            existing.currency = parsed["currency"]
+            existing.is_unlimited = parsed["is_unlimited"]
+            existing.coverage_networks = parsed["coverage_networks"]
+            existing.country_id = country_id
+            # Reappeared after being deactivated below, or was only ever
+            # absent for a few cycles - being seen in the feed again is
+            # exactly what "active" means here (same reasoning as VivaPe's
+            # sync, see its own comment on this exact line).
+            existing.is_active = True
+            seen_p += 1
+            seen_ids.append(existing.id)
+            if db.is_modified(existing):
+                changed_p += 1
+        else:
+            new_product = Product(
+                country_id=country_id,
+                title_en=parsed["title"],
+                data_amount_gb=parsed["data_amount_gb"],
+                validity_days=parsed["validity_days"],
+                cost_price=parsed["cost_price"],
+                retail_price=parsed["retail_price"],
+                currency=parsed["currency"],
+                is_unlimited=parsed["is_unlimited"],
+                supplier_reference=parsed["supplier_reference"],
+                supplier_package_code=parsed["supplier_package_code"],
+                coverage_networks=parsed["coverage_networks"],
+                last_seen_in_feed_at=sync_started_at,
+            )
+            db.add(new_product)
+            await db.flush()
+            created_p += 1
+            seen_ids.append(new_product.id)
+
+    await db.commit()
+
+    # Same direct-UPDATE pattern as VivaPe's sync, and for the identical
+    # reason: this must happen even for a row whose data didn't change, so
+    # it cannot be left to SQLAlchemy's change detection (see the long
+    # comment on sync_vivape_catalog's own identical UPDATE for the
+    # production incident that taught this project why).
+    if seen_ids:
+        await db.execute(
+            update(Product)
+            .where(Product.id.in_(seen_ids))
+            .values(last_seen_in_feed_at=sync_started_at, updated_at=Product.updated_at)
+        )
+        await db.commit()
+
+    stale_cutoff = sync_started_at - STALE_GRACE
+    stale_clause = (
+        Product.is_active.is_(True),
+        Product.supplier_reference == "esimaccess",
+        Product.last_seen_in_feed_at.isnot(None),
+        Product.last_seen_in_feed_at < stale_cutoff,
+    )
+    stale_count = (await db.execute(
+        select(func.count()).select_from(Product).where(*stale_clause)
+    )).scalar_one()
+    active_count = (await db.execute(
+        select(func.count()).select_from(Product).where(
+            Product.is_active.is_(True), Product.supplier_reference == "esimaccess"
+        )
+    )).scalar_one()
+
+    deactivated_p = 0
+    deactivation_skipped = False
+    if stale_count >= MIN_DEACTIVATION_FLOOR and stale_count > active_count * MAX_DEACTIVATION_SHARE:
+        deactivation_skipped = True
+        logger.error(
+            "esimaccess_catalog_mass_deactivation_refused",
+            stale_products=stale_count,
+            active_products=active_count,
+            share=round(stale_count / active_count, 3) if active_count else None,
+            message="Refused to deactivate an implausible share of the eSIM Access catalog - left everything purchasable",
+        )
+    elif stale_count:
+        deactivate_res = await db.execute(update(Product).where(*stale_clause).values(is_active=False))
+        deactivated_p = deactivate_res.rowcount or 0
+        await db.commit()
+
+    logger.info(
+        "esimaccess_catalog_synced",
+        created_countries=created_countries,
+        created_products=created_p,
+        products_in_feed=seen_p,
+        changed_products=changed_p,
+        skipped_out_of_scope=skipped_out_of_scope,
+        deactivated_products=deactivated_p,
+        deactivation_skipped=deactivation_skipped,
+    )
+    return {
+        "status": "success",
+        "created_countries": created_countries,
+        "synced_products": created_p,
+        "products_in_feed": seen_p,
+        "updated_products": changed_p,
+        "skipped_out_of_scope": skipped_out_of_scope,
         "deactivated_products": deactivated_p,
         "deactivation_skipped": deactivation_skipped,
         "deactivation_candidates": stale_count,

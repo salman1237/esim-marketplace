@@ -16,6 +16,17 @@ This is a visibility switch, not a data switch: disabling a supplier never
 deletes or deactivates its products (an admin reviewing the catalog, or
 investigating a specific product, still sees everything). It only removes
 that supplier's products from what a customer or partner can browse or buy.
+
+eSIM Access (added November 2026) is not a VivaPe wholesaler - it's a
+separate top-level supplier with its own adapter and catalog sync - but it
+plugs into this exact same switch by using the identical mechanism:
+Product.supplier_reference is a flat string regardless of which supplier
+owns it, so "esimaccess" sits at the same level as the three VivaPe
+wholesaler names below. ALL_SUPPLIER_REFERENCES, not catalog_parsing's own
+ESIM_REFERENCES, is this module's master list precisely because that other
+constant is scoped to "what VivaPe's own parser recognises" - eSIM Access
+packages are never parsed by that module and have no reason to be added to
+its tuple.
 """
 from typing import Iterable
 
@@ -27,14 +38,19 @@ from app.services.catalog_parsing import ESIM_REFERENCES
 
 SUPPLIER_SETTINGS_KEY = "enabled_suppliers"
 
+# Every supplier_reference value this toggle knows about, across every
+# top-level supplier - not just catalog_parsing.ESIM_REFERENCES, which is
+# VivaPe-parser-scoped only (see the module docstring above).
+ALL_SUPPLIER_REFERENCES = ESIM_REFERENCES + ("esimaccess",)
+
 # Human-readable names for the admin console. Kept here rather than in the
-# frontend so a new entry in ESIM_REFERENCES (catalog_parsing.py) fails
-# loudly - KeyError, not a silently unlabelled checkbox - until someone
-# names it.
+# frontend so a new entry in ALL_SUPPLIER_REFERENCES fails loudly - KeyError,
+# not a silently unlabelled checkbox - until someone names it.
 SUPPLIER_LABELS = {
     "esimgo_bundle": "eSIM Go",
     "worldmove_esim": "WorldMove",
     "telna_esim": "Telna",
+    "esimaccess": "eSIM Access",
 }
 
 # Telna starts OFF, not on. This is not a neutral default: a live test
@@ -43,17 +59,25 @@ SUPPLIER_LABELS = {
 # actually provisions. The other two have been selling real orders in
 # production since launch. An admin turns Telna on deliberately, once
 # VivaPe confirms which of its products are genuinely fulfillable.
-DEFAULT_ENABLED_SUPPLIERS = frozenset({"esimgo_bundle", "worldmove_esim"})
+#
+# eSIM Access starts ON: it is now the primary supplier (chosen for better
+# coverage and, on most matched tiers outside China/Bangladesh/Singapore,
+# lower cost - see D:\eSim-backups\supplier-comparison). Unlike Telna, this
+# is a deliberate choice to launch enabled, not a default pending proof -
+# auth and a live balance check are already confirmed working
+# (backend/docs/esimaccess_integration_reference.md), before any product of
+# its has been offered for sale.
+DEFAULT_ENABLED_SUPPLIERS = frozenset({"esimgo_bundle", "worldmove_esim", "esimaccess"})
 
 
 def _normalize(raw) -> frozenset[str]:
-    """Keeps only values catalog_parsing would actually recognise - a typo,
-    a stale supplier removed from ESIM_REFERENCES, or hand-edited JSON in
+    """Keeps only values this module actually recognises - a typo, a stale
+    supplier removed from ALL_SUPPLIER_REFERENCES, or hand-edited JSON in
     the settings table can never silently enable (or permanently hide)
-    something the parser doesn't know about either way."""
+    something nothing here knows about either way."""
     if not isinstance(raw, list):
         return DEFAULT_ENABLED_SUPPLIERS
-    return frozenset(s for s in raw if s in ESIM_REFERENCES)
+    return frozenset(s for s in raw if s in ALL_SUPPLIER_REFERENCES)
 
 
 async def get_enabled_suppliers(db: AsyncSession) -> frozenset[str]:
@@ -82,7 +106,7 @@ async def set_enabled_suppliers(db: AsyncSession, suppliers: list[str], admin_id
     doesn't recognise, that is a bug worth surfacing immediately, not a
     setting worth half-saving.
     """
-    unknown = [s for s in suppliers if s not in ESIM_REFERENCES]
+    unknown = [s for s in suppliers if s not in ALL_SUPPLIER_REFERENCES]
     if unknown:
         raise ValueError(f"Unrecognised supplier(s): {', '.join(unknown)}")
 
@@ -107,5 +131,5 @@ async def serialize_all(db: AsyncSession) -> list[dict]:
     enabled = await get_enabled_suppliers(db)
     return [
         {"reference": ref, "label": SUPPLIER_LABELS.get(ref, ref), "enabled": ref in enabled}
-        for ref in ESIM_REFERENCES
+        for ref in ALL_SUPPLIER_REFERENCES
     ]
