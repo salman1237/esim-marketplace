@@ -65,6 +65,16 @@ services:
       SUPPLIER_TIMEZONE: ${SUPPLIER_TIMEZONE:-Asia/Hong_Kong}
       VIVAPE_EMAIL: ${VIVAPE_EMAIL:?VIVAPE_EMAIL env var is required}
       VIVAPE_PASSWORD: ${VIVAPE_PASSWORD:?VIVAPE_PASSWORD env var is required}
+      ESIMACCESS_BASE_URL: ${ESIMACCESS_BASE_URL:-https://api.esimaccess.com/api/v1/open}
+      # Soft defaults, not :?required, unlike VIVAPE_EMAIL/PASSWORD above -
+      # those have been configured in Dokploy since launch, so requiring
+      # them is safe; this is a brand-new var on its first-ever deploy, and
+      # a hard-required var with nothing set yet would fail the ENTIRE
+      # beta deploy outright rather than just leave eSIM Access's own calls
+      # failing gracefully. Switch to :?required once these are confirmed
+      # set in Dokploy's Environment Variables UI for this app.
+      ESIMACCESS_ACCESS_CODE: ${ESIMACCESS_ACCESS_CODE:-dev-only-not-a-real-access-code}
+      ESIMACCESS_SECRET_KEY: ${ESIMACCESS_SECRET_KEY:-dev-only-not-a-real-secret-key}
       SHURJOPAY_BASE_URL: ${SHURJOPAY_BASE_URL:-https://sandbox.shurjopayment.com}
       SHURJOPAY_USERNAME: ${SHURJOPAY_USERNAME:?SHURJOPAY_USERNAME env var is required}
       SHURJOPAY_PASSWORD: ${SHURJOPAY_PASSWORD:?SHURJOPAY_PASSWORD env var is required}
