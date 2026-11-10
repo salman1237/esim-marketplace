@@ -52,10 +52,27 @@ from:
   VivaPe lesson was, it costs little to pass `http2=True` on the shared `httpx.AsyncClient` anyway
   and watch the `SupplierTransactionLog` latency/status columns during first real testing.
 
-## 2. Authentication — the one point this doc could NOT fully nail down
+## 2. Authentication — RESOLVED, `[LIVE-CONFIRMED-2026-11-10]`
 
-This is the single most important open question for the adapter build. Here is exactly what's
-confirmed vs. not:
+**Settled with a real call against the real account.** `RT-AccessCode` alone, no HMAC, no
+timestamp, no signature, is sufficient — confirmed with a live `POST balance/query`, empty body,
+single header, which returned `HTTP 200` and `{"success":true,"errorCode":"0","errorMsg":null,
+"obj":{"balance":500000}}`. The MCP server's "every request is HMAC-SHA256 signed" claim does not
+hold for this account/endpoint at least; `settings.ESIMACCESS_SECRET_KEY` is still defined and
+threaded through for forward-compatibility (see point 2 below), but is not required today.
+
+This also confirms the response envelope (`success`/`errorCode`/`errorMsg`/`obj`) and gives the
+first real field name inside `obj`: **`balance`**, a raw integer in the same ×10,000 USD encoding
+as package prices (500000 → $50.00).
+
+The rest of this section is kept as a record of the investigation that led to the live test,
+since the reasoning (why the SDK/quick-start evidence was trusted over the MCP docs) is still
+useful context for anyone extending auth later (e.g. if a different account ever does require
+signing).
+
+---
+
+Here is exactly what was confirmed vs. not, before the live call above settled it:
 
 - **Confirmed, `[OFFICIAL-FAQ]`** (from `esimaccess.com/docs/what-api-authentication-method-do-you-support/`):
   > "We support the API key in header." ... and separately, HMAC-SHA256 is described as an
@@ -298,11 +315,16 @@ and only works on already-installed eSIMs. `webhook/save` takes `{"webhook": "<h
 
 ### 4.7 `balance/query`
 
-No request body (`[SDK]` sends none). Response `obj` shape not confirmed today beyond "it has a
-balance" (the only official evidence is the Postman walkthrough's instruction to look for
-`"success": true`, no field names shown). Expect something like `{"balance": ..., "currencyCode":
-"USD"}` by analogy with every other `obj`'s `currencyCode` field, but **confirm the exact field name
-from the real first call** rather than guessing it into parsing code.
+`[LIVE-CONFIRMED-2026-11-10]` No request body needed (matches `[SDK]`, which sends none). Real
+response against the real account:
+```json
+{"success": true, "errorCode": "0", "errorMsg": null, "obj": {"balance": 500000}}
+```
+`errorCode` is a **string** `"0"` on success, not an integer and not absent — worth matching exactly
+in whatever success check the adapter writes. `obj.balance` is the only field present — no
+`currencyCode` alongside it as originally guessed by analogy with other endpoints; the ×10,000 USD
+encoding is assumed (500000 → $50.00) but not separately labelled in this response, so don't expect
+a currency field here even though other endpoints may have one.
 
 ## 5. Webhooks
 
@@ -463,17 +485,17 @@ There probably *is* a need for:
 
 ## Summary of what's still genuinely open after today's research
 
-1. **Exact signing requirement.** Simple `RT-AccessCode`-only auth is demonstrated working by the
-   SDK and the official quick-start example; a conflicting MCP-layer claim says HMAC-SHA256 signing
-   is universal. Resolved only by a real test call (§2).
-2. **Full error code enum** beyond the one third-party-claimed example (`200010`).
-3. **`esim/order` and `balance/query` exact response field names** beyond `obj`-wrapper + the one
-   fields confirmed via the top-up example — read off the first real test calls.
+1. ~~Exact signing requirement.~~ **RESOLVED `[LIVE-CONFIRMED-2026-11-10]`** — `RT-AccessCode` alone
+   is sufficient; see §2. `balance/query`'s real response is now known too (§4.7).
+2. **Full error code enum** beyond the one third-party-claimed example (`200010`) — no error was
+   triggered by today's test call, so this is still unconfirmed.
+3. **`esim/order`'s exact response field names** beyond the `obj`-wrapper + the fields confirmed via
+   the top-up example — `balance/query`'s are now confirmed (§4.7), order's are not. Read off the
+   first real test order.
 4. **Exact current rate limit** — 8 req/s is third-party only.
 5. **Whether `/esim/list` still works at all**, or is fully retired in favor of `/esim/query`.
 6. **The `Product.supplier` design question (§9)** — a decision for whoever owns the migration, not
    something this document should decide.
 
-None of these block starting the adapter build — they block trusting it without one real,
-instrumented test call against the live account, logged through `SupplierTransactionLog`, before
-anything here is treated as settled.
+None of these block starting the adapter build. Auth — the one item that genuinely would have —
+is now settled against the real account, not just the docs.

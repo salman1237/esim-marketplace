@@ -26,6 +26,16 @@ class Settings(BaseSettings):
     VIVAPE_EMAIL: str = os.getenv("VIVAPE_EMAIL", "dev-only-not-a-real-account@example.com")
     VIVAPE_PASSWORD: str = os.getenv("VIVAPE_PASSWORD", "dev-only-not-a-real-password")
     VIVAPE_CURRENCY: str = "EUR"
+
+    # Upstream Supplier: eSIM Access API — see backend/docs/
+    # esimaccess_integration_reference.md for the full integration notes.
+    # Same no-real-default pattern as VIVAPE above: the adapter isn't built
+    # yet, so nothing reads these in production yet either — not added to
+    # the production boot guard below until it is, to avoid breaking a
+    # deploy over credentials for a feature that isn't live.
+    ESIMACCESS_BASE_URL: str = os.getenv("ESIMACCESS_BASE_URL", "https://api.esimaccess.com/api/v1/open")
+    ESIMACCESS_ACCESS_CODE: str = os.getenv("ESIMACCESS_ACCESS_CODE", "dev-only-not-a-real-access-code")
+    ESIMACCESS_SECRET_KEY: str = os.getenv("ESIMACCESS_SECRET_KEY", "dev-only-not-a-real-secret-key")
     # VivaPe's eSIM diagnostics endpoints pass the upstream carrier's own
     # timestamps through as naive strings, with no offset to read. This is the
     # zone those are assumed to be in; anything that DOES carry an offset
