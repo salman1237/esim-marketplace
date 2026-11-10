@@ -229,6 +229,90 @@ async def test_esim_not_ready_after_all_polls_leaves_order_processing_unrefunded
     assert await _default_balance(db_session, user["user_id"]) == balance_before, "refunded an eSIM we had already paid for"
 
 
+async def test_a_transient_business_error_while_polling_is_not_ready_not_a_failure(client, db_session, mock_esimaccess, monkeypatch):
+    """Reproduces a real bug, live on beta (2026-11-10): a genuine customer
+    purchase (Bangladesh, 1-day package) was refunded on the very first
+    poll because eSIM Access answered errorCode 200010 ("the batchOrder
+    has been getting resource... success:[0]") before provisioning
+    finished - confirmed in production logs. call_api() correctly raises
+    ESIMAccessError for any non-success response (that discipline is
+    right - see its own docstring), but an earlier version of the polling
+    loop had no try/except around query_esim, so that exception escaped
+    straight past the loop to the outer handler and refunded an order
+    eSIM Access had already been paid for, exactly like refunding on an
+    empty esimList used to. Proves the eventual-success case: the first
+    poll errors with 200010, the second succeeds, and the order completes
+    with no refund anywhere in between."""
+    monkeypatch.setattr("app.services.checkout_svc._ESIM_READY_POLL_DELAYS", (0, 0, 0))
+    mock_esimaccess.query_esim.side_effect = [
+        ESIMAccessError("eSIM Access business error on esim/query: errorCode='200010' errorMsg='the batchOrder has been getting resource, total:[1], success:[0]'"),
+        {"esimList": [{"iccid": "89480100100541800", "ac": "LPA:1$rsp-eu.simlessly.com$ABCDEF123456"}]},
+    ]
+
+    user = await register_and_login(client, "esimaccesstransienterr")
+    product = await _esimaccess_product(db_session)
+    order = await _order_for(db_session, product, user["user_id"])
+    balance_before = await _default_balance(db_session, user["user_id"])
+
+    profile = await checkout_svc.provision_esim(
+        db_session, order, product, user["user_id"], user["user_id"], "USER"
+    )
+    await db_session.commit()
+
+    assert profile is not None
+    await db_session.refresh(order)
+    assert order.status == OrderStatus.COMPLETED
+    assert await _default_balance(db_session, user["user_id"]) == balance_before, "a successful purchase must not also refund"
+    assert mock_esimaccess.query_esim.call_count == 2
+
+
+async def test_only_transient_errors_during_polling_exhausts_to_processing_not_failed(client, db_session, mock_esimaccess, monkeypatch):
+    """The other half of the same fix: if EVERY poll errors (not just the
+    first), the order must still end up PROCESSING for recovery, never
+    FAILED/refunded - the supplier has already been paid regardless of
+    how many of our own polls come back inconclusive."""
+    monkeypatch.setattr("app.services.checkout_svc._ESIM_READY_POLL_DELAYS", (0, 0))
+    mock_esimaccess.query_esim.side_effect = ESIMAccessError(
+        "eSIM Access business error on esim/query: errorCode='200010' errorMsg='still allocating'"
+    )
+
+    user = await register_and_login(client, "esimaccessallerrors")
+    product = await _esimaccess_product(db_session)
+    order = await _order_for(db_session, product, user["user_id"])
+    balance_before = await _default_balance(db_session, user["user_id"])
+
+    profile = await checkout_svc.provision_esim(
+        db_session, order, product, user["user_id"], user["user_id"], "USER"
+    )
+    await db_session.commit()
+
+    assert profile is None
+    await db_session.refresh(order)
+    assert order.status == OrderStatus.PROCESSING, "a paid-for order was failed instead of left for recovery"
+    assert order.external_trx_id
+    assert await _default_balance(db_session, user["user_id"]) == balance_before, "refunded an eSIM we had already paid for"
+
+
+async def test_recovery_treats_a_transient_business_error_as_not_ready_too(client, db_session, mock_esimaccess):
+    """Same fix, same reasoning, for the crash-recovery path
+    (complete_from_supplier_trx) - a transient query_esim error here must
+    raise EsimNotReadyYet, not an unhandled ESIMAccessError
+    recover_stuck_orders has no reason to expect from this function."""
+    mock_esimaccess.query_esim.side_effect = ESIMAccessError(
+        "eSIM Access business error on esim/query: errorCode='200010' errorMsg='still allocating'"
+    )
+
+    user = await register_and_login(client, "esimaccessrecoveryerr")
+    product = await _esimaccess_product(db_session)
+    order = await _order_for(db_session, product, user["user_id"])
+    order.external_trx_id = "B26111099999997"
+    await db_session.commit()
+
+    with pytest.raises(checkout_svc.EsimNotReadyYet):
+        await checkout_svc.complete_from_supplier_trx(db_session, order, product, actor_id=None, actor_role="SYSTEM")
+    assert order.status == OrderStatus.PROCESSING
+
+
 # --- crash recovery --------------------------------------------------------
 
 async def test_recovery_queries_by_order_no_and_never_calls_create_order_again(client, db_session, mock_esimaccess):

@@ -300,8 +300,21 @@ async def _complete_esimaccess_from_order_no(db: AsyncSession, order: Order, pro
     order whose esim/order call already went through (external_trx_id holds
     the orderNo) but whose delivery never finished. Queries by orderNo and
     never calls create_order again, so a recovered order cannot be charged
-    twice."""
-    result = await ESIMAccessAdapter.query_esim(db, order_no=order.external_trx_id)
+    twice.
+
+    Same reasoning as the polling loop in _provision_via_esimaccess: a
+    transient business error from query_esim (errorCode 200010 - "still
+    being allocated" - confirmed live, see that function's comment) is
+    "not ready yet", not a failure, and must raise EsimNotReadyYet like any
+    other inconclusive answer - never let it escape as a raw, unhandled
+    ESIMAccessError, which recover_stuck_orders has no reason to expect
+    from this path."""
+    try:
+        result = await ESIMAccessAdapter.query_esim(db, order_no=order.external_trx_id)
+    except ESIMAccessError as e:
+        raise EsimNotReadyYet(
+            f"order {order.order_no}: eSIM Access query not ready for orderNo {order.external_trx_id} ({e})"
+        ) from e
     esim_list = (result or {}).get("esimList") or []
     details = _extract_esimaccess_details(esim_list[0]) if esim_list else None
     if details:
@@ -393,7 +406,29 @@ async def _provision_via_esimaccess(db: AsyncSession, order: Order, product: Pro
         for delay in _ESIM_READY_POLL_DELAYS:
             if delay:
                 await asyncio.sleep(delay)
-            result = await ESIMAccessAdapter.query_esim(db, order_no=order_no)
+            # Real, live bug (2026-11-10, a genuine customer purchase on
+            # beta, Bangladesh 1-day package): eSIM Access answers a query
+            # made before provisioning finishes with errorCode 200010 -
+            # "the batchOrder has been getting resource... success:[0]" -
+            # which call_api() correctly raises as ESIMAccessError (any
+            # non-success response is an error, not a value to guess at).
+            # But that is "not ready yet", not a failure - exactly the
+            # WorldMove/VivaPe "Transaction Pending" case this same file
+            # already has a hard rule for (see the big comment at the top
+            # of provision_esim's VivaPe branch: the supplier has already
+            # been asked to charge us, so an inconclusive answer must never
+            # trigger a refund). An earlier version let this exception
+            # propagate straight past the loop to the outer except below,
+            # refunding a real customer on the very first "still
+            # allocating" poll. Any error during polling - 200010 or
+            # anything else - is now treated the same as an empty esimList:
+            # not ready THIS attempt, keep polling, never a reason to
+            # refund an order the supplier has already been paid for.
+            try:
+                result = await ESIMAccessAdapter.query_esim(db, order_no=order_no)
+            except ESIMAccessError as e:
+                logger.info("esimaccess_query_not_ready_yet", order_id=order.id, order_no=order_no, error=str(e))
+                continue
             esim_list = (result or {}).get("esimList") or []
             details = _extract_esimaccess_details(esim_list[0]) if esim_list else None
             if details:
