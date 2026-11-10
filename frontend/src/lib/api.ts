@@ -223,6 +223,7 @@ export const api = {
   // Admin
   getAdminStats: (token: string) => fetchApi("/api/v1/admin/stats", { headers: { Authorization: `Bearer ${token}` } }),
   syncCatalog: (token: string) => fetchApi("/api/v1/admin/catalog/sync", { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+  syncEsimAccessCatalog: (token: string) => fetchApi("/api/v1/admin/catalog/sync-esimaccess", { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
   getMerchantQueue: (token: string) => fetchApi("/api/v1/admin/merchants/queue", { headers: { Authorization: `Bearer ${token}` } }),
   approveMerchant: (token: string, id: string) => fetchApi(`/api/v1/admin/merchants/${id}/approve`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
   updateMerchantCommission: (token: string, id: string, ratePct: number) => fetchApi(`/api/v1/admin/merchants/${id}/commission`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ rate_pct: ratePct }) }),

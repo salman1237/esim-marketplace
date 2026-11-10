@@ -430,7 +430,11 @@ async def sync_esimaccess_catalog(db: AsyncSession) -> dict:
     )
     return {
         "status": "success",
-        "created_countries": created_countries,
+        # Named synced_countries, not created_countries, to match
+        # sync_vivape_catalog's response shape exactly - the admin console
+        # reuses the same result-summary rendering for both suppliers'
+        # sync buttons.
+        "synced_countries": created_countries,
         "synced_products": created_p,
         "products_in_feed": seen_p,
         "updated_products": changed_p,

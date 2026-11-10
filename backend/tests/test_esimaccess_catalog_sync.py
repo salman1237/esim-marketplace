@@ -50,7 +50,7 @@ async def test_syncs_a_new_fixed_data_single_country_package_creating_the_countr
         result = await sync_esimaccess_catalog(db_session)
 
     assert result["synced_products"] == 1
-    assert result["created_countries"] == 1
+    assert result["synced_countries"] == 1
 
     country = (await db_session.execute(select(Country).where(Country.iso2 == iso2))).scalar_one()
     assert country.name_en == f"{iso2}land"

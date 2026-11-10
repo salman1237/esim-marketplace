@@ -108,6 +108,7 @@ export default function AdminConsolePage() {
   const [uploadingKind, setUploadingKind] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [syncing, setSyncing] = useState(false);
+  const [syncingEsimAccess, setSyncingEsimAccess] = useState(false);
   // Kept here rather than inside WithdrawalsTab so the sidebar badge is right
   // before the tab has ever been opened.
   const [pendingWithdrawals, setPendingWithdrawals] = useState(0);
@@ -325,6 +326,31 @@ WARNING: this sync would have deactivated ${res.deactivation_candidates} product
       alert("Catalog sync error: " + err.message);
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleSyncEsimAccessCatalog = async () => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    setSyncingEsimAccess(true);
+    try {
+      const res = await api.syncEsimAccessCatalog(token);
+      const deactivated = res.deactivated_products ?? 0;
+      alert(
+        `eSIM Access sync completed! ${res.synced_countries} new countries, ${res.synced_products} new products, ` +
+        `${res.products_in_feed ?? 0} in the supplier feed, ${res.updated_products ?? 0} changed, ` +
+        `${res.skipped_out_of_scope ?? 0} skipped (Day Pass or multi-country - not synced by design, see backend/docs/esimaccess_integration_reference.md).` +
+        (deactivated > 0 ? `
+
+${deactivated} product(s) deactivated - no longer offered by the supplier after several sync cycles.` : "") +
+        (res.deactivation_skipped ? `
+
+WARNING: this sync would have deactivated ${res.deactivation_candidates} product(s) - too large a share of the catalog to be a real supplier retirement, so NOTHING was deactivated and every product is still on sale. Check the supplier feed before trusting the next sync.` : "")
+      );
+    } catch (err: any) {
+      alert("eSIM Access catalog sync error: " + err.message);
+    } finally {
+      setSyncingEsimAccess(false);
     }
   };
 
@@ -619,14 +645,24 @@ WARNING: this sync would have deactivated ${res.deactivation_candidates} product
           <h1 className="text-3xl font-extrabold text-slate-900">Admin Control Console</h1>
         </div>
 
-        <button
-          onClick={handleSyncCatalog}
-          disabled={syncing}
-          className="bg-admin-600 hover:bg-admin-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-lg shadow-admin-900/30 flex items-center space-x-2 self-start"
-        >
-          <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />
-          <span>{syncing ? "Syncing VivaPe..." : "Sync VivaPe Catalog"}</span>
-        </button>
+        <div className="flex flex-col sm:flex-row gap-2 self-start">
+          <button
+            onClick={handleSyncCatalog}
+            disabled={syncing}
+            className="bg-admin-600 hover:bg-admin-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-lg shadow-admin-900/30 flex items-center space-x-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />
+            <span>{syncing ? "Syncing VivaPe..." : "Sync VivaPe Catalog"}</span>
+          </button>
+          <button
+            onClick={handleSyncEsimAccessCatalog}
+            disabled={syncingEsimAccess}
+            className="bg-admin-600 hover:bg-admin-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-lg shadow-admin-900/30 flex items-center space-x-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${syncingEsimAccess ? "animate-spin" : ""}`} />
+            <span>{syncingEsimAccess ? "Syncing eSIM Access..." : "Sync eSIM Access Catalog"}</span>
+          </button>
+        </div>
       </div>
 
       {/* Metrics Ticker */}
