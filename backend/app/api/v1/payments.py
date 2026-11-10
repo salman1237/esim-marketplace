@@ -184,7 +184,11 @@ async def initiate_order_via_shurjopay(
     # "ORDERPAY-" prefix distinguishes this from a wallet TOPUP- callback;
     # the order id itself (a UUID, so already globally unique) is the
     # entire remainder - no need for the extra random suffix TOPUP uses.
-    sp_reference = f"ORDERPAY-{order.id}"
+    # The "-M-" marker is how the callback later tells a mobile-initiated
+    # order apart from a web one - see shurjopay_callback and
+    # _complete_gateway_order below. ".startswith('ORDERPAY-')" still
+    # matches both forms, so is_order_payment detection is unaffected.
+    sp_reference = f"ORDERPAY-M-{order.id}" if req.mobile else f"ORDERPAY-{order.id}"
 
     try:
         pay_res = await ShurjoPayService.initiate_payment(
@@ -245,10 +249,16 @@ async def shurjopay_callback(
     unhandled and would have made every real top-up fail (order-not-found
     from ShurjoPay, or an AttributeError from treating the list as a dict).
     """
-    def _fail(reason: str, redirect_path: str = "/wallet", query_key: str = "topup") -> RedirectResponse:
+    def _fail(reason: str, redirect_path: str = "/wallet", query_key: str = "topup", mobile: bool = False) -> RedirectResponse:
         # query_key stays "topup" by default — the wallet page only reads
         # ?topup=..., not ?payment=...; the ORDERPAY branch below passes
         # query_key="payment" explicitly for its own /my-esims redirect.
+        # mobile=True (only ever passed once customer_order_id has been
+        # parsed and starts with "ORDERPAY-M-") sends the app's custom
+        # scheme instead of the web frontend - redirect_path is a web path
+        # and has no meaning there.
+        if mobile:
+            return RedirectResponse(f"{settings.MOBILE_APP_RETURN_SCHEME}?{query_key}=failed&reason={reason}", status_code=302)
         sep = "&" if "?" in redirect_path else "?"
         return RedirectResponse(f"{settings.FRONTEND_BASE_URL}{redirect_path}{sep}{query_key}=failed&reason={reason}", status_code=302)
 
@@ -264,16 +274,17 @@ async def shurjopay_callback(
     # customer_order_id's prefix can.
     customer_order_id = record.get("customer_order_id") or ""
     is_order_payment = customer_order_id.startswith("ORDERPAY-")
+    is_mobile_order = customer_order_id.startswith("ORDERPAY-M-")
 
     sp_code = record.get("sp_code")
     if str(sp_code) != "1000":
         await db.commit()
         if is_order_payment:
-            return _fail("not_paid", "/my-esims", "payment")
+            return _fail("not_paid", "/my-esims", "payment", mobile=is_mobile_order)
         return _fail("not_paid")
 
     if is_order_payment:
-        return await _complete_gateway_order(db, customer_order_id, _fail)
+        return await _complete_gateway_order(db, customer_order_id, _fail, is_mobile_order)
 
     if not customer_order_id.startswith("TOPUP-"):
         await db.commit()
@@ -353,13 +364,20 @@ async def shurjopay_ipn(request: Request, db: AsyncSession = Depends(get_db)):
     return {"status": "received", "order_id": order_id, "payment": "confirmed" if confirmed else "not_confirmed"}
 
 
-async def _complete_gateway_order(db: AsyncSession, customer_order_id: str, _fail) -> RedirectResponse:
+def _gateway_order_success_redirect(order_id: str, mobile: bool) -> RedirectResponse:
+    if mobile:
+        return RedirectResponse(f"{settings.MOBILE_APP_RETURN_SCHEME}?order={order_id}", status_code=302)
+    return RedirectResponse(f"{settings.FRONTEND_BASE_URL}/my-esims?order={order_id}", status_code=302)
+
+
+async def _complete_gateway_order(db: AsyncSession, customer_order_id: str, _fail, is_mobile: bool = False) -> RedirectResponse:
     """Completes a direct-gateway eSIM purchase (POST
     /payments/shurjopay/order-initiate) once ShurjoPay confirms payment.
     Hands off to the same background fulfil_order() the wallet checkout
     uses, so provisioning, refunds and the delivery email can't drift
     between the two payment methods."""
-    db_order_id = customer_order_id[len("ORDERPAY-"):]
+    prefix = "ORDERPAY-M-" if is_mobile else "ORDERPAY-"
+    db_order_id = customer_order_id[len(prefix):]
 
     # Row lock: the browser return and the IPN can arrive together for the
     # same payment. Without it both could read PENDING and start fulfilment
@@ -368,20 +386,20 @@ async def _complete_gateway_order(db: AsyncSession, customer_order_id: str, _fai
     order = res.scalar_one_or_none()
     if not order:
         await db.commit()
-        return _fail("unknown_order", "/my-esims", "payment")
+        return _fail("unknown_order", "/my-esims", "payment", mobile=is_mobile)
 
     if order.status != OrderStatus.PENDING:
         # Already handed off (a replayed callback) or otherwise not awaiting
         # payment - starting fulfilment again would duplicate the eSIM.
         # Redirect to the same polling view so a replay still shows status.
         await db.commit()
-        return RedirectResponse(f"{settings.FRONTEND_BASE_URL}/my-esims?order={order.id}", status_code=302)
+        return _gateway_order_success_redirect(order.id, is_mobile)
 
     p_res = await db.execute(select(Product).where(Product.id == order.product_id))
     product = p_res.scalar_one_or_none()
     if not product:
         await db.commit()
-        return _fail("product_no_longer_available", "/my-esims", "payment")
+        return _fail("product_no_longer_available", "/my-esims", "payment", mobile=is_mobile)
 
     # Payment is confirmed: hand off to background fulfilment and redirect
     # at once, rather than holding the customer's browser on a blank
@@ -393,4 +411,4 @@ async def _complete_gateway_order(db: AsyncSession, customer_order_id: str, _fai
     order.status = OrderStatus.PROCESSING
     await db.commit()
     start_fulfilment(order.id)
-    return RedirectResponse(f"{settings.FRONTEND_BASE_URL}/my-esims?order={order.id}", status_code=302)
+    return _gateway_order_success_redirect(order.id, is_mobile)

@@ -57,6 +57,14 @@ class Settings(BaseSettings):
     # processing — the frontend's own origin, not this API's.
     FRONTEND_BASE_URL: str = os.getenv("FRONTEND_BASE_URL", "https://triptel.co")
 
+    # The mobile app's custom URL scheme for the ShurjoPay hosted-checkout
+    # hand-off (docs/Architecture.md in Triptel-MobileApp -> "Payment",
+    # option 1: expo-web-browser's openAuthSessionAsync watches for a
+    # redirect to this exact URL). Matches "scheme": "triptel" in the
+    # mobile app's app.json. Only used when an order was initiated with
+    # mobile=true on POST /payments/shurjopay/order-initiate.
+    MOBILE_APP_RETURN_SCHEME: str = os.getenv("MOBILE_APP_RETURN_SCHEME", "triptel://payment-callback")
+
     # Sign in with Google - the OAuth 2.0 *Web* client ID from Google Cloud
     # Console (project "triptel", authorized origin https://triptel.co). Not a
     # secret: it ships to browsers. Only the ID-token flow is used, so the

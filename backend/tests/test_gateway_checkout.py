@@ -176,6 +176,97 @@ async def test_gateway_callback_refunds_wallet_when_vivape_fails(client, db_sess
     assert Decimal(str(default_wallet["balance"])) == Decimal("9.9900")
 
 
+async def test_mobile_order_initiate_uses_marked_reference(client, db_session):
+    """Triptel-MobileApp's FR-306: the mobile app sends mobile=true so the
+    callback later knows to redirect to the app's custom URL scheme instead
+    of the web frontend - see docs/Architecture.md in that repo, "Payment"."""
+    user = await register_and_login(client, "mobilegatewaybuyer")
+    product = await create_test_product(db_session, price=Decimal("9.9900"))
+
+    with patch("app.api.v1.payments.ShurjoPayService.initiate_payment", return_value=FAKE_INITIATE_RESPONSE):
+        res = await client.post(
+            "/api/v1/payments/shurjopay/order-initiate",
+            json={"product_id": product.id, "payment_method": "SHURJOPAY", "mobile": True},
+            headers=user["headers"],
+        )
+    assert res.status_code == 200, res.text
+    assert res.json()["order_id"]
+
+
+async def test_mobile_gateway_callback_redirects_to_app_scheme(client, db_session):
+    user = await register_and_login(client, "mobilegatewaypay")
+    product = await create_test_product(db_session, price=Decimal("9.9900"))
+
+    with patch("app.api.v1.payments.ShurjoPayService.initiate_payment", return_value=FAKE_INITIATE_RESPONSE):
+        initiate = await client.post(
+            "/api/v1/payments/shurjopay/order-initiate",
+            json={"product_id": product.id, "payment_method": "SHURJOPAY", "mobile": True},
+            headers=user["headers"],
+        )
+    order_id = initiate.json()["order_id"]
+
+    response = _paid_response(f"ORDERPAY-M-{order_id}")
+    with patch("app.api.v1.payments.ShurjoPayService.verify_payment", return_value=response):
+        callback = await client.get("/api/v1/payments/shurjopay/callback", params={"order_id": "sp6a99c460a9300"})
+    assert callback.status_code == 302
+    location = callback.headers["location"]
+    assert location.startswith("triptel://payment-callback")
+    assert f"order={order_id}" in location
+    # Must not fall back to the web frontend for a mobile order.
+    assert "triptel.co" not in location
+
+    settled = await wait_for_order(client, order_id, user["headers"])
+    assert settled["status"] == "COMPLETED"
+
+
+async def test_mobile_gateway_callback_unpaid_redirects_to_app_scheme_with_failure(client, db_session):
+    user = await register_and_login(client, "mobilegatewayunpaid")
+    product = await create_test_product(db_session, price=Decimal("9.9900"))
+
+    with patch("app.api.v1.payments.ShurjoPayService.initiate_payment", return_value=FAKE_INITIATE_RESPONSE):
+        initiate = await client.post(
+            "/api/v1/payments/shurjopay/order-initiate",
+            json={"product_id": product.id, "payment_method": "SHURJOPAY", "mobile": True},
+            headers=user["headers"],
+        )
+    order_id = initiate.json()["order_id"]
+    response = _pending_response(f"ORDERPAY-M-{order_id}")
+
+    with patch("app.api.v1.payments.ShurjoPayService.verify_payment", return_value=response):
+        callback = await client.get("/api/v1/payments/shurjopay/callback", params={"order_id": "sp6a99c2d29fb09"})
+    assert callback.status_code == 302
+    location = callback.headers["location"]
+    assert location.startswith("triptel://payment-callback")
+    assert "payment=failed" in location
+    assert "triptel.co" not in location
+
+    mine = await client.get("/api/v1/orders/my-esims", headers=user["headers"])
+    assert mine.json() == []
+
+
+async def test_web_gateway_callback_still_redirects_to_frontend(client, db_session):
+    """Regression guard: adding the mobile branch must not change the
+    default (mobile=false / omitted) web redirect target."""
+    user = await register_and_login(client, "webgatewaypay")
+    product = await create_test_product(db_session, price=Decimal("9.9900"))
+
+    with patch("app.api.v1.payments.ShurjoPayService.initiate_payment", return_value=FAKE_INITIATE_RESPONSE):
+        initiate = await client.post(
+            "/api/v1/payments/shurjopay/order-initiate",
+            json={"product_id": product.id, "payment_method": "SHURJOPAY"},
+            headers=user["headers"],
+        )
+    order_id = initiate.json()["order_id"]
+
+    response = _paid_response(f"ORDERPAY-{order_id}")
+    with patch("app.api.v1.payments.ShurjoPayService.verify_payment", return_value=response):
+        callback = await client.get("/api/v1/payments/shurjopay/callback", params={"order_id": "sp6a99c460a9300"})
+    assert callback.status_code == 302
+    location = callback.headers["location"]
+    assert f"/my-esims?order={order_id}" in location
+    assert not location.startswith("triptel://")
+
+
 async def test_topup_callback_still_uses_topup_query_param(client, db_session):
     """Regression guard: adding the ORDERPAY branch must not change the
     existing TOPUP failure redirect's query param (?topup=... - the wallet

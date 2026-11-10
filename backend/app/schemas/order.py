@@ -18,6 +18,11 @@ class OrderCreateRequest(BaseModel):
     # in front of them can say how to sign in.
     beneficiary_phone: Optional[str] = None
     auto_create_user: bool = False
+    # Set by the mobile app only, on the SHURJOPAY path - tells
+    # /payments/shurjopay/order-initiate to route the post-payment redirect
+    # back to the app's custom URL scheme instead of the web frontend. No
+    # effect on the WALLET path, which never redirects anywhere.
+    mobile: bool = False
 
 class ESIMProfileResponse(BaseModel):
     id: str
