@@ -284,6 +284,19 @@ async def sync_esimaccess_catalog(db: AsyncSession) -> dict:
     existing_country_res = await db.execute(select(Country.iso2, Country.id))
     country_id_by_iso2 = {iso2: cid for iso2, cid in existing_country_res.all()}
 
+    # Country.id has no reliable auto-increment to fall back on: VivaPe's own
+    # sync has always supplied an explicit id (its own numeric country id -
+    # see sync_vivape_catalog above), so the column's underlying Postgres
+    # sequence has never actually been advanced by an app-level insert and
+    # sits far behind the ids already in use. Letting SQLAlchemy omit id and
+    # rely on that stale sequence default (what an earlier version of this
+    # function did) collided with an existing row on the very first country
+    # eSIM Access needed to create (Aland Islands, live on beta - a genuine
+    # UniqueViolationError, not a hypothetical one). Computed once per run
+    # and incremented in Python for each new country, rather than re-querying
+    # MAX(id) per row.
+    next_country_id = ((await db.execute(select(func.max(Country.id)))).scalar_one() or 0) + 1
+
     existing_product_res = await db.execute(
         select(Product).where(
             Product.supplier_reference == "esimaccess",
@@ -319,6 +332,7 @@ async def sync_esimaccess_catalog(db: AsyncSession) -> dict:
             networks = raw.get("locationNetworkList") or []
             name = networks[0].get("locationName") if networks else iso2
             new_country = Country(
+                id=next_country_id,
                 iso2=iso2,
                 name_en=name or iso2,
                 flag_url=f"https://flagcdn.com/w80/{iso2.lower()}.png",
@@ -326,10 +340,11 @@ async def sync_esimaccess_catalog(db: AsyncSession) -> dict:
                 is_active=True,
             )
             db.add(new_country)
-            await db.flush()  # need new_country.id before using it below
+            await db.flush()
             country_id = new_country.id
             country_id_by_iso2[iso2] = country_id
             created_countries += 1
+            next_country_id += 1
 
         existing = existing_by_package_code.get(parsed["supplier_package_code"])
         if existing:

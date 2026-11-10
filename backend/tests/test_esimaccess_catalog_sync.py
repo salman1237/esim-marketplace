@@ -11,7 +11,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.models.catalog import Country, Product
 from app.services.catalog_sync_svc import sync_esimaccess_catalog, MIN_DEACTIVATION_FLOOR
@@ -65,6 +65,58 @@ async def test_syncs_a_new_fixed_data_single_country_package_creating_the_countr
     assert product.cost_price == Decimal("0.7000")
     assert product.currency == "USD"
     assert product.coverage_networks == iso2
+
+
+async def test_auto_created_country_id_is_always_past_the_current_max_not_a_stale_sequence(db_session):
+    """Reproduces the real bug, live on beta on first use (2026-11-10):
+    Country.id has no reliable auto-increment to fall back on - VivaPe's
+    sync has always supplied an explicit id (see sync_vivape_catalog), so
+    the column's underlying Postgres sequence was never actually advanced
+    by an app-level insert and sits far behind the ids already in use.
+    Omitting id and trusting that stale sequence default collided with an
+    existing row (a real UniqueViolationError on "countries_pkey",
+    inserting Aland Islands) the very first time this sync ran for real.
+
+    Doesn't hardcode a specific colliding id (this test DB is shared
+    across the whole suite with no per-test rollback - a fixed low id
+    like 1 may well already be taken by something else entirely) -
+    instead proves the general property the fix actually relies on: a
+    freshly auto-created country's id is always strictly greater than
+    whatever the real current max was at sync time, computed in Python,
+    never left to the database's own (demonstrably unreliable) default."""
+    current_max = (await db_session.execute(select(func.max(Country.id)))).scalar_one() or 0
+
+    suffix = uuid.uuid4().hex[:4].upper()
+    iso2 = f"Y{suffix[:1]}"
+    pkg = _raw_package(iso2, f"COL{suffix}", f"{iso2}land 1GB 7Days", 7000, 1, 7)
+
+    with await _patched_list_packages([pkg]):
+        result = await sync_esimaccess_catalog(db_session)  # must not raise IntegrityError
+
+    assert result["synced_countries"] == 1
+    new_country = (await db_session.execute(select(Country).where(Country.iso2 == iso2))).scalar_one()
+    assert new_country.id > current_max
+
+
+async def test_two_new_countries_in_one_sync_get_distinct_ids(db_session):
+    """The fix increments its own counter per new country within a single
+    run rather than re-querying MAX(id) per row - if it didn't, two new
+    countries created in the same sync would both compute the same "next"
+    id from the same stale MAX() snapshot and collide with each other."""
+    suffix = uuid.uuid4().hex[:4].upper()
+    iso2_a, iso2_b = f"A{suffix[:1]}", f"B{suffix[:1]}"
+    pkg_a = _raw_package(iso2_a, f"TWOA{suffix}", f"{iso2_a}land 1GB 7Days", 7000, 1, 7)
+    pkg_b = _raw_package(iso2_b, f"TWOB{suffix}", f"{iso2_b}land 1GB 7Days", 7000, 1, 7)
+
+    with await _patched_list_packages([pkg_a, pkg_b]):
+        result = await sync_esimaccess_catalog(db_session)
+
+    assert result["synced_countries"] == 2
+    rows = (await db_session.execute(
+        select(Country).where(Country.iso2.in_([iso2_a, iso2_b]))
+    )).scalars().all()
+    ids = {c.id for c in rows}
+    assert len(ids) == 2  # distinct, not collided
 
 
 async def test_day_pass_and_multi_country_packages_are_not_synced(db_session):
