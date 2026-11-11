@@ -76,6 +76,14 @@ class ESIMStatus(str, enum.Enum):
     INSTALLED = "INSTALLED"
     ACTIVE = "ACTIVE"
     EXPIRED = "EXPIRED"
+    # Set by the admin lifecycle actions in admin.py (eSIM Access only -
+    # esim/suspend, esim/unsuspend, esim/revoke, esim/cancel). Distinct
+    # from the live install/usage state ESIMTelemetry tracks: these are
+    # irreversible-or-deliberate staff actions, not something the carrier
+    # reports on its own.
+    SUSPENDED = "SUSPENDED"
+    REVOKED = "REVOKED"
+    CANCELLED = "CANCELLED"
 
 class ESIMProfile(Base):
     __tablename__ = "esim_profiles"

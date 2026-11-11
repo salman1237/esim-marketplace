@@ -282,6 +282,42 @@ async def get_telemetry(
     return row
 
 
+async def refresh_by_iccid_or_order_no(
+    db: AsyncSession, *, iccid: Optional[str] = None, order_no: Optional[str] = None,
+) -> bool:
+    """Called from the eSIM Access webhook receiver for ESIM_STATUS,
+    DATA_USAGE and VALIDITY_USAGE events - never trusts the webhook
+    payload's own status/usage fields (same discipline as ShurjoPay's
+    IPN handler in payments.py), just uses iccid/orderNo to find the
+    right profile and then re-fetches the authoritative state from
+    esim/query via the normal forced-refresh path. Returns False (not an
+    error) for a profile this project has no record of - a webhook can
+    arrive for an eSIM from before this project tracked something, or
+    with a typo'd/stale identifier, and that must not look like a crash
+    in the logs every other failure mode here would."""
+    profile = None
+    if iccid:
+        profile = (await db.execute(select(ESIMProfile).where(ESIMProfile.iccid == iccid))).scalar_one_or_none()
+    if profile is None and order_no:
+        order = (await db.execute(select(Order).where(Order.external_trx_id == order_no))).scalar_one_or_none()
+        if order:
+            profile = (await db.execute(
+                select(ESIMProfile).where(ESIMProfile.order_id == order.id)
+            )).scalar_one_or_none()
+    if profile is None:
+        return False
+
+    order = (await db.execute(select(Order).where(Order.id == profile.order_id))).scalar_one_or_none()
+    if order is None:
+        return False
+    product = (await db.execute(select(Product).where(Product.id == order.product_id))).scalar_one_or_none()
+    if product is None:
+        return False
+
+    await get_telemetry(db, profile, product, order, force=True)
+    return True
+
+
 def data_allowance_mb(product: Product) -> Optional[Decimal]:
     """The plan's size in MB, or None for unlimited - which has no remaining
     figure to show and must not be rendered as a full progress bar."""
@@ -352,6 +388,13 @@ def serialize(
         "smdp_address": profile.smdp_address,
         "matching_id": profile.matching_id,
         "supplier_reference": profile.supplier_reference,
+        # The product's own supplier, not profile.supplier_reference above
+        # (which holds the supplier's own order/transaction id, not its
+        # name) - lets a caller (e.g. the admin panel's lifecycle actions)
+        # know whether esim/suspend|unsuspend|revoke|cancel|sendSms even
+        # apply to this eSIM, without re-deriving it from the product.
+        "supplier": product.supplier_reference,
+        "esim_status": profile.status.value,
         "status": {
             "label": status_label(row, profile),
             "code": row.status_code if row else None,

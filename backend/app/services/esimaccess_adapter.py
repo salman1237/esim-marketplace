@@ -281,6 +281,18 @@ class ESIMAccessAdapter:
         return result.get("obj")
 
     @classmethod
+    async def send_sms(cls, db: AsyncSession, iccid: str, message: str) -> dict:
+        """Max 500 chars (reference doc §4.6) - only works on an
+        already-installed eSIM; sending to one that isn't is a normal
+        business error from eSIM Access, not something to pre-validate
+        here (never trust a cached is_installed flag over the supplier's
+        own live answer)."""
+        if len(message) > 500:
+            raise ValueError(f"SMS message must be <=500 chars, got {len(message)}")
+        result = await cls.call_api(db, "esim/sendSms", data={"iccid": iccid, "message": message})
+        return result.get("obj")
+
+    @classmethod
     async def set_webhook_url(cls, db: AsyncSession, webhook_url: str) -> dict:
         result = await cls.call_api(db, "webhook/save", data={"webhook": webhook_url})
         return result.get("obj")

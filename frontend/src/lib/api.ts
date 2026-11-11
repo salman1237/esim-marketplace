@@ -229,6 +229,17 @@ export const api = {
   getAdminStats: (token: string) => fetchApi("/api/v1/admin/stats", { headers: { Authorization: `Bearer ${token}` } }),
   syncCatalog: (token: string) => fetchApi("/api/v1/admin/catalog/sync", { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
   syncEsimAccessCatalog: (token: string) => fetchApi("/api/v1/admin/catalog/sync-esimaccess", { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+  getEsimAccessBalance: (token: string) => fetchApi("/api/v1/admin/esimaccess/balance", { headers: { Authorization: `Bearer ${token}` } }),
+  getEsimAccessWebhook: (token: string) => fetchApi("/api/v1/admin/esimaccess/webhook", { headers: { Authorization: `Bearer ${token}` } }),
+  setEsimAccessWebhook: (token: string, webhookUrl?: string) =>
+    fetchApi("/api/v1/admin/esimaccess/webhook", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ webhook_url: webhookUrl || null }) }),
+  // eSIM Access lifecycle actions - only meaningful for an esim.supplier === "esimaccess" eSIM.
+  suspendEsim: (token: string, esimId: string) => fetchApi(`/api/v1/admin/esims/${esimId}/suspend`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+  unsuspendEsim: (token: string, esimId: string) => fetchApi(`/api/v1/admin/esims/${esimId}/unsuspend`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+  revokeEsim: (token: string, esimId: string) => fetchApi(`/api/v1/admin/esims/${esimId}/revoke`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+  cancelEsim: (token: string, esimId: string) => fetchApi(`/api/v1/admin/esims/${esimId}/cancel`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+  sendEsimSms: (token: string, esimId: string, message: string) =>
+    fetchApi(`/api/v1/admin/esims/${esimId}/send-sms`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ message }) }),
   getMerchantQueue: (token: string) => fetchApi("/api/v1/admin/merchants/queue", { headers: { Authorization: `Bearer ${token}` } }),
   approveMerchant: (token: string, id: string) => fetchApi(`/api/v1/admin/merchants/${id}/approve`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
   updateMerchantCommission: (token: string, id: string, ratePct: number) => fetchApi(`/api/v1/admin/merchants/${id}/commission`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ rate_pct: ratePct }) }),

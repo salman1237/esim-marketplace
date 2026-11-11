@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Database, RefreshCw, Signal, Smartphone, WifiOff } from "lucide-react";
+import { Database, Pause, Play, RefreshCw, Send, Signal, Smartphone, Trash2, WifiOff, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatDate } from "@/lib/datetime";
 
@@ -13,6 +13,9 @@ export default function EsimLiveStatus({ esimId }: { esimId: string }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [smsText, setSmsText] = useState("");
 
   const load = useCallback(async (force = false) => {
     const token = localStorage.getItem("esim_token");
@@ -37,6 +40,28 @@ export default function EsimLiveStatus({ esimId }: { esimId: string }) {
     } finally {
       setRefreshing(false);
     }
+  };
+
+  const runAction = async (name: string, fn: () => Promise<any>) => {
+    setActionBusy(name);
+    setActionNotice(null);
+    try {
+      await fn();
+      setActionNotice(`${name} done.`);
+      await load(true);
+    } catch (err: any) {
+      setActionNotice(err.message || `${name} failed`);
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const sendSms = async () => {
+    const token = localStorage.getItem("esim_token");
+    const message = smsText.trim();
+    if (!token || !message) return;
+    await runAction("Send SMS", () => api.sendEsimSms(token, esimId, message));
+    setSmsText("");
   };
 
   if (loading) return <div className="h-20 rounded-xl bg-gray-50 animate-pulse" />;
@@ -124,6 +149,74 @@ export default function EsimLiveStatus({ esimId }: { esimId: string }) {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {data.supplier === "esimaccess" && (
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1.5">
+            eSIM Access actions
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {data.esim_status === "SUSPENDED" ? (
+              <button
+                onClick={() => runAction("Unsuspend", () => api.unsuspendEsim(localStorage.getItem("esim_token") || "", esimId))}
+                disabled={!!actionBusy}
+                className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 disabled:opacity-60"
+              >
+                <Play className="w-3 h-3" /> {actionBusy === "Unsuspend" ? "Working…" : "Unsuspend"}
+              </button>
+            ) : (
+              <button
+                onClick={() => runAction("Suspend", () => api.suspendEsim(localStorage.getItem("esim_token") || "", esimId))}
+                disabled={!!actionBusy}
+                className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 disabled:opacity-60"
+              >
+                <Pause className="w-3 h-3" /> {actionBusy === "Suspend" ? "Working…" : "Suspend"}
+              </button>
+            )}
+            <button
+              onClick={() => {
+                if (!confirm("Revoke this eSIM? This force-removes it while in use and is NOT refundable.")) return;
+                runAction("Revoke", () => api.revokeEsim(localStorage.getItem("esim_token") || "", esimId));
+              }}
+              disabled={!!actionBusy}
+              className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 disabled:opacity-60"
+            >
+              <XCircle className="w-3 h-3" /> {actionBusy === "Revoke" ? "Working…" : "Revoke"}
+            </button>
+            {!data.status.is_installed && (
+              <button
+                onClick={() => {
+                  if (!confirm("Cancel this unused eSIM? This refunds it to the eSIM Access account balance.")) return;
+                  runAction("Cancel", () => api.cancelEsim(localStorage.getItem("esim_token") || "", esimId));
+                }}
+                disabled={!!actionBusy}
+                className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-slate-700 disabled:opacity-60"
+              >
+                <Trash2 className="w-3 h-3" /> {actionBusy === "Cancel" ? "Working…" : "Cancel"}
+              </button>
+            )}
+          </div>
+
+          <div className="mt-2 flex gap-2">
+            <input
+              value={smsText}
+              onChange={(e) => setSmsText(e.target.value)}
+              placeholder="SMS message (installed eSIMs only)"
+              maxLength={500}
+              className="flex-1 bg-white border border-gray-300 rounded-lg px-2 py-1.5 text-[11px] text-slate-900"
+            />
+            <button
+              onClick={sendSms}
+              disabled={!!actionBusy || !smsText.trim()}
+              className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-brand-600 hover:bg-brand-500 text-white disabled:opacity-60"
+            >
+              <Send className="w-3 h-3" /> {actionBusy === "Send SMS" ? "Sending…" : "Send"}
+            </button>
+          </div>
+
+          {actionNotice && <p className="mt-2 text-[11px] text-slate-600">{actionNotice}</p>}
         </div>
       )}
 

@@ -20,7 +20,7 @@ from app.core.security import get_password_hash
 from app.models.user import User, UserRole, UserStatus
 from app.models.merchant import MerchantProfile, MerchantStatus
 from app.models.wallet import Wallet, WalletType, LedgerRefType
-from app.models.order import Order, ESIMProfile, OrderStatus, PaymentMethod
+from app.models.order import Order, ESIMProfile, ESIMStatus, OrderStatus, PaymentMethod
 from app.models.catalog import Country, Product
 from app.models.payment import ManualPaymentRequest, ManualPaymentStatus
 from app.models.settings import PlatformSetting, CurrencyRate, Language, Translation
@@ -62,6 +62,7 @@ from app.services.audit_svc import AuditService
 from app.services.catalog_sync_svc import sync_vivape_catalog, sync_esimaccess_catalog
 from app.services.supplier_settings_svc import get_enabled_suppliers, serialize_all, set_enabled_suppliers, supplier_visible_filter
 from app.services.vivape_adapter import VivaPeAdapter
+from app.services.esimaccess_adapter import ESIMAccessAdapter, ESIMAccessError
 from app.services.currency_svc import CurrencyService
 from app.services.checkout_svc import provision_esim
 from app.services.email_svc import EmailService
@@ -1328,6 +1329,184 @@ async def quick_search_esims(
 @router.get("/esims/counts", dependencies=[Depends(require_admin)])
 async def quick_esim_counts(db: AsyncSession = Depends(get_db)):
     return await esim_counts(db)
+
+
+# --- eSIM Access lifecycle actions (suspend/unsuspend/revoke/cancel/SMS) ---
+# and account-level balance/webhook registration. All confirmed against the
+# real partner console (console.esimaccess.com) on 2026-11-12: an In-Use
+# eSIM's own Action tab offers exactly Top Up / Suspend / Revoke; an
+# unused ("New") one additionally offers Cancel - matching the reference
+# doc's "cancel is unused/inactive only" note exactly.
+
+class EsimSendSmsRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=500)
+
+
+class EsimAccessWebhookRequest(BaseModel):
+    webhook_url: Optional[str] = None
+
+
+async def _load_esimaccess_profile(db: AsyncSession, esim_id: str) -> ESIMProfile:
+    profile = (await db.execute(select(ESIMProfile).where(ESIMProfile.id == esim_id))).scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="eSIM not found")
+    order = (await db.execute(select(Order).where(Order.id == profile.order_id))).scalar_one_or_none()
+    product = (
+        await db.execute(select(Product).where(Product.id == order.product_id))
+    ).scalar_one_or_none() if order else None
+    if not product or product.supplier_reference != "esimaccess":
+        raise HTTPException(status_code=400, detail="This action is only available for eSIM Access eSIMs")
+    if not profile.iccid:
+        raise HTTPException(status_code=400, detail="This eSIM has no ICCID yet")
+    return profile
+
+
+async def _log_esimaccess_lifecycle_action(
+    db: AsyncSession, request: Request, admin_user: User, action: str, profile: ESIMProfile,
+) -> None:
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value, action=action,
+        after_state={"esim_id": profile.id, "iccid": profile.iccid},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+
+
+@router.post("/esims/{esim_id}/suspend", dependencies=[Depends(require_admin)])
+async def admin_suspend_esim(
+    esim_id: str, request: Request, admin_user: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    profile = await _load_esimaccess_profile(db, esim_id)
+    try:
+        await ESIMAccessAdapter.suspend_esim(db, iccid=profile.iccid)
+    except ESIMAccessError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    profile.status = ESIMStatus.SUSPENDED
+    await _log_esimaccess_lifecycle_action(db, request, admin_user, "ESIMACCESS_SUSPEND", profile)
+    await db.commit()
+    return {"status": "success"}
+
+
+@router.post("/esims/{esim_id}/unsuspend", dependencies=[Depends(require_admin)])
+async def admin_unsuspend_esim(
+    esim_id: str, request: Request, admin_user: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    profile = await _load_esimaccess_profile(db, esim_id)
+    try:
+        await ESIMAccessAdapter.unsuspend_esim(db, iccid=profile.iccid)
+    except ESIMAccessError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    # Resumed service isn't any of the statuses this project already
+    # tracks for a live profile (ALLOCATED/RELEASED/INSTALLED/ACTIVE) -
+    # ACTIVE is the closest existing meaning ("back in service") without
+    # inventing yet another value for what the next telemetry refresh
+    # will describe precisely anyway via esimStatus.
+    profile.status = ESIMStatus.ACTIVE
+    await _log_esimaccess_lifecycle_action(db, request, admin_user, "ESIMACCESS_UNSUSPEND", profile)
+    await db.commit()
+    return {"status": "success"}
+
+
+@router.post("/esims/{esim_id}/revoke", dependencies=[Depends(require_admin)])
+async def admin_revoke_esim(
+    esim_id: str, request: Request, admin_user: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    """Force-removes an ACTIVE eSIM - confirmed live (console's own label:
+    "Force remove an eSIM while in use (No refund)") not refundable, unlike
+    cancel below. Use for fraud/abuse/support escalations, never as a
+    cheaper alternative to cancel."""
+    profile = await _load_esimaccess_profile(db, esim_id)
+    try:
+        await ESIMAccessAdapter.revoke_esim(db, iccid=profile.iccid)
+    except ESIMAccessError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    profile.status = ESIMStatus.REVOKED
+    await _log_esimaccess_lifecycle_action(db, request, admin_user, "ESIMACCESS_REVOKE", profile)
+    await db.commit()
+    return {"status": "success"}
+
+
+@router.post("/esims/{esim_id}/cancel", dependencies=[Depends(require_admin)])
+async def admin_cancel_esim(
+    esim_id: str, request: Request, admin_user: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    """Unused/inactive profile only - confirmed live (console's own label:
+    "Cancel and refund unused eSIM") refunds to the eSIM Access ACCOUNT
+    balance, not to this project's customer wallet - there is no customer
+    charge to reverse here since this project pays eSIM Access per order,
+    not per eSIM. Never call this on an in-use eSIM; eSIM Access itself
+    only shows this action for a "New" one."""
+    profile = await _load_esimaccess_profile(db, esim_id)
+    try:
+        await ESIMAccessAdapter.cancel_esim(db, iccid=profile.iccid)
+    except ESIMAccessError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    profile.status = ESIMStatus.CANCELLED
+    await _log_esimaccess_lifecycle_action(db, request, admin_user, "ESIMACCESS_CANCEL", profile)
+    await db.commit()
+    return {"status": "success"}
+
+
+@router.post("/esims/{esim_id}/send-sms", dependencies=[Depends(require_admin)])
+async def admin_send_sms_to_esim(
+    esim_id: str, req: EsimSendSmsRequest, request: Request,
+    admin_user: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    profile = await _load_esimaccess_profile(db, esim_id)
+    try:
+        await ESIMAccessAdapter.send_sms(db, iccid=profile.iccid, message=req.message)
+    except ESIMAccessError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value, action="ESIMACCESS_SEND_SMS",
+        after_state={"esim_id": profile.id, "iccid": profile.iccid, "message_length": len(req.message)},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    await db.commit()
+    return {"status": "success"}
+
+
+@router.get("/esimaccess/balance", dependencies=[Depends(require_admin)])
+async def get_esimaccess_balance(db: AsyncSession = Depends(get_db)):
+    try:
+        balance = await ESIMAccessAdapter.get_balance(db)
+    except ESIMAccessError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"balance": str(balance), "currency": "USD"}
+
+
+@router.get("/esimaccess/webhook", dependencies=[Depends(require_admin)])
+async def get_esimaccess_webhook(db: AsyncSession = Depends(get_db)):
+    try:
+        result = await ESIMAccessAdapter.get_webhook_url(db)
+    except ESIMAccessError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"webhook_url": (result or {}).get("webhook")}
+
+
+@router.post("/esimaccess/webhook", dependencies=[Depends(require_admin)])
+async def set_esimaccess_webhook(
+    req: EsimAccessWebhookRequest, request: Request,
+    admin_user: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    """Defaults to this project's own webhook receiver
+    (app/api/v1/esimaccess_webhook.py) under the public frontend domain,
+    which is how /api/v1/... is actually reverse-proxied in production -
+    an admin only needs to override this for a non-standard deployment."""
+    url = req.webhook_url or f"{settings.FRONTEND_BASE_URL}/api/v1/webhooks/esimaccess"
+    try:
+        await ESIMAccessAdapter.set_webhook_url(db, url)
+    except ESIMAccessError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await AuditService.log_action(
+        db, actor_id=admin_user.id, actor_role=admin_user.role.value,
+        action="ESIMACCESS_SET_WEBHOOK", after_state={"webhook_url": url},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    await db.commit()
+    return {"status": "success", "webhook_url": url}
 
 
 # --- Admin Reports: eSIMs VivaPe charged us for that no customer received ---

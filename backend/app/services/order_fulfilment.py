@@ -130,6 +130,45 @@ async def fulfil_order(order_id: str) -> None:
             logger.error("order_fulfilment_failed", order_id=order_id, error=str(e))
 
 
+async def try_complete_order_from_webhook(order_no: str) -> bool:
+    """eSIM Access's ORDER_STATUS webhook (reference doc §5) says a
+    delivery that was already in flight is ready - this lets it finish the
+    SAME still-PROCESSING order faster than the next polling cycle would,
+    reusing complete_from_supplier_trx exactly as recover_stuck_orders
+    does, never create_order again. A no-op (returns False) for an order
+    that's already finished, not found, or not actually ready yet on a
+    second look - the regular polling/recovery sweep remains the thing
+    that eventually refunds a truly stuck order, so this never raises or
+    refunds on its own."""
+    async with AsyncSessionLocal() as db:
+        order = (await db.execute(
+            select(Order).where(Order.external_trx_id == order_no).with_for_update(skip_locked=True)
+        )).scalar_one_or_none()
+        if not order or order.status != OrderStatus.PROCESSING:
+            return False
+        product = (await db.execute(select(Product).where(Product.id == order.product_id))).scalar_one_or_none()
+        buyer = (await db.execute(select(User).where(User.id == order.buyer_id))).scalar_one_or_none()
+        if not product or not buyer:
+            return False
+
+        try:
+            profile = await complete_from_supplier_trx(db, order, product, buyer.id, buyer.role.value)
+        except Exception as e:
+            logger.info("esimaccess_webhook_order_not_ready_yet", order_id=order.id, error=str(e))
+            await db.rollback()
+            return False
+
+        partner = _is_partner_order(order)
+        await _finish(db, order, product, buyer, profile, email=not partner)
+        if partner:
+            merchant = (await db.execute(
+                select(MerchantProfile).where(MerchantProfile.user_id == order.buyer_id)
+            )).scalar_one_or_none()
+            if merchant:
+                await deliver_webhook(db, merchant, order, profile)
+        return True
+
+
 async def recover_stuck_orders() -> dict:
     """Finishes orders whose background task died.
 

@@ -16,6 +16,7 @@ from app.api.v1.referrals import router as referrals_router
 from app.api.v1.agent import router as agent_router
 from app.api.v1.esims import router as esims_router
 from app.api.v1.support import router as support_router
+from app.api.v1.esimaccess_webhook import router as esimaccess_webhook_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(auth_router)
@@ -35,3 +36,4 @@ api_v1_router.include_router(referrals_router)
 api_v1_router.include_router(agent_router)
 api_v1_router.include_router(esims_router)
 api_v1_router.include_router(support_router)
+api_v1_router.include_router(esimaccess_webhook_router)

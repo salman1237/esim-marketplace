@@ -7,6 +7,7 @@ import { useAppSettings } from "@/lib/AppSettingsContext";
 import TranslationsManager from "@/components/TranslationsManager";
 import PricingCard from "@/components/admin/PricingCard";
 import SupplierVisibilityCard from "@/components/admin/SupplierVisibilityCard";
+import EsimAccessAccountCard from "@/components/admin/EsimAccessAccountCard";
 import PopularDestinationsCard from "@/components/admin/PopularDestinationsCard";
 import UnusedEsimsReport from "@/components/admin/UnusedEsimsReport";
 import EsimQuickTrack from "@/components/admin/EsimQuickTrack";
@@ -1240,6 +1241,7 @@ WARNING: this sync would have deactivated ${res.deactivation_candidates} product
             }}
           />
           <SupplierVisibilityCard isSuperAdmin={isSuperAdmin} />
+          <EsimAccessAccountCard />
           <PopularDestinationsCard isSuperAdmin={isSuperAdmin} />
         </div>
       )}
