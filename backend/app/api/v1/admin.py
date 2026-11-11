@@ -1563,6 +1563,8 @@ async def get_admin_catalog(
                 "retail_price": float(p.retail_price),
                 "currency": p.currency,
                 "supplier_reference": p.supplier_reference,
+                "coverage_networks": p.coverage_networks,
+                
                 "is_active": p.is_active,
                 "is_featured": p.is_featured,
             }

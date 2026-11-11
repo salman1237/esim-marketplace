@@ -1294,6 +1294,8 @@ WARNING: this sync would have deactivated ${res.deactivation_candidates} product
                   <th className="py-2">Country</th>
                   <th className="py-2">Product</th>
                   <th className="py-2">Data / Validity</th>
+                  <th className="py-2">Supplier</th>
+                  <th className="py-2">IP</th>
                   <th className="py-2">Base Cost</th>
                   <th className="py-2">Selling Price</th>
                   <th className="py-2">Status</th>
@@ -1307,6 +1309,8 @@ WARNING: this sync would have deactivated ${res.deactivation_candidates} product
                     <td className="py-2.5 font-bold text-slate-900">{p.country}</td>
                     <td className="py-2.5 text-slate-700">{p.title}</td>
                     <td className="py-2.5 text-slate-500">{p.is_unlimited ? "Unlimited" : `${p.data_gb} GB`} / {p.validity_days} Days</td>
+                    <td className="py-2.5 text-slate-500">{p.supplier_reference || "—"}</td>
+                    <td className="py-2.5 text-slate-500">{p.coverage_networks || "—"}</td>
                     <td className="py-2.5 text-slate-500">{formatPrice(p.cost_price)}</td>
                     <td className="py-2.5 font-semibold text-slate-900">{formatPrice(p.retail_price)}</td>
                     <td className="py-2.5">
