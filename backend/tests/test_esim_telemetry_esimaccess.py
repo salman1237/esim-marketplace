@@ -110,6 +110,40 @@ async def test_in_use_status_marks_installed_and_reads_the_real_activation_time(
     assert profile.expires_at == expired_time
 
 
+async def test_serialize_shows_the_real_total_after_a_topup_not_the_stale_product_total(client, db_session):
+    """Confirmed live (2026-11-12): a 1GB/7Days purchase, topped up once,
+    becomes totalVolume 2GB/totalDuration 14 in eSIM Access's own
+    account - but Product.data_amount_gb/validity_days are frozen at
+    the ORIGINAL 1GB/7Days forever. The storefront was showing the
+    stale 1GB/7Days ("0.00 MB left of 1024.00 MB") instead of the real
+    2GB/14Days total until this was fixed."""
+    profile, order, product = await _esimaccess_profile(client, db_session)
+    assert product.data_amount_gb == Decimal("1.00")
+    assert product.validity_days == 7
+
+    with patch.object(
+        esim_telemetry_svc.ESIMAccessAdapter, "query_esim", AsyncMock(return_value={"esimList": [{
+            "iccid": profile.iccid,
+            "esimStatus": "IN_USE",
+            "totalVolume": 2 * 1024 * 1024 * 1024,   # 2GB real total after a top-up
+            "orderUsage": 1024 * 1024 * 1024,        # 1GB used
+            "totalDuration": 14,                      # 7 (base) + 7 (top-up)
+            "durationUnit": "DAY",
+            "activateTime": "2026-11-11T12:06:00+00:00",
+            "expiredTime": "2026-11-25T12:06:00+00:00",
+        }]}),
+    ):
+        row = await esim_telemetry_svc.get_telemetry(db_session, profile, product, order)
+
+    assert row.total_volume_bytes == 2 * 1024 * 1024 * 1024
+    assert row.total_duration_days == 14
+
+    data = esim_telemetry_svc.serialize(row, profile, product, order)
+    assert data["usage"]["allowance_mb"] == "2048.00"
+    assert data["usage"]["remaining_mb"] == "1024.00"
+    assert data["validity"]["days"] == 14
+
+
 async def test_an_unconfirmed_esim_status_is_not_assumed_installed(client, db_session):
     """GOT_RESOURCE means the order is ready to download (an ORDER_STATUS
     value per the reference doc, §5) - not that the profile has been

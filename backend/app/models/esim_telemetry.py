@@ -29,6 +29,16 @@ class ESIMTelemetry(Base):
     data_used_bytes = Column(BigInteger, default=0, nullable=False)
     data_used_mb = Column(Numeric(18, 2), default=0, nullable=False)
 
+    # The REAL total allowance/validity right now - only ever set for eSIM
+    # Access (esim/query's own totalVolume/totalDuration), which changes
+    # after a top-up in a way Product.data_amount_gb/validity_days never
+    # do (those are frozen at the moment of the original purchase). NULL
+    # for VivaPe, where the static product fields are already correct and
+    # never change after purchase. When set, this is what the customer
+    # actually has - not the original product's numbers.
+    total_volume_bytes = Column(BigInteger, nullable=True)
+    total_duration_days = Column(Integer, nullable=True)
+
     # VivaPe's own status code and label. Only 0 (Unknown, never installed)
     # and 1 (Active) have been observed, so the text is stored and shown as
     # given rather than mapped through a guessed lookup table.

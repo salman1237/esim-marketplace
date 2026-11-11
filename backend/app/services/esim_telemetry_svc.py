@@ -133,6 +133,11 @@ def _merge(usage: dict | None, device: dict | None) -> dict:
         "expires_at": _parse_ts(usage.get("end_date")),
         "history": history if isinstance(history, list) else [],
         "daily_breakdown": daily if isinstance(daily, list) else [],
+        # VivaPe has no equivalent of a top-up changing the total after
+        # purchase - Product.data_amount_gb/validity_days are already
+        # correct and never need overriding here.
+        "total_volume_bytes": None,
+        "total_duration_days": None,
     }
 
 
@@ -195,6 +200,19 @@ def _merge_esimaccess(entry: dict | None) -> dict:
         "expires_at": expires_at,
         "history": [],
         "daily_breakdown": [],
+        # The REAL current total - confirmed live (same account,
+        # 2026-11-12) to grow after a top-up: a 1GB/7Days purchase
+        # topped up once became totalVolume 2GB/totalDuration 14 here,
+        # while Product.data_amount_gb/validity_days stay frozen at the
+        # original 1GB/7Days forever. Always present on a real response
+        # (not gated on is_installed - an un-activated eSIM still has a
+        # real total, it just has no activation window yet).
+        "total_volume_bytes": _as_int(entry.get("totalVolume")) if entry.get("totalVolume") is not None else None,
+        "total_duration_days": (
+            _as_int(entry.get("totalDuration"))
+            if entry.get("totalDuration") is not None and entry.get("durationUnit") == "DAY"
+            else None
+        ),
     }
 
 
@@ -324,10 +342,19 @@ async def refresh_by_iccid_or_order_no(
     return True
 
 
-def data_allowance_mb(product: Product) -> Optional[Decimal]:
+def data_allowance_mb(product: Product, row: Optional[ESIMTelemetry] = None) -> Optional[Decimal]:
     """The plan's size in MB, or None for unlimited - which has no remaining
-    figure to show and must not be rendered as a full progress bar."""
-    if product.is_unlimited or product.data_amount_gb is None:
+    figure to show and must not be rendered as a full progress bar.
+
+    Prefers row.total_volume_bytes (the REAL current total, which a
+    top-up can grow past the original purchase - see ESIMTelemetry's own
+    comment) over Product.data_amount_gb, which never changes after
+    purchase and goes stale the moment a top-up happens."""
+    if product.is_unlimited:
+        return None
+    if row is not None and row.total_volume_bytes is not None:
+        return (Decimal(row.total_volume_bytes) / Decimal(1024 * 1024)).quantize(Decimal("0.01"))
+    if product.data_amount_gb is None:
         return None
     return (Decimal(str(product.data_amount_gb)) * Decimal("1024")).quantize(Decimal("0.01"))
 
@@ -361,7 +388,11 @@ def serialize(
     install details are the point of the link, and the delivery email carrying
     it already contains the QR code and the LPA string.
     """
-    allowance = data_allowance_mb(product)
+    allowance = data_allowance_mb(product, row)
+    # Same reasoning as the allowance above: a top-up can grow the real
+    # total validity past the original product's validity_days, which
+    # never changes after purchase.
+    validity_days = row.total_duration_days if row and row.total_duration_days is not None else product.validity_days
     used_mb = Decimal(str(row.data_used_mb)) if row and row.data_used_mb is not None else Decimal("0")
     remaining = None
     used_pct = None
@@ -419,14 +450,14 @@ def serialize(
             "is_unlimited": bool(product.is_unlimited),
         },
         "validity": {
-            "days": product.validity_days,
+            "days": validity_days,
             "activated_at": activated_at,
             "expires_at": expires_at,
             # Said plainly, because it is the thing customers get wrong: the
             # clock starts on install, not at purchase.
             "note": (
                 None if activated
-                else f"Validity starts when you install this eSIM — {product.validity_days} days from then."
+                else f"Validity starts when you install this eSIM — {validity_days} days from then."
             ),
         },
         "share_url": None if public else share_url(profile),
