@@ -14,9 +14,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.catalog import Product
-from app.models.order import ESIMProfile, EsimTopup, EsimTopupStatus
+from app.models.order import ESIMProfile, EsimTopup, EsimTopupStatus, PaymentMethod
 from app.models.wallet import LedgerRefType, WalletType
-from app.services.esimaccess_adapter import ESIMAccessAdapter, ESIMAccessError, scaled_to_decimal
+from app.services.esimaccess_adapter import ESIMAccessAdapter, ESIMAccessError, decimal_to_scaled, scaled_to_decimal
 from app.services.ledger_svc import LedgerService
 from app.services.pricing_svc import get_selling_profit_pct, retail_price_for
 
@@ -124,6 +124,7 @@ async def purchase_topup(
         retail_price=retail_price,
         currency=chosen["currency"],
         status=EsimTopupStatus.PENDING,
+        payment_method=PaymentMethod.WALLET,
     )
     db.add(topup)
     await db.flush()
@@ -159,3 +160,87 @@ async def list_my_topups(db: AsyncSession, esim_profile_id: str) -> list[EsimTop
         .order_by(EsimTopup.created_at.desc())
     )
     return res.scalars().all()
+
+
+async def create_pending_gateway_topup(
+    db: AsyncSession, profile: ESIMProfile, product: Product, package_code: str, buyer_id: str,
+) -> EsimTopup:
+    """The ShurjoPay half of a top-up purchase - same two-step shape as
+    Order's gateway path (payments.py's /shurjopay/order-initiate):
+    create PENDING now, charge nothing yet, redirect to checkout, and only
+    call the supplier once the gateway callback confirms payment (see
+    complete_gateway_topup). Re-fetches the live option the same way
+    purchase_topup does - the price a customer is sent to pay at the
+    gateway must come from a just-fetched source, never the browser."""
+    options = await get_topup_options(db, profile, product)
+    chosen = next((o for o in options if o["package_code"] == package_code), None)
+    if not chosen:
+        raise TopupNotAvailable("That top-up option is no longer available for this eSIM.")
+
+    topup = EsimTopup(
+        esim_profile_id=profile.id,
+        buyer_id=buyer_id,
+        package_code=package_code,
+        title=chosen["title"],
+        data_amount_gb=chosen["data_amount_gb"],
+        validity_days=chosen["validity_days"],
+        cost_price=chosen["cost_price"],
+        retail_price=chosen["retail_price"],
+        currency=chosen["currency"],
+        status=EsimTopupStatus.PENDING,
+        payment_method=PaymentMethod.SHURJOPAY,
+    )
+    db.add(topup)
+    await db.flush()
+    return topup
+
+
+async def complete_gateway_topup(db: AsyncSession, topup_id: str) -> EsimTopup | None:
+    """Completes a ShurjoPay-paid top-up once the gateway callback
+    confirms payment - the supplier call happens here, not at initiate
+    time, mirroring _complete_gateway_order in payments.py. Row-locked so
+    a replayed callback (browser return + IPN both arriving) can't call
+    esim/topup twice; returns None for an unknown id or one already past
+    PENDING (replay - a no-op, not an error) rather than raising, since
+    the caller's job either way is just to redirect the customer."""
+    res = await db.execute(select(EsimTopup).where(EsimTopup.id == topup_id).with_for_update())
+    topup = res.scalar_one_or_none()
+    if not topup or topup.status != EsimTopupStatus.PENDING:
+        return topup
+
+    profile = (await db.execute(select(ESIMProfile).where(ESIMProfile.id == topup.esim_profile_id))).scalar_one_or_none()
+    if not profile:
+        topup.status = EsimTopupStatus.FAILED
+        await db.commit()
+        return topup
+
+    # The exact amount the customer was quoted and charged at the gateway -
+    # derived from the stored cost_price (decimal_to_scaled is the
+    # confirmed inverse of scaled_to_decimal, see esimaccess_adapter.py),
+    # never re-fetched here: a live re-fetch could return a different
+    # price than what was actually paid.
+    amount_scaled = decimal_to_scaled(Decimal(str(topup.cost_price)))
+    try:
+        await ESIMAccessAdapter.topup_esim(
+            db, iccid=profile.iccid, package_code=topup.package_code,
+            amount_scaled=amount_scaled, transaction_id=topup.id,
+        )
+    except ESIMAccessError:
+        # Payment already happened at the gateway - there's nothing to
+        # reverse there (no refund API wired up), so the compensation is
+        # a wallet credit, same pattern as a failed gateway-paid Order.
+        topup.status = EsimTopupStatus.FAILED
+        wallet = await LedgerService.get_wallet(db, topup.buyer_id, WalletType.DEFAULT)
+        if wallet:
+            await LedgerService.credit(
+                db, wallet.id, Decimal(str(topup.retail_price)), LedgerRefType.REFUND, ref_id=topup.id,
+                description=f"Refund: top-up {topup.title} failed",
+                idempotency_key=f"topup-refund-{topup.id}",
+            )
+        await db.commit()
+        return topup
+
+    topup.status = EsimTopupStatus.COMPLETED
+    topup.completed_at = datetime.now(timezone.utc)
+    await db.commit()
+    return topup

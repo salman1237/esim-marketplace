@@ -139,14 +139,17 @@ class EsimTopup(Base):
 
     Unlike Order's provisioning, eSIM Access's own docs don't describe
     esim/topup as asynchronous - no orderNo to poll, just a success/fail
-    response - so this is created, charged, and resolved synchronously in
-    one request, never left PROCESSING across requests the way an Order
-    can be."""
+    response. The WALLET path charges and calls the supplier in one
+    request; the SHURJOPAY path (same two-step shape as Order's gateway
+    path) creates this row PENDING, redirects to checkout, and only calls
+    the supplier once the gateway callback confirms payment - still never
+    left PROCESSING across multiple polls the way an Order can be."""
     __tablename__ = "esim_topups"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     esim_profile_id = Column(String(36), ForeignKey("esim_profiles.id"), nullable=False, index=True)
     buyer_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    payment_method = Column(Enum(PaymentMethod), default=PaymentMethod.WALLET, nullable=False)
     # eSIM Access's own TOPUP_* packageCode, scoped to the base package by
     # esim/package/list?type=TOPUP - never shared with Product.supplier_package_code,
     # which is a wholly separate catalog namespace (see catalog_parsing.py).

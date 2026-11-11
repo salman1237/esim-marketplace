@@ -25,6 +25,9 @@ from app.services.checkout_svc import resolve_beneficiary, RESELLER_ROLES
 from app.services.order_fulfilment import start_fulfilment
 from app.core.logging import get_logger
 from app.services.email_svc import EmailService
+from app.models.order import ESIMProfile, EsimTopupStatus
+from app.schemas.esim_topup import TopupPurchaseRequest
+from app.services import esim_topup_svc
 
 logger = get_logger(__name__)
 
@@ -231,6 +234,65 @@ async def initiate_order_via_shurjopay(
     return {**pay_res, "order_id": order.id, "order_no": order.order_no}
 
 
+@router.post("/shurjopay/esim-topup-initiate")
+async def initiate_esim_topup_via_shurjopay(
+    esim_id: str,
+    req: TopupPurchaseRequest,
+    request: Request,
+    current_user: User = Depends(require_password_changed),
+    db: AsyncSession = Depends(get_db),
+):
+    """Pays for an eSIM data top-up via ShurjoPay instead of wallet balance
+    - mirrors initiate_order_via_shurjopay above: the EsimTopup row is
+    created PENDING now and the supplier is only ever called once the
+    gateway callback confirms payment (see complete_gateway_topup in
+    esim_topup_svc.py), never here."""
+    profile = (await db.execute(select(ESIMProfile).where(ESIMProfile.id == esim_id))).scalar_one_or_none()
+    order_for_product = (
+        await db.execute(select(Order).where(Order.id == profile.order_id))
+    ).scalar_one_or_none() if profile else None
+    # Same ownership rule as GET /esims/{id}/status (esims.py's _load) -
+    # beneficiary or buyer, and the same 404 (not 403) for anyone else so
+    # an eSIM id can't be probed for existence.
+    allowed = profile and order_for_product and current_user.id in (profile.beneficiary_id, order_for_product.buyer_id)
+    if not allowed:
+        raise HTTPException(status_code=404, detail="eSIM not found")
+
+    product = (
+        await db.execute(select(Product).where(Product.id == order_for_product.product_id))
+    ).scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="eSIM not found")
+
+    try:
+        topup = await esim_topup_svc.create_pending_gateway_topup(db, profile, product, req.package_code, current_user.id)
+    except esim_topup_svc.TopupNotAvailable as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    amount_bdt = await CurrencyService.convert(db, Decimal(str(topup.retail_price)), "BDT")
+    sp_reference = f"ESIMTOPUP-{topup.id}"
+
+    try:
+        pay_res = await ShurjoPayService.initiate_payment(
+            db, order_id=sp_reference,
+            amount_bdt=amount_bdt,
+            customer_name=current_user.full_name or current_user.username,
+            customer_email=current_user.email,
+            customer_phone=current_user.phone or "01700000000",
+            client_ip=request.client.host if request.client else "127.0.0.1"
+        )
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=502, detail=f"Could not start ShurjoPay checkout: {e}")
+
+    if not _checkout_url(pay_res):
+        await db.rollback()
+        _require_checkout_url(pay_res)
+
+    await db.commit()
+    return {**pay_res, "topup_id": topup.id}
+
+
 @router.get("/shurjopay/callback")
 async def shurjopay_callback(
     order_id: str = Query(...),
@@ -275,16 +337,22 @@ async def shurjopay_callback(
     customer_order_id = record.get("customer_order_id") or ""
     is_order_payment = customer_order_id.startswith("ORDERPAY-")
     is_mobile_order = customer_order_id.startswith("ORDERPAY-M-")
+    is_esim_topup_payment = customer_order_id.startswith("ESIMTOPUP-")
 
     sp_code = record.get("sp_code")
     if str(sp_code) != "1000":
         await db.commit()
         if is_order_payment:
             return _fail("not_paid", "/my-esims", "payment", mobile=is_mobile_order)
+        if is_esim_topup_payment:
+            return _fail("not_paid", "/my-esims", "topup")
         return _fail("not_paid")
 
     if is_order_payment:
         return await _complete_gateway_order(db, customer_order_id, _fail, is_mobile_order)
+
+    if is_esim_topup_payment:
+        return await _complete_gateway_esim_topup(db, customer_order_id, _fail)
 
     if not customer_order_id.startswith("TOPUP-"):
         await db.commit()
@@ -362,6 +430,22 @@ async def shurjopay_ipn(request: Request, db: AsyncSession = Depends(get_db)):
     confirmed = "=failed" not in location
     logger.info("shurjopay_ipn_processed", sp_order_id=order_id, confirmed=confirmed)
     return {"status": "received", "order_id": order_id, "payment": "confirmed" if confirmed else "not_confirmed"}
+
+
+async def _complete_gateway_esim_topup(db: AsyncSession, customer_order_id: str, _fail) -> RedirectResponse:
+    """Completes a ShurjoPay-paid eSIM data top-up - hands off to
+    esim_topup_svc.complete_gateway_topup, which is where the actual
+    esim/topup supplier call happens (never here, and never at initiate
+    time - see create_pending_gateway_topup's own docstring)."""
+    topup_id = customer_order_id[len("ESIMTOPUP-"):]
+    topup = await esim_topup_svc.complete_gateway_topup(db, topup_id)
+    if not topup:
+        return _fail("unknown_topup", "/my-esims", "topup")
+
+    redirect_path = f"/my-esims/{topup.esim_profile_id}"
+    if topup.status == EsimTopupStatus.COMPLETED:
+        return RedirectResponse(f"{settings.FRONTEND_BASE_URL}{redirect_path}?topup=success", status_code=302)
+    return RedirectResponse(f"{settings.FRONTEND_BASE_URL}{redirect_path}?topup=failed", status_code=302)
 
 
 def _gateway_order_success_redirect(order_id: str, mobile: bool) -> RedirectResponse:
