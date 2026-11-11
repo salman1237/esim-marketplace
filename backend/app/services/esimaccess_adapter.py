@@ -167,6 +167,44 @@ class ESIMAccessAdapter:
         return obj.get("packageList", []) if isinstance(obj, dict) else []
 
     @classmethod
+    async def list_topup_packages(cls, db: AsyncSession, package_code: str = "", iccid: str = "") -> list:
+        """type="TOPUP" scoped to a specific base package and/or a
+        specific eSIM (reference doc §4.1) - this is the ONLY reliable way
+        to know what's actually top-up-eligible right now. supportTopUpType
+        on a base package is NOT a reliable gate (empirically disproven: a
+        package with supportTopUpType=1 still returned real options here) -
+        never pre-filter on it, always query live."""
+        result = await cls.call_api(db, "package/list", data={
+            "locationCode": "",
+            "type": "TOPUP",
+            "packageCode": package_code,
+            "iccid": iccid,
+        })
+        obj = result.get("obj") or {}
+        return obj.get("packageList", []) if isinstance(obj, dict) else []
+
+    @classmethod
+    async def topup_esim(cls, db: AsyncSession, iccid: str, package_code: str,
+                          amount_scaled: int, transaction_id: str) -> dict:
+        """Adds data to an ALREADY-DELIVERED eSIM (reference doc §4.5) - no
+        VivaPe equivalent exists. Unlike create_order, the docs describe no
+        asynchronous provisioning step for this - no orderNo to poll - so a
+        caller treats a successful call_api return as done, not as "now
+        poll esim/query". Only valid while the target eSIM hasn't expired
+        and the specific TOPUP_* packageCode is still offered for it (see
+        list_topup_packages) - a stale packageCode is a business error here,
+        same as any other, not a special case."""
+        if len(transaction_id) > 50:
+            raise ValueError(f"transactionId must be <=50 chars, got {len(transaction_id)}")
+        result = await cls.call_api(db, "esim/topup", data={
+            "iccid": iccid,
+            "packageCode": package_code,
+            "transactionId": transaction_id,
+            "amount": amount_scaled,
+        })
+        return result.get("obj")
+
+    @classmethod
     async def create_order(cls, db: AsyncSession, transaction_id: str, package_code: str,
                             amount_scaled: int, count: int = 1, period_num: int | None = None) -> dict:
         """transaction_id is the idempotency key (max 50 chars, confirmed

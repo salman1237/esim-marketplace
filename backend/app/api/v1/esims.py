@@ -23,8 +23,9 @@ from app.core.rate_limit import limiter
 from app.models.catalog import Product
 from app.models.order import ESIMProfile, Order
 from app.models.user import User, UserRole
-from app.services import esim_telemetry_svc
+from app.services import esim_telemetry_svc, esim_topup_svc
 from app.services.checkout_svc import new_share_token
+from app.schemas.esim_topup import EsimTopupResponse, TopupOptionResponse, TopupPurchaseRequest
 
 router = APIRouter(prefix="/esims", tags=["eSIM Status"])
 
@@ -115,3 +116,34 @@ async def refresh_esim_status(
     profile, order, product = await _load(db, esim_id, current_user)
     telemetry = await esim_telemetry_svc.get_telemetry(db, profile, order, force=True)
     return esim_telemetry_svc.serialize(telemetry, profile, product, order)
+
+
+@router.get("/{esim_id}/topup-options", response_model=list[TopupOptionResponse])
+async def get_topup_options(
+    esim_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Live, just-fetched options - empty for anything but a delivered
+    eSIM Access eSIM. See esim_topup_svc.py for why nothing is cached."""
+    profile, _order, product = await _load(db, esim_id, current_user)
+    return await esim_topup_svc.get_topup_options(db, profile, product)
+
+
+@router.post("/{esim_id}/topup", response_model=EsimTopupResponse)
+@limiter.limit("10/minute")
+async def purchase_topup(
+    esim_id: str,
+    req: TopupPurchaseRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    profile, _order, product = await _load(db, esim_id, current_user)
+    try:
+        topup = await esim_topup_svc.purchase_topup(db, profile, product, req.package_code, current_user.id)
+    except esim_topup_svc.TopupNotAvailable as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return topup

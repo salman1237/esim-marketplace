@@ -202,6 +202,11 @@ export const api = {
   // share token rather than the eSIM id.
   getPublicEsimStatus: (shareToken: string) => fetchApi(`/api/v1/esims/public/${encodeURIComponent(shareToken)}`),
   refreshEsimStatus: (token: string, esimId: string) => fetchApi(`/api/v1/esims/${esimId}/refresh`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+  // Adding data to an already-delivered eSIM - only ever has options for
+  // an eSIM Access eSIM; an empty list is the ordinary answer otherwise.
+  getTopupOptions: (token: string, esimId: string) => fetchApi(`/api/v1/esims/${esimId}/topup-options`, { headers: { Authorization: `Bearer ${token}` } }),
+  purchaseTopup: (token: string, esimId: string, packageCode: string) =>
+    fetchApi(`/api/v1/esims/${esimId}/topup`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ package_code: packageCode }) }),
   getOrder: (token: string, orderId: string) => fetchApi(`/api/v1/orders/${orderId}`, { headers: { Authorization: `Bearer ${token}` } }),
   getResellerOrders: (token: string) => fetchApi("/api/v1/orders/reseller-orders", { headers: { Authorization: `Bearer ${token}` } }),
 

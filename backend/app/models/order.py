@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Boolean, DateTime, Enum, ForeignKey, Numeric, Text
+from sqlalchemy import Column, String, Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, Text
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 import enum
@@ -114,3 +114,49 @@ class ESIMProfile(Base):
 
     order = relationship("Order", back_populates="esim_profile")
     telemetry = relationship("ESIMTelemetry", uselist=False, back_populates="esim_profile", cascade="all, delete-orphan")
+
+
+class EsimTopupStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class EsimTopup(Base):
+    """Adding data to an ALREADY-DELIVERED eSIM - a wholly separate flow
+    from buying one (Order/ESIMProfile above). No VivaPe equivalent exists
+    (VivaPe has no top-up capability at all); currently only possible for
+    supplier_reference == "esimaccess", since that's the only supplier
+    whose API offers esim/topup (see esim_topup_svc.py).
+
+    Unlike Order's provisioning, eSIM Access's own docs don't describe
+    esim/topup as asynchronous - no orderNo to poll, just a success/fail
+    response - so this is created, charged, and resolved synchronously in
+    one request, never left PROCESSING across requests the way an Order
+    can be."""
+    __tablename__ = "esim_topups"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    esim_profile_id = Column(String(36), ForeignKey("esim_profiles.id"), nullable=False, index=True)
+    buyer_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    # eSIM Access's own TOPUP_* packageCode, scoped to the base package by
+    # esim/package/list?type=TOPUP - never shared with Product.supplier_package_code,
+    # which is a wholly separate catalog namespace (see catalog_parsing.py).
+    package_code = Column(String(100), nullable=False)
+    title = Column(String(150), nullable=False)
+    data_amount_gb = Column(Numeric(8, 2), nullable=False)
+    validity_days = Column(Integer, nullable=False)
+    cost_price = Column(Numeric(18, 4), nullable=False)
+    retail_price = Column(Numeric(18, 4), nullable=False)
+    currency = Column(String(3), nullable=False)
+    status = Column(Enum(EsimTopupStatus), default=EsimTopupStatus.PENDING, nullable=False)
+    # Same role as Order.reward_amount_used - how much of retail_price came
+    # from non-withdrawable reward credit, so a failed top-up's refund
+    # returns to the wallet that actually paid it.
+    reward_amount_used = Column(Numeric(18, 4), default=0, nullable=False)
+    # The transactionId sent to esim/topup - this record's own id, mirroring
+    # how checkout_svc.py's eSIM Access branch reuses order.id so a retry of
+    # the SAME attempt is naturally idempotent on eSIM Access's side.
+    external_trx_id = Column(String(50), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    completed_at = Column(DateTime(timezone=True), nullable=True)

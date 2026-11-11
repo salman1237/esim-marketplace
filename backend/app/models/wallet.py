@@ -37,6 +37,9 @@ class LedgerRefType(str, enum.Enum):
     # An agent's cut of a sale made by one of their merchants, paid on top of
     # that merchant's own commission.
     AGENT_COMMISSION_EARNED = "AGENT_COMMISSION_EARNED"
+    # Adding data to an already-delivered eSIM (EsimTopup) - a separate
+    # charge from the original ORDER_PURCHASE, see esim_topup_svc.py.
+    ESIM_TOPUP_PURCHASE = "ESIM_TOPUP_PURCHASE"
 
 class Wallet(Base):
     __tablename__ = "wallets"

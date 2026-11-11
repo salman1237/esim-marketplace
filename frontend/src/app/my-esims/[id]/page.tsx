@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { ArrowLeft, Check, Copy, Printer, Share2 } from "lucide-react";
 import { api } from "@/lib/api";
 import EsimStatusView, { EsimStatus } from "@/components/esim/EsimStatusView";
+import TopupPanel from "@/components/esim/TopupPanel";
 
 // The owner's view. Identical body to the public tracking link (one shared
 // component), plus the link itself to copy or send on.
@@ -101,6 +102,8 @@ export default function EsimStatusPage() {
           </Link>
         }
       />
+
+      <TopupPanel esimId={id} />
 
       {/* The tracking link, also sent in the delivery email. Anyone with it can
           see this page and install the eSIM - which is the point, and no more
