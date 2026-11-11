@@ -1,14 +1,21 @@
 """Live eSIM telemetry: data used, install state, and the real validity window.
 
-Everything here comes from two VivaPe calls - esim/usage and
-esim/device-info - merged into one cached snapshot per eSIM.
+For a VivaPe eSIM, this comes from two calls - esim/usage and
+esim/device-info - merged into one cached snapshot. For an eSIM Access
+eSIM, esim/query returns everything in one call (iccid, LPA, esimStatus/
+smdpStatus, and - per the reference doc's confirmed response shape -
+totalVolume/orderUsage/totalDuration/expiredTime), so there is no
+separate "device info" call to make; see _fetch_esimaccess below.
 
 The important correction this service makes: an eSIM's validity runs from
 FIRST ACTIVATION, not from purchase. VivaPe reports `start_date` as the moment
 the profile first attached and `end_date` as validity days after that, and
 returns a long coupon window for a profile nobody has installed yet. So
 ESIMProfile.activated_at/expires_at are filled in from here once the customer
-installs, and stay NULL until then.
+installs, and stay NULL until then. The same principle is applied to eSIM
+Access's response even though it has no separate start_date field: an
+expiredTime is only trusted once esimStatus confirms the eSIM is actually
+in use, never for a freshly-issued, uninstalled profile.
 """
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -23,6 +30,7 @@ from app.core.logging import get_logger
 from app.models.catalog import Product
 from app.models.esim_telemetry import ESIMTelemetry
 from app.models.order import ESIMProfile, Order
+from app.services.esimaccess_adapter import ESIMAccessAdapter
 from app.services.vivape_adapter import VivaPeAdapter
 
 logger = get_logger(__name__)
@@ -128,6 +136,62 @@ def _merge(usage: dict | None, device: dict | None) -> dict:
     }
 
 
+def _merge_esimaccess(entry: dict | None) -> dict:
+    """One entry from eSIM Access's esim/query obj.esimList[] (see
+    checkout_svc.py's _extract_esimaccess_details for the same `ac`/LPA
+    parsing already proven against a real purchase). Confirmed live
+    fields are iccid/ac/esimStatus/smdpStatus (reference doc §4.2); the
+    usage fields (totalVolume, orderUsage, totalDuration, durationUnit,
+    expiredTime) are the shape the reference doc's own worked FAQ example
+    shows for this same envelope (§3) and documents as expected to carry
+    over to esim/query (§4.3) - not yet independently re-confirmed
+    against a real query_esim call, so read defensively and never assumed
+    present.
+
+    No device-info equivalent exists for eSIM Access (no handset model,
+    no EID, no event history) - those fields are simply always empty
+    here, not a bug to fix later."""
+    entry = entry if isinstance(entry, dict) else {}
+
+    order_usage = entry.get("orderUsage")
+    used_bytes = _as_int(order_usage) if order_usage is not None else 0
+
+    esim_status = entry.get("esimStatus") or None
+    # Only "IN_USE" is a confirmed-live signal (reference doc §5's
+    # ESIM_STATUS webhook example) that the eSIM is genuinely installed
+    # and active. Any other or unknown esimStatus value is NOT assumed to
+    # mean installed - the same "confirmed, not guessed" discipline every
+    # other eSIM Access field in this project follows. This means a
+    # customer's status briefly shows "Not installed yet" for esimStatus
+    # values this project hasn't seen live yet, which is the safe
+    # direction to be wrong in - never the reverse.
+    is_installed = esim_status == "IN_USE"
+
+    expires_at = _parse_ts(entry.get("expiredTime")) if is_installed else None
+    activated_at = None
+    total_duration = entry.get("totalDuration")
+    duration_unit = entry.get("durationUnit")
+    if is_installed and expires_at and total_duration and duration_unit == "DAY":
+        # eSIM Access gives only the absolute expiry, never a start date -
+        # unlike VivaPe's explicit start_date, so activation time is
+        # derived by walking the known validity length back from it.
+        activated_at = expires_at - timedelta(days=_as_int(total_duration))
+
+    return {
+        "data_used_bytes": used_bytes,
+        "data_used_mb": _as_decimal(Decimal(used_bytes) / Decimal(1024 * 1024)) if used_bytes else Decimal("0"),
+        "status_code": 1 if is_installed else 0,
+        "status_text": esim_status,
+        "is_installed": is_installed,
+        "device_model": None,
+        "eid": None,
+        "activated_at": activated_at,
+        "expires_at": expires_at,
+        "history": [],
+        "daily_breakdown": [],
+    }
+
+
 def _is_activated(merged: dict) -> bool:
     """Only an installed profile has a real validity window. VivaPe reports a
     long coupon window and status 0/"Unknown" for one nobody has installed,
@@ -135,14 +199,22 @@ def _is_activated(merged: dict) -> bool:
     return bool(merged["is_installed"]) or bool(merged["status_code"])
 
 
-async def _fetch(db: AsyncSession, profile: ESIMProfile, trx_id, refresh: bool) -> dict:
+async def _fetch(db: AsyncSession, profile: ESIMProfile, product: Product, trx_id, refresh: bool) -> dict:
+    if product.supplier_reference == "esimaccess":
+        # One call carries everything (reference doc §4.3) - no separate
+        # "refresh" concept the way VivaPe's usage call has one, since
+        # esim/query has no cache of its own to bypass.
+        result = await ESIMAccessAdapter.query_esim(db, order_no=profile.supplier_reference, iccid=profile.iccid)
+        esim_list = (result or {}).get("esimList") or []
+        return _merge_esimaccess(esim_list[0] if esim_list else None)
+
     usage = await VivaPeAdapter.get_esim_usage(db, trx_id=trx_id, iccid=profile.iccid, refresh=refresh)
     device = await VivaPeAdapter.get_esim_device_info(db, trx_id=trx_id, iccid=profile.iccid)
     return _merge(usage, device)
 
 
 async def get_telemetry(
-    db: AsyncSession, profile: ESIMProfile, order: Optional[Order] = None, *, force: bool = False
+    db: AsyncSession, profile: ESIMProfile, product: Product, order: Optional[Order] = None, *, force: bool = False
 ) -> Optional[ESIMTelemetry]:
     """The cached snapshot, refreshed when stale or when a human asked.
 
@@ -172,7 +244,7 @@ async def get_telemetry(
         return row
 
     try:
-        merged = await _fetch(db, profile, trx_id, refresh=force)
+        merged = await _fetch(db, profile, product, trx_id, refresh=force)
     except Exception as e:
         logger.warning("esim_telemetry_fetch_failed", esim_profile_id=profile.id, error=str(e))
         if row is None:

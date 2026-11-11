@@ -79,7 +79,7 @@ async def public_esim_status(
         raise HTTPException(status_code=404, detail="Not found")
 
     profile, order, product = row
-    telemetry = await esim_telemetry_svc.get_telemetry(db, profile, order)
+    telemetry = await esim_telemetry_svc.get_telemetry(db, profile, product, order)
     return esim_telemetry_svc.serialize(telemetry, profile, product, order, public=True)
 
 
@@ -98,7 +98,7 @@ async def get_esim_status(
     if not profile.share_token:
         profile.share_token = new_share_token()
         await db.commit()
-    telemetry = await esim_telemetry_svc.get_telemetry(db, profile, order)
+    telemetry = await esim_telemetry_svc.get_telemetry(db, profile, product, order)
     return esim_telemetry_svc.serialize(telemetry, profile, product, order)
 
 
@@ -114,7 +114,7 @@ async def refresh_esim_status(
     Rate-limited per caller, and the service itself enforces a short
     per-eSIM cooldown so a held-down button can't become a load test."""
     profile, order, product = await _load(db, esim_id, current_user)
-    telemetry = await esim_telemetry_svc.get_telemetry(db, profile, order, force=True)
+    telemetry = await esim_telemetry_svc.get_telemetry(db, profile, product, order, force=True)
     return esim_telemetry_svc.serialize(telemetry, profile, product, order)
 
 

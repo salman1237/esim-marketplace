@@ -308,7 +308,7 @@ async def get_order(order_id: str, ctx: MerchantContext = Depends(get_current_me
     # and same cache the customer sees, so the two never disagree.
     order, product, _iso2, _beneficiary, profile = row
     if profile:
-        telemetry = await esim_telemetry_svc.get_telemetry(db, profile, order)
+        telemetry = await esim_telemetry_svc.get_telemetry(db, profile, product, order)
         data["live_status"] = esim_telemetry_svc.serialize(telemetry, profile, product, order)
     return data
 

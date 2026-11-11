@@ -286,7 +286,7 @@ def _attach_profile(db: AsyncSession, order: Order, product: Product, beneficiar
         share_token=new_share_token(),
         # activated_at/expires_at are deliberately left unset: the plan's
         # validity starts when the customer installs the profile, not now.
-        # esim_telemetry_svc fills both in from VivaPe once that happens.
+        # esim_telemetry_svc fills both in from the supplier once that happens.
         # Setting them here dated a 3-day eSIM from the purchase, so anyone
         # who bought before their trip saw it as expired on arrival.
     )
