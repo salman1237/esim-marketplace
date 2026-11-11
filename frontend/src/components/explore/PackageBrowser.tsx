@@ -46,7 +46,21 @@ type Flow =
 const WORKING_STEPS = ["Payment confirmed", "Reserving your eSIM with the carrier", "Preparing your QR code"];
 
 const priceOf = (p: Product) => parseFloat(String(p.retail_price));
-const dataLabel = (p: Product) => (p.is_unlimited ? "Unlimited" : `${Number(p.data_amount_gb)} GB`);
+// A Day Pass's data_amount_gb is the TOTAL over the whole validity
+// period (daily rate x days, see catalog_parsing.py), but the allowance
+// actually resets every day and never carries over - showing that total
+// the same way a Fixed-data plan's pooled allowance is shown wrongly
+// implies the customer can use it all on day one. Showing the per-day
+// rate instead matches what they actually get.
+const dataLabel = (p: Product) => {
+  if (p.is_unlimited) return "Unlimited";
+  if (p.supplier_period_num && p.validity_days) {
+    const perDay = Number(p.data_amount_gb) / p.validity_days;
+    const rounded = Math.round(perDay * 100) / 100;
+    return `${rounded} GB/day`;
+  }
+  return `${Number(p.data_amount_gb)} GB`;
+};
 
 const PENDING_KEY = "esim_pending_purchase";
 
