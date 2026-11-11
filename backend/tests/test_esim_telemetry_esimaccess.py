@@ -4,7 +4,7 @@ customer's status page either errored or showed another eSIM's VivaPe
 data. See esim_telemetry_svc.py's _merge_esimaccess for what's confirmed
 live vs. read defensively from the reference doc's documented shape."""
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
@@ -73,19 +73,27 @@ async def test_telemetry_dispatches_to_esimaccess_not_vivape(client, db_session)
     vivape_usage_mock.assert_not_awaited()
 
 
-async def test_in_use_status_marks_installed_and_derives_activation_window(client, db_session):
+async def test_in_use_status_marks_installed_and_reads_the_real_activation_time(client, db_session):
+    """activateTime is a real, confirmed-live field (a SupplierTransactionLog
+    row from this project's own account, 2026-11-12) - not derived by
+    walking totalDuration back from expiredTime, which an earlier,
+    unconfirmed version of this function did before that real response
+    surfaced the actual field."""
     profile, order, product = await _esimaccess_profile(client, db_session)
     expired_time = datetime(2026, 11, 20, 12, 0, 0, tzinfo=timezone.utc)
+    activate_time = datetime(2026, 11, 13, 6, 0, 0, tzinfo=timezone.utc)
 
     with patch.object(
         esim_telemetry_svc.ESIMAccessAdapter, "query_esim", AsyncMock(return_value={"esimList": [{
             "iccid": profile.iccid,
+            "eid": "89033023525100100100039068590386",
             "esimStatus": "IN_USE",
             "smdpStatus": "ENABLED",
             "totalVolume": 1024 * 1024 * 1024,  # 1 GB
             "orderUsage": 200 * 1024 * 1024,    # 200 MB used
             "totalDuration": 7,
             "durationUnit": "DAY",
+            "activateTime": activate_time.isoformat(),
             "expiredTime": expired_time.isoformat(),
         }]}),
     ):
@@ -95,9 +103,10 @@ async def test_in_use_status_marks_installed_and_derives_activation_window(clien
     assert row.status_text == "IN_USE"
     assert row.data_used_mb == Decimal("200.00")
     assert row.expires_at == expired_time
-    assert row.activated_at == expired_time - timedelta(days=7)
+    assert row.activated_at == activate_time
+    assert row.eid == "89033023525100100100039068590386"
     await db_session.refresh(profile)
-    assert profile.activated_at == expired_time - timedelta(days=7)
+    assert profile.activated_at == activate_time
     assert profile.expires_at == expired_time
 
 

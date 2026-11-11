@@ -142,15 +142,19 @@ def _merge_esimaccess(entry: dict | None) -> dict:
     parsing already proven against a real purchase). Confirmed live
     fields are iccid/ac/esimStatus/smdpStatus (reference doc §4.2); the
     usage fields (totalVolume, orderUsage, totalDuration, durationUnit,
-    expiredTime) are the shape the reference doc's own worked FAQ example
-    shows for this same envelope (§3) and documents as expected to carry
-    over to esim/query (§4.3) - not yet independently re-confirmed
-    against a real query_esim call, so read defensively and never assumed
-    present.
+    expiredTime, activateTime, installationTime) are confirmed live
+    `[LIVE-CONFIRMED-2026-11-12]` - a real SupplierTransactionLog row
+    for this project's own account, not the doc's worked example.
 
-    No device-info equivalent exists for eSIM Access (no handset model,
-    no EID, no event history) - those fields are simply always empty
-    here, not a bug to fix later."""
+    No device-brand/model/type equivalent exists on THIS (the public
+    Partner) API, confirmed by diffing that same real esim/query
+    response against the eSIM Access console's own internal, session-
+    authenticated management API (a separate, undocumented endpoint:
+    allianceApi/v1/manager/hedy/order/listEsim), which DOES carry
+    deviceBrand/deviceModel/deviceType for the same eSIM - that data
+    exists on eSIM Access's side, it's simply not exposed to partner
+    API integrations at all. EID, by contrast, IS present on esim/query
+    and was previously (wrongly) hardcoded to None here."""
     entry = entry if isinstance(entry, dict) else {}
 
     order_usage = entry.get("orderUsage")
@@ -158,24 +162,26 @@ def _merge_esimaccess(entry: dict | None) -> dict:
 
     esim_status = entry.get("esimStatus") or None
     # Only "IN_USE" is a confirmed-live signal (reference doc §5's
-    # ESIM_STATUS webhook example) that the eSIM is genuinely installed
-    # and active. Any other or unknown esimStatus value is NOT assumed to
-    # mean installed - the same "confirmed, not guessed" discipline every
-    # other eSIM Access field in this project follows. This means a
-    # customer's status briefly shows "Not installed yet" for esimStatus
-    # values this project hasn't seen live yet, which is the safe
-    # direction to be wrong in - never the reverse.
+    # ESIM_STATUS webhook example, and this project's own real eSIM) that
+    # the eSIM is genuinely installed and active. Any other or unknown
+    # esimStatus value is NOT assumed to mean installed - the same
+    # "confirmed, not guessed" discipline every other eSIM Access field
+    # in this project follows. This means a customer's status briefly
+    # shows "Not installed yet" for esimStatus values this project hasn't
+    # seen live yet, which is the safe direction to be wrong in - never
+    # the reverse.
     is_installed = esim_status == "IN_USE"
 
     expires_at = _parse_ts(entry.get("expiredTime")) if is_installed else None
-    activated_at = None
-    total_duration = entry.get("totalDuration")
-    duration_unit = entry.get("durationUnit")
-    if is_installed and expires_at and total_duration and duration_unit == "DAY":
-        # eSIM Access gives only the absolute expiry, never a start date -
-        # unlike VivaPe's explicit start_date, so activation time is
-        # derived by walking the known validity length back from it.
-        activated_at = expires_at - timedelta(days=_as_int(total_duration))
+    # activateTime is a real, confirmed-live field - not derived by
+    # walking totalDuration back from expiredTime as an earlier version
+    # of this function did before a real account's own esim/query
+    # response surfaced it. installationTime also exists (when the
+    # profile was downloaded) but activateTime (first network
+    # connection) is the one that matches this project's "validity
+    # starts on first use, not on install" rule already established for
+    # VivaPe.
+    activated_at = _parse_ts(entry.get("activateTime")) if is_installed else None
 
     return {
         "data_used_bytes": used_bytes,
@@ -184,7 +190,7 @@ def _merge_esimaccess(entry: dict | None) -> dict:
         "status_text": esim_status,
         "is_installed": is_installed,
         "device_model": None,
-        "eid": None,
+        "eid": entry.get("eid") or None,
         "activated_at": activated_at,
         "expires_at": expires_at,
         "history": [],
