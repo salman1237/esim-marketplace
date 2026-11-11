@@ -178,6 +178,24 @@ async def test_regional_package_creates_a_pseudo_country_keyed_on_location_code(
     )).scalar_one()
     assert product.country_id == country.id
     assert product.supplier_period_num is None  # fixed-data, not a Day Pass variant
+    # The actual covered countries - lost if only locationCode were kept,
+    # since that's just eSIM Access's own stable group id, not a country
+    # list the storefront could show a customer.
+    assert product.coverage_country_isos == "NO,RS,DE"
+
+
+async def test_a_single_country_package_has_no_coverage_country_isos(db_session):
+    suffix = uuid.uuid4().hex[:4].upper()
+    iso2 = f"Q{suffix[:1]}"
+    pkg = _raw_package(iso2, f"SC{suffix}", f"{iso2}land 1GB 7Days", 7000, 1, 7)
+
+    with await _patched_list_packages([pkg]):
+        await sync_esimaccess_catalog(db_session)
+
+    product = (await db_session.execute(
+        select(Product).where(Product.supplier_package_code == f"SC{suffix}")
+    )).scalar_one()
+    assert product.coverage_country_isos is None
 
 
 async def test_a_regional_day_pass_shares_the_pseudo_country_with_a_regional_fixed_package(db_session):

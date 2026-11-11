@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { ArrowRight, CheckCircle2, Star, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
@@ -20,6 +20,12 @@ type Product = {
   is_unlimited: boolean;
   is_featured?: boolean;
   currency?: string;
+  // Set only for a Day Pass duration variant (see catalog_parsing.py's
+  // DAY_PASS_VARIANT_DAYS) - null/undefined for an ordinary fixed-data plan.
+  supplier_period_num?: number | null;
+  // Resolved country names for a regional/multi-country package - null
+  // for a single-country plan.
+  coverage_countries?: string[] | null;
 };
 
 type Discount = { code: string; discount_amount: number; total: number };
@@ -59,7 +65,19 @@ function estimateDiscount(price: number, generic: { discount_type: string; value
 
 export default function PackageBrowser({ country, products }: { country: any; products: Product[] }) {
   const { formatPrice } = useAppSettings();
-  const filters = usePackageFilters(products);
+
+  // Fixed-data vs. Day Pass are different plan shapes (a flat allowance
+  // for the whole trip vs. a daily rate bought for a chosen number of
+  // days) - split into tabs so they don't look like confusing duplicates
+  // sitting side by side. Only shown when a country actually has both;
+  // most still only have fixed-data plans.
+  const [planType, setPlanType] = useState<"fixed" | "daypass">("fixed");
+  const fixedProducts = useMemo(() => products.filter((p) => !p.supplier_period_num), [products]);
+  const dayPassProducts = useMemo(() => products.filter((p) => !!p.supplier_period_num), [products]);
+  const hasBothPlanTypes = fixedProducts.length > 0 && dayPassProducts.length > 0;
+  const planTypeProducts = hasBothPlanTypes ? (planType === "fixed" ? fixedProducts : dayPassProducts) : products;
+
+  const filters = usePackageFilters(planTypeProducts);
   const { filtered } = filters;
   const [flow, setFlow] = useState<Flow | null>(null);
   const [workingStep, setWorkingStep] = useState(0);
@@ -274,6 +292,29 @@ export default function PackageBrowser({ country, products }: { country: any; pr
 
   return (
     <>
+      {hasBothPlanTypes && (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setPlanType("fixed")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold border transition-colors ${
+              planType === "fixed" ? "bg-brand-600 border-brand-600 text-white" : "bg-white border-gray-300 text-slate-700 hover:bg-gray-50"
+            }`}
+          >
+            Fixed Data
+          </button>
+          <button
+            type="button"
+            onClick={() => setPlanType("daypass")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold border transition-colors ${
+              planType === "daypass" ? "bg-brand-600 border-brand-600 text-white" : "bg-white border-gray-300 text-slate-700 hover:bg-gray-50"
+            }`}
+          >
+            Day Pass
+          </button>
+        </div>
+      )}
+
       {(filters.availableDays.length > 0 || filters.availableGb.length > 0 || filters.hasUnlimited) && (
         <div className="glass-panel rounded-2xl border border-gray-200 p-4 sm:p-5">
           <PackageFilterChips filters={filters} />
@@ -295,7 +336,7 @@ export default function PackageBrowser({ country, products }: { country: any; pr
 
       <div className="flex items-center justify-between">
         <p className="text-xs text-slate-500">
-          {filtered.length} of {products.length} package{products.length === 1 ? "" : "s"}
+          {filtered.length} of {planTypeProducts.length} package{planTypeProducts.length === 1 ? "" : "s"}
         </p>
         {filters.active && (
           <button type="button" onClick={filters.reset} className="text-xs text-brand-600 hover:underline">
@@ -329,6 +370,12 @@ export default function PackageBrowser({ country, products }: { country: any; pr
                 )}
                 <div className="text-xl font-black text-slate-900">{dataLabel(p)}</div>
                 <div className="text-xs text-slate-500 mt-0.5">{p.validity_days} days validity · 4G/5G</div>
+                {p.coverage_countries && p.coverage_countries.length > 0 && (
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Covers: {p.coverage_countries.slice(0, 4).join(", ")}
+                    {p.coverage_countries.length > 4 ? ` +${p.coverage_countries.length - 4} more` : ""}
+                  </p>
+                )}
                 {discountedPrice !== null ? (
                   <div className="mt-4">
                     <div className="flex items-center gap-2">

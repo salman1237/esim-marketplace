@@ -15,6 +15,31 @@ def country_slug(name: str) -> str:
     """"Bangladesh" -> "bangladesh", "United Arab Emirates" -> "united-arab-emirates"."""
     return re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
 
+
+async def _products_with_coverage(db: AsyncSession, products: List[Product]) -> List[ProductResponse]:
+    """Resolves each regional product's coverage_country_isos (e.g.
+    "NO,RS,DE") into real country names, batched into a single query
+    instead of one lookup per product. coverage_country_isos is NULL for
+    every single-country product, so this is a no-op list copy for an
+    ordinary country's page."""
+    all_isos = {
+        code for p in products if p.coverage_country_isos
+        for code in p.coverage_country_isos.split(",") if code
+    }
+    names_by_iso = {}
+    if all_isos:
+        res = await db.execute(select(Country.iso2, Country.name_en).where(Country.iso2.in_(all_isos)))
+        names_by_iso = dict(res.all())
+
+    responses = []
+    for p in products:
+        resp = ProductResponse.model_validate(p)
+        if p.coverage_country_isos:
+            codes = [c for c in p.coverage_country_isos.split(",") if c]
+            resp = resp.model_copy(update={"coverage_countries": [names_by_iso.get(c, c) for c in codes]})
+        responses.append(resp)
+    return responses
+
 @router.get("/countries", response_model=List[CountryResponse])
 async def list_countries(
     search: Optional[str] = None,
@@ -67,7 +92,7 @@ async def list_country_products(iso2: str, db: AsyncSession = Depends(get_db)):
         # breaks ties.
         .order_by(Product.is_featured.desc(), Product.retail_price.asc(), Product.data_amount_gb.asc())
     )
-    return p_res.scalars().all()
+    return await _products_with_coverage(db, p_res.scalars().all())
 
 @router.get("/destinations/{slug}", response_model=DestinationResponse)
 async def get_destination(slug: str, db: AsyncSession = Depends(get_db)):
@@ -98,7 +123,8 @@ async def get_destination(slug: str, db: AsyncSession = Depends(get_db)):
         )
         .order_by(Product.is_featured.desc(), Product.retail_price.asc(), Product.data_amount_gb.asc())
     )
-    return DestinationResponse(country=country, products=p_res.scalars().all())
+    products = await _products_with_coverage(db, p_res.scalars().all())
+    return DestinationResponse(country=country, products=products)
 
 
 @router.get("/products/{product_id}", response_model=ProductResponse)
@@ -113,4 +139,4 @@ async def get_product(product_id: str, db: AsyncSession = Depends(get_db)):
     product = res.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    return product
+    return (await _products_with_coverage(db, [product]))[0]

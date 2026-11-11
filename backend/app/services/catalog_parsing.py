@@ -215,10 +215,22 @@ def parse_esimaccess_package(p: dict, profit_pct: Decimal = DEFAULT_SELLING_PROF
     volume_bytes = p.get("volume") or 0
     daily_gb = Decimal(volume_bytes) / Decimal(1024 ** 3)
 
+    # The raw `location` field is the actual comma-separated ISO2 list for
+    # a regional package (e.g. "NO,RS,DE") - locationCode/location_key
+    # above is just eSIM Access's stable short identifier for the group,
+    # not the countries themselves. Normalized (uppercased, no stray
+    # whitespace) so the storefront can split on "," and resolve each
+    # code to a Country name without re-cleaning it there.
+    coverage_country_isos = (
+        ",".join(code.strip().upper() for code in (p.get("location") or "").split(",") if code.strip())
+        if is_regional else None
+    ) or None
+
     common = {
         "location_key": location_key,
         "is_regional": is_regional,
         "region_name": _esimaccess_region_name(p) if is_regional else None,
+        "coverage_country_isos": coverage_country_isos,
         "supplier_package_code": package_code,
         "currency": "USD",  # eSIM Access bills in USD, unlike VivaPe's EUR
         "supplier_reference": "esimaccess",

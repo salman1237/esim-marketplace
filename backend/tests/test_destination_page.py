@@ -57,6 +57,39 @@ async def test_destination_page_by_slug_and_iso2(client, db_session):
     assert (await client.get("/api/v1/catalog/destinations/zz")).status_code == 404
 
 
+async def test_destination_resolves_regional_coverage_isos_to_country_names(client, db_session):
+    """A regional eSIM Access product stores coverage_country_isos as a
+    raw ISO2 list (e.g. "NO,RS,DE") - the destination API must resolve
+    that into real country names for the storefront, not pass the codes
+    through verbatim."""
+    suffix = uuid.uuid4().hex[:5]
+    norway = Country(id=int(uuid.uuid4().int % 1_000_000_000), iso2=f"N{suffix[:1].upper()}",
+                      name_en=f"Norwayland {suffix}", is_active=True)
+    serbia = Country(id=int(uuid.uuid4().int % 1_000_000_000), iso2=f"S{suffix[:1].upper()}",
+                      name_en=f"Serbialand {suffix}", is_active=True)
+    db_session.add_all([norway, serbia])
+    await db_session.flush()
+
+    region_name = f"Regionland {suffix}"
+    region = Country(id=int(uuid.uuid4().int % 1_000_000_000), iso2=f"RG{suffix[:4].upper()}",
+                      name_en=region_name, region="Regional", is_active=True)
+    db_session.add(region)
+    await db_session.flush()
+    db_session.add(Product(
+        country_id=region.id, title_en=f"{region_name} 3GB 30Days", data_amount_gb=Decimal("3"),
+        validity_days=30, cost_price=Decimal("2.0000"), retail_price=Decimal("9.00"), currency="USD",
+        is_active=True, supplier_reference="esimaccess",
+        coverage_country_isos=f"{norway.iso2},{serbia.iso2}",
+    ))
+    await db_session.commit()
+
+    slug = region_name.lower().replace(" ", "-")
+    res = await client.get(f"/api/v1/catalog/destinations/{slug}")
+    assert res.status_code == 200, res.text
+    product = res.json()["products"][0]
+    assert product["coverage_countries"] == [norway.name_en, serbia.name_en]
+
+
 async def test_country_list_carries_slug_for_links(client, db_session):
     name = f"Linkland {uuid.uuid4().hex[:5]}"
     await _country_with_packages(db_session, name)

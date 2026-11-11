@@ -382,6 +382,7 @@ async def sync_esimaccess_catalog(db: AsyncSession) -> dict:
                 existing.currency = parsed["currency"]
                 existing.is_unlimited = parsed["is_unlimited"]
                 existing.coverage_networks = parsed["coverage_networks"]
+                existing.coverage_country_isos = parsed["coverage_country_isos"]
                 existing.country_id = country_id
                 # Reappeared after being deactivated below, or was only
                 # ever absent for a few cycles - being seen in the feed
@@ -407,6 +408,7 @@ async def sync_esimaccess_catalog(db: AsyncSession) -> dict:
                     supplier_package_code=parsed["supplier_package_code"],
                     supplier_period_num=parsed["supplier_period_num"],
                     coverage_networks=parsed["coverage_networks"],
+                    coverage_country_isos=parsed["coverage_country_isos"],
                     last_seen_in_feed_at=sync_started_at,
                 )
                 db.add(new_product)

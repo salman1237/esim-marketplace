@@ -37,6 +37,15 @@ class ProductResponse(BaseModel):
     is_active: bool
     is_featured: bool = False
     coverage_networks: Optional[str] = None
+    # Set only for a Day Pass variant (see catalog_parsing.py's
+    # DAY_PASS_VARIANT_DAYS) - lets the storefront split a country's
+    # plans into "Fixed" vs "Day Pass" tabs.
+    supplier_period_num: Optional[int] = None
+    # Resolved country names for a regional/multi-country package (e.g.
+    # ["Norway", "Serbia", "Germany"]) - populated by the catalog
+    # endpoints from Product.coverage_country_isos, not a plain
+    # pass-through column. None for a single-country product.
+    coverage_countries: Optional[List[str]] = None
 
     class Config:
         from_attributes = True

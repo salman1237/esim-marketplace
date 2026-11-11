@@ -81,6 +81,13 @@ class Product(Base):
     # value from cost_price or the title — it must be round-tripped as-is.
     supplier_receiver_amount = Column(Numeric(18, 4), nullable=True)
     coverage_networks = Column(Text, nullable=True)
+    # Comma-separated ISO2 list for a regional/multi-country eSIM Access
+    # package (e.g. "NO,RS,DE") - what the storefront resolves into
+    # country names to show "Covers: Norway, Serbia, Germany". NULL for
+    # every single-country row. Deliberately a separate column from
+    # coverage_networks above, which already holds an unrelated value
+    # (ipExport) for those rows - see migration c4f6a92e0137.
+    coverage_country_isos = Column(Text, nullable=True)
     # When the supplier's product feed last listed this product. Tracked
     # explicitly rather than inferred from updated_at, which only advances
     # when a row's VALUES actually change: a product whose price and data
