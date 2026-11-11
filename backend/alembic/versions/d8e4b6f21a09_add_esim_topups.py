@@ -30,8 +30,12 @@ def upgrade() -> None:
     with op.get_context().autocommit_block():
         op.execute("ALTER TYPE ledgerreftype ADD VALUE IF NOT EXISTS 'ESIM_TOPUP_PURCHASE'")
 
+    # Not created explicitly here - op.create_table below creates it
+    # itself from the Enum column (create_type defaults to True), and
+    # calling .create() first made the type get created TWICE in the same
+    # transaction ("type already exists"), crash-looping the app on boot
+    # the one time this was deployed.
     esim_topup_status = sa.Enum('PENDING', 'COMPLETED', 'FAILED', name='esimtopupstatus')
-    esim_topup_status.create(op.get_bind())
 
     op.create_table(
         'esim_topups',
@@ -59,6 +63,6 @@ def downgrade() -> None:
     op.drop_index('ix_esim_topups_buyer_id', table_name='esim_topups')
     op.drop_index('ix_esim_topups_esim_profile_id', table_name='esim_topups')
     op.drop_table('esim_topups')
-    sa.Enum(name='esimtopupstatus').drop(op.get_bind())
+    sa.Enum(name='esimtopupstatus').drop(op.get_bind(), checkfirst=True)
     # PostgreSQL can't drop a value from an enum type. The value is harmless
     # if unused, so it is left in place.
