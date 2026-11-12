@@ -247,17 +247,37 @@ def parse_esimaccess_package(p: dict, profit_pct: Decimal = DEFAULT_SELLING_PROF
 
     if data_type == ESIMACCESS_FIXED_DATA_TYPE:
         cost = Decimal(str(price_scaled)) / Decimal(10000)
+        fixed_title = str(p.get("name") or f"{location_key} eSIM")
+        # A fixed-data "unlimited" plan is still dataType 1 with a huge
+        # nominal volume as a practical cap - confirmed live (beta DB,
+        # 2026-11-12): "Japan Unlimited-10Mbps 3Days (KDDI)" and "Japan
+        # No-Throttling-Unlimited ... (KDDI)" both carry volume = 999GB,
+        # not a real allowance. The name is the only reliable signal
+        # (same convention already proven for VivaPe's parser above) -
+        # without it, these showed as "999.00 GB" fixed plans, not
+        # "Unlimited".
+        is_unlimited = "unlimited" in fixed_title.lower()
         return [{
             **common,
-            "title": str(p.get("name") or f"{location_key} eSIM"),
-            "data_amount_gb": daily_gb.quantize(Decimal("0.01")),
+            "title": fixed_title,
+            "data_amount_gb": Decimal("0") if is_unlimited else daily_gb.quantize(Decimal("0.01")),
             "validity_days": int(p.get("duration") or 0),
             "cost_price": cost,
             "retail_price": retail_price_for(cost, profit_pct),
             "supplier_period_num": None,
+            "is_unlimited": is_unlimited,
         }]
 
     if data_type in ESIMACCESS_DAY_PASS_DATA_TYPES:
+        # dataType 4 (DATA_TYPE_DAILY_UNLIMITED) is documented as "no
+        # total cap" (esimaccess_adapter.py's own confirmed mapping), so
+        # this branch's multiplied "total GB" (daily_gb * days) could be
+        # fictitious for it the same way the fixed-data branch's was -
+        # not fixed here because no live dataType-4 package has actually
+        # been observed in a real pull yet (unlike the fixed-data case
+        # above, confirmed against real synced rows). Re-check this once
+        # one shows up in a real catalog sync.
+        #
         # A friendly label for the synthesized title - region_name for a
         # regional package ("Europe"), or the matching entry's own
         # locationName for a single country (locationNetworkList[0] is

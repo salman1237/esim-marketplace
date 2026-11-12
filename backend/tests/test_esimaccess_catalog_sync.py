@@ -71,6 +71,28 @@ async def test_syncs_a_new_fixed_data_single_country_package_creating_the_countr
     assert product.coverage_networks == iso2
 
 
+async def test_a_fixed_data_package_named_unlimited_syncs_as_unlimited_not_999gb(db_session):
+    """Confirmed live (beta DB, 2026-11-12): eSIM Access's own
+    "unlimited" fixed-data plans (e.g. "Japan Unlimited-10Mbps 3Days
+    (KDDI)") are still dataType 1 with a huge nominal volume (999GB) as
+    a practical cap, not a real allowance - before this fix they synced
+    as literal "999.00 GB" fixed plans instead of Unlimited, exactly the
+    same mistake VivaPe's own parser already guards against for its
+    titles."""
+    suffix = uuid.uuid4().hex[:4].upper()
+    iso2 = f"Y{suffix[:1]}"
+    pkg = _raw_package(iso2, f"UNL{suffix}", "Japan Unlimited-10Mbps 3Days (KDDI)", 50000, 999, 3)
+
+    with await _patched_list_packages([pkg]):
+        await sync_esimaccess_catalog(db_session)
+
+    product = (await db_session.execute(
+        select(Product).where(Product.supplier_package_code == f"UNL{suffix}")
+    )).scalar_one()
+    assert product.is_unlimited is True
+    assert product.data_amount_gb == Decimal("0.00")
+
+
 async def test_auto_created_country_id_is_always_past_the_current_max_not_a_stale_sequence(db_session):
     """Reproduces the real bug, live on beta on first use (2026-11-10):
     Country.id has no reliable auto-increment to fall back on - VivaPe's
