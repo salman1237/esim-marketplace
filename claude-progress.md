@@ -6,9 +6,10 @@ Session log. Read first at session start, update last at session end.
   (see "Real production bug" entry below - the proxy-verification gap
   flagged under FR-C103 is now closed).
 - **Active feature:** none.
-- **Next step:** `FR-C206` (reconnect + fallback), then `FR-C301`/
-  `FR-C302` (admin). All backend transport FRs (`FR-C101`-`FR-C107`)
-  are done. Mobile is a separate repo, built
+- **Next step:** `FR-C301`/`FR-C302` (admin: live-updating support
+  queue, staff reply via the same live thread) - the last 2 of 15 FRs.
+  All backend transport (`FR-C101`-`FR-C107`) and all 6 frontend widget
+  FRs (`FR-C201`-`FR-C206`) are done. Mobile is a separate repo, built
   after a web FR is live on beta - see `Triptel-flutter/claude-progress.md`.
   That "live on beta" bar is now actually met in the full sense (connect
   AND delivery), not just connect - worth remembering since it wasn't,
@@ -280,6 +281,15 @@ Session log. Read first at session start, update last at session end.
   if this keeps being this frequent it may be worth a dedicated look at
   what changed about this disposable-Postgres setup specifically,
   rather than continuing to route around it per-test.
+
+- 2026-11-18 — **FR-C206 passing - all 6 frontend widget FRs done.**
+  `useSupportSocket` reconnects with exponential backoff (1s-30s cap),
+  skips retrying on the server's own 4401/4403 rejection, and fires
+  `onReconnect` only on an actual drop-then-reconnect so
+  `LiveTicketThread` can re-fetch and catch anything missed. A visible
+  "Live updates paused" notice + manual Refresh button covers the
+  disconnected window - never a hard error. Only `FR-C301`/`FR-C302`
+  (admin) remain of the original 15.
 
 ## Blocked / needs confirming during build (not blocking the harness itself)
 - (Resolved 2026-11-18 - see the "Real production bug" entry above.)

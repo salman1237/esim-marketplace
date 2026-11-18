@@ -95,8 +95,8 @@
       "id": "FR-C206",
       "behavior": "Reconnect with backoff + manual-refresh fallback",
       "verification": "cd frontend && npm run build",
-      "state": "not_started",
-      "evidence": null
+      "state": "passing",
+      "evidence": "`npm run build` compiles clean. useSupportSocket reconnects on an unexpected close with exponential backoff (1s/2s/4s/8s/16s/30s cap), skipping retries entirely on the server's own 4401/4403 rejection codes (nothing a retry could fix). onReconnect fires only on an actual drop-then-reconnect and LiveTicketThread wires it to re-fetch the ticket, catching anything missed while disconnected - plus a visible 'Live updates paused' notice with a manual Refresh button while connected is false, never a hard error. This completes all 6 frontend widget FRs (FR-C201-C206). Same no-browser-automation-tool caveat as the other panel FRs for watching an actual drop/reconnect cycle happen live - the reasoning is otherwise directly inspectable from the code."
     },
     {
       "id": "FR-C301",
