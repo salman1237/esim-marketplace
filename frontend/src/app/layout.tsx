@@ -4,6 +4,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import MobileBottomNav from "@/components/MobileBottomNav";
 import MaintenanceGate from "@/components/MaintenanceGate";
+import ChatWidget from "@/components/support/ChatWidget";
 import { AppSettingsProvider } from "@/lib/AppSettingsContext";
 import { API_BASE } from "@/lib/api";
 
@@ -67,6 +68,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </main>
             <Footer />
             <MobileBottomNav />
+            <ChatWidget />
           </MaintenanceGate>
         </AppSettingsProvider>
       </body>
