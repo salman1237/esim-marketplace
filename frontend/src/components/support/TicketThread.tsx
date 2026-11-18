@@ -151,17 +151,47 @@ export function Thread({ messages }: { messages: any[] }) {
   );
 }
 
+// FR-C204: dots a screen reader doesn't need twice (the aria-live
+// announcement already covers it) - aria-hidden here, purely visual.
+export function TypingDots() {
+  return (
+    <span className="inline-flex items-center gap-1" aria-hidden="true">
+      <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:-0.3s]" />
+      <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:-0.15s]" />
+      <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce" />
+    </span>
+  );
+}
+
+const TYPING_SEND_THROTTLE_MS = 2_000;
+
 /** Reply box with attachments, shared by both sides. */
 export function ReplyBox({
-  onSend, disabled, placeholder = "Write a reply…", sending,
+  onSend, disabled, placeholder = "Write a reply…", sending, onTyping,
 }: {
   onSend: (body: string, files: File[]) => Promise<void>;
   disabled?: boolean;
   placeholder?: string;
   sending?: boolean;
+  /** FR-C204: called at most once every ~2s while the user is actively
+   * typing - never a DB write, a pure WS broadcast (Rules.md), so this
+   * throttle exists purely to avoid spamming the socket, not to protect
+   * any backend write path. */
+  onTyping?: () => void;
 }) {
   const [body, setBody] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  const lastTypingSentRef = React.useRef(0);
+
+  const handleBodyChange = (value: string) => {
+    setBody(value);
+    if (!onTyping) return;
+    const now = Date.now();
+    if (now - lastTypingSentRef.current >= TYPING_SEND_THROTTLE_MS) {
+      lastTypingSentRef.current = now;
+      onTyping();
+    }
+  };
 
   const send = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -185,7 +215,7 @@ export function ReplyBox({
         rows={3}
         value={body}
         maxLength={5000}
-        onChange={(e) => setBody(e.target.value)}
+        onChange={(e) => handleBodyChange(e.target.value)}
         placeholder={placeholder}
         className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs text-slate-900"
       />

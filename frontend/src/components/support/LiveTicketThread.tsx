@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { api } from "@/lib/api";
-import { ReplyBox, StatusBadge, Thread } from "@/components/support/TicketThread";
+import { ReplyBox, StatusBadge, Thread, TypingDots } from "@/components/support/TicketThread";
 import { useSupportSocket } from "@/components/support/useSupportSocket";
 
 /**
@@ -21,9 +21,7 @@ export default function LiveTicketThread({ ticketId, onBack }: { ticketId: strin
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  // sendTyping is wired up by FR-C204 (debounced outbound typing events) -
-  // this FR only consumes the inbound side (typingFrom).
-  const { messages: liveMessages, typingFrom } = useSupportSocket(ticketId);
+  const { messages: liveMessages, typingFrom, sendTyping } = useSupportSocket(ticketId);
 
   const load = useCallback(async () => {
     const token = localStorage.getItem("esim_token");
@@ -112,9 +110,16 @@ export default function LiveTicketThread({ ticketId, onBack }: { ticketId: strin
       <div className="flex-1 overflow-y-auto p-4">
         {error && <p className="mb-3 text-xs text-rose-600">{error}</p>}
         <Thread messages={allMessages} />
-        {/* Screen-reader announcement, not purely visual (Non_Functional_
-            Requirements.md's Accessibility gate) - the UI's own styled
-            animation lands in FR-C204; this just makes the arrival known. */}
+        {typingFrom && (
+          <div className={`mt-3 flex ${typingFrom === "staff" ? "justify-start" : "justify-end"}`}>
+            <div className="rounded-2xl px-3 py-2 border border-gray-200 bg-white">
+              <TypingDots />
+            </div>
+          </div>
+        )}
+        {/* Screen-reader announcement alongside the visual dots above
+            (Non_Functional_Requirements.md's Accessibility gate - "not
+            purely a visual animation"). */}
         <div aria-live="polite" className="sr-only">
           {typingFrom ? `${typingFrom === "staff" ? "Support" : "Customer"} is typing…` : ""}
         </div>
@@ -122,7 +127,7 @@ export default function LiveTicketThread({ ticketId, onBack }: { ticketId: strin
       </div>
 
       <div className="p-4 border-t border-gray-100 shrink-0">
-        <ReplyBox onSend={send} sending={sending} disabled={closed} />
+        <ReplyBox onSend={send} sending={sending} disabled={closed} onTyping={sendTyping} />
       </div>
     </div>
   );
