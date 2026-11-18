@@ -129,10 +129,10 @@ function SharedProductCard({ product }: { product: any }) {
     );
   }
   const dataLabel = product.is_unlimited ? "Unlimited" : `${Number(product.data_amount_gb)} GB`;
-  // Clickable to the product's destination page (the same slug
-  // GET /catalog/countries already computes - see
-  // support_svc.serialize_shared_product) - public, no auth needed, so
-  // this works identically for a customer and for staff.
+  // Clickable straight to the package's own page
+  // (explore/[slug]/[productId]/page.tsx) - title, description and Buy
+  // Now all live there, not just the generic destination listing. Public,
+  // no auth needed, so this works identically for a customer and staff.
   const content = (
     <>
       <Package className="w-4 h-4 text-brand-500 shrink-0" />
@@ -149,7 +149,7 @@ function SharedProductCard({ product }: { product: any }) {
   if (product.country_slug) {
     return (
       <Link
-        href={`/explore/${product.country_slug}`}
+        href={`/explore/${product.country_slug}/${product.id}`}
         target="_blank"
         rel="noopener noreferrer"
         className="mt-2 rounded-xl border border-gray-200 bg-white px-3 py-2 flex items-center gap-2 hover:border-brand-300 hover:bg-brand-50/40 transition-colors"

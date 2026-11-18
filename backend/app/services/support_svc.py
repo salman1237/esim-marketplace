@@ -301,10 +301,11 @@ def serialize_shared_product(product: Optional[Product]) -> Optional[dict]:
         "is_unlimited": product.is_unlimited,
         "retail_price": str(product.retail_price),
         "currency": product.currency,
-        # The card's click target - the existing /explore/{slug} country
-        # page, same slug GET /catalog/countries already computes
-        # (catalog.py's country_slug helper, reused here rather than a
-        # second implementation).
+        # Combined with "id" above, the card's click target is the
+        # package's own page (explore/[slug]/[productId]/page.tsx) - same
+        # slug GET /catalog/countries already computes (catalog.py's
+        # country_slug helper, mirrored locally rather than a backwards
+        # services->api import - see _country_slug above).
         "country_slug": _country_slug(product.country.name_en) if product.country else None,
     }
 
