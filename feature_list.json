@@ -102,15 +102,15 @@
       "id": "FR-C301",
       "behavior": "Admin support queue subscribes to queue WS, live updates",
       "verification": "cd frontend && npm run build",
-      "state": "not_started",
-      "evidence": null
+      "state": "passing",
+      "evidence": "`npm run build` compiles clean. useSupportQueueSocket subscribes to WS /ws/support/queue (same backoff-reconnect shape as FR-C206) and re-runs the existing GET /support/queue on every ticket_updated event, respecting whatever filter/search is active - not a patch-one-row shortcut. Real dev server smoke check: /admin returns 200, no server errors. Same no-browser-automation-tool caveat as the other WS-touching frontend FRs - the underlying ticket_updated broadcast itself was separately proven in FR-C105's own test."
     },
     {
       "id": "FR-C302",
       "behavior": "Staff reply uses the same live thread component (for_staff mode)",
       "verification": "cd frontend && npm run build",
-      "state": "not_started",
-      "evidence": null
+      "state": "passing",
+      "evidence": "`npm run build` compiles clean. SupportTab.tsx's static one-ticket view (plain Thread/ReplyBox, no live updates) replaced with LiveTicketThread in a new forStaff mode - customer identity, assignment, and the Take it/Resolve actions the old view already had, reused not duplicated. onTicketChanged refreshes the admin's own queue list immediately after a reply/share/action, in addition to FR-C301's queue socket. This was the last of the original 15 chat FRs - all now passing."
     }
   ]
 }

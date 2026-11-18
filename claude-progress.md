@@ -6,14 +6,16 @@ Session log. Read first at session start, update last at session end.
   (see "Real production bug" entry below - the proxy-verification gap
   flagged under FR-C103 is now closed).
 - **Active feature:** none.
-- **Next step:** `FR-C301`/`FR-C302` (admin: live-updating support
-  queue, staff reply via the same live thread) - the last 2 of 15 FRs.
-  All backend transport (`FR-C101`-`FR-C107`) and all 6 frontend widget
-  FRs (`FR-C201`-`FR-C206`) are done. Mobile is a separate repo, built
-  after a web FR is live on beta - see `Triptel-flutter/claude-progress.md`.
-  That "live on beta" bar is now actually met in the full sense (connect
-  AND delivery), not just connect - worth remembering since it wasn't,
-  briefly.
+- **Next step:** **all 15 original chat FRs are now passing** (`FR-C101`-
+  `FR-C107`, `FR-C201`-`FR-C206`, `FR-C301`/`FR-C302`). What's left: a
+  real browser verification pass of the frontend widget FRs (no browser
+  automation tool was available in this session - flagged honestly
+  under each of those FRs' own evidence rather than skipped silently),
+  and deciding whether to unblock the mobile chat FRs in
+  `Triptel-flutter` - its FRs are `blocked` on "a web chat FR confirmed
+  live on beta", a bar this feature has now cleared in the full sense
+  (connect AND delivery, not just connect, since the datetime-
+  serialization fix below).
 
 ## Done
 - 2026-11-18 — **FR-C101 passing.** `SupportMessage` gains `message_type`
@@ -290,6 +292,14 @@ Session log. Read first at session start, update last at session end.
   "Live updates paused" notice + manual Refresh button covers the
   disconnected window - never a hard error. Only `FR-C301`/`FR-C302`
   (admin) remain of the original 15.
+
+- 2026-11-18 — **FR-C301/FR-C302 passing - all 15 original chat FRs
+  done.** `useSupportQueueSocket` (same backoff-reconnect shape as
+  `FR-C206`) re-runs `GET /support/queue` on every `ticket_updated`
+  event; `SupportTab.tsx`'s static one-ticket view replaced with the
+  same `LiveTicketThread` the customer widget uses, in a new
+  `forStaff` mode (customer identity, assignment, Take it/Resolve -
+  reused, not duplicated).
 
 ## Blocked / needs confirming during build (not blocking the harness itself)
 - (Resolved 2026-11-18 - see the "Real production bug" entry above.)
