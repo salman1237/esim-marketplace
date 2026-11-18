@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, CheckCircle2, LifeBuoy, Search, UserCheck } from "lucide-react";
+import { LifeBuoy, Search } from "lucide-react";
 import { api } from "@/lib/api";
-import { ReplyBox, StatusBadge, Thread } from "@/components/support/TicketThread";
+import { StatusBadge } from "@/components/support/TicketThread";
+import LiveTicketThread from "@/components/support/LiveTicketThread";
+import { useSupportQueueSocket } from "@/components/support/useSupportQueueSocket";
 import { formatDateTime } from "@/lib/datetime";
 
 function getToken() {
@@ -28,15 +30,13 @@ export default function SupportTab({ onCountChange }: { onCountChange?: (n: numb
   const [status, setStatus] = useState("");
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
-  const [open, setOpen] = useState<any | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
 
   const load = useCallback(async () => {
     const token = getToken();
     if (!token) return;
-    setLoading(true);
     try {
       const res = await api.getSupportQueue(token, { status: status || undefined, q: query || undefined });
       setData(res);
@@ -49,110 +49,24 @@ export default function SupportTab({ onCountChange }: { onCountChange?: (n: numb
   }, [status, query, onCountChange]);
 
   useEffect(() => {
+    setLoading(true);
     load();
   }, [load]);
 
-  const openTicket = async (id: string) => {
-    const token = getToken();
-    if (!token) return;
-    try {
-      setOpen(await api.getTicket(token, id));
-    } catch (err: any) {
-      setNotice({ kind: "error", text: err.message || "Couldn't open that ticket" });
-    }
-  };
+  // FR-C301: the queue list updates live - new/updated tickets appear
+  // without a manual refresh. A ticket_updated event carries only a
+  // lightweight summary (ws_manager's broadcast_to_queue payload), so this
+  // re-runs the existing GET /support/queue (whatever filter/search is
+  // active) rather than trying to patch one row from it.
+  useSupportQueueSocket(true, load);
 
-  const reply = async (body: string, files: File[]) => {
-    const token = getToken();
-    if (!token || !open) return;
-    setSending(true);
-    setNotice(null);
-    try {
-      const form = new FormData();
-      form.append("body", body);
-      files.forEach((f) => form.append("files", f));
-      setOpen(await api.replyToTicket(token, open.id, form));
-      await load();
-      setNotice({ kind: "ok", text: "Sent — the customer has been emailed." });
-    } catch (err: any) {
-      setNotice({ kind: "error", text: err.message || "Couldn't send that" });
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const act = async (fn: (token: string, id: string) => Promise<any>, message: string) => {
-    const token = getToken();
-    if (!token || !open) return;
-    setNotice(null);
-    try {
-      await fn(token, open.id);
-      await openTicket(open.id);
-      await load();
-      setNotice({ kind: "ok", text: message });
-    } catch (err: any) {
-      setNotice({ kind: "error", text: err.message || "Couldn't do that" });
-    }
-  };
-
-  // --- One ticket ---
-  if (open) {
+  // --- One ticket - FR-C302: the same live thread component the customer
+  // widget uses, in for_staff mode (customer identity, assignment,
+  // Take it/Resolve - what the old static view here already showed). ---
+  if (openId) {
     return (
-      <div className="space-y-4">
-        <button onClick={() => setOpen(null)} className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900">
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to the queue
-        </button>
-
-        <div className="glass-panel rounded-2xl p-6 border border-gray-200">
-          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
-            <div className="min-w-0">
-              <h3 className="text-base font-bold text-slate-900">{open.subject}</h3>
-              <p className="text-xs text-slate-500 mt-0.5 font-mono">{open.reference}</p>
-              <p className="text-xs text-slate-600 mt-1">
-                {open.customer?.username} · {open.customer?.email}
-                {open.assigned_to ? <> · assigned to <strong>{open.assigned_to}</strong></> : null}
-              </p>
-              {open.order_id && (
-                <p className="text-[11px] text-slate-400 mt-0.5 font-mono">Order {open.order_id}</p>
-              )}
-            </div>
-            <div className="flex flex-col items-end gap-2">
-              <StatusBadge status={open.status} staff />
-              <div className="flex gap-2">
-                {!open.assigned_to && (
-                  <button onClick={() => act(api.assignTicket, "Assigned to you.")}
-                    className="inline-flex items-center gap-1 bg-white hover:bg-gray-50 border border-gray-300 text-slate-700 text-[11px] font-bold px-2.5 py-1.5 rounded-lg">
-                    <UserCheck className="w-3 h-3" /> Take it
-                  </button>
-                )}
-                {open.status !== "RESOLVED" && open.status !== "CLOSED" && (
-                  <button onClick={() => act(api.resolveTicket, "Marked resolved — the customer has been emailed.")}
-                    className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg">
-                    <CheckCircle2 className="w-3 h-3" /> Resolve
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {notice && (
-            <p className={`text-xs font-medium mb-3 ${notice.kind === "ok" ? "text-emerald-600" : "text-rose-600"}`}>{notice.text}</p>
-          )}
-
-          <Thread messages={open.messages || []} />
-        </div>
-
-        <div className="glass-panel rounded-2xl p-6 border border-gray-200">
-          <ReplyBox
-            onSend={reply}
-            sending={sending}
-            disabled={open.status === "CLOSED"}
-            placeholder="Reply to the customer…"
-          />
-          <p className="mt-2 text-[11px] text-slate-400">
-            The customer sees this as &ldquo;Support&rdquo; — your username isn&apos;t shown to them.
-          </p>
-        </div>
+      <div className="glass-panel rounded-2xl border border-gray-200 h-[70vh]">
+        <LiveTicketThread ticketId={openId} onBack={() => setOpenId(null)} forStaff onTicketChanged={load} />
       </div>
     );
   }
@@ -168,6 +82,10 @@ export default function SupportTab({ onCountChange }: { onCountChange?: (n: numb
         <p className="text-xs text-slate-500 mb-4">
           Oldest waiting first — the one at the top has been waiting longest. Replying emails the customer.
         </p>
+
+        {notice && (
+          <p className={`text-xs font-medium mb-3 ${notice.kind === "ok" ? "text-emerald-600" : "text-rose-600"}`}>{notice.text}</p>
+        )}
 
         <form
           onSubmit={(e) => { e.preventDefault(); setQuery(queryInput.trim()); }}
@@ -220,7 +138,7 @@ export default function SupportTab({ onCountChange }: { onCountChange?: (n: numb
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {data.tickets.map((t: any) => (
-                  <tr key={t.id} onClick={() => openTicket(t.id)} className="cursor-pointer hover:bg-gray-50">
+                  <tr key={t.id} onClick={() => setOpenId(t.id)} className="cursor-pointer hover:bg-gray-50">
                     <td className="py-2.5 pe-3">
                       <div className="font-semibold text-slate-900">{t.subject}</div>
                       <div className="text-[10px] text-slate-400 font-mono">{t.reference}</div>

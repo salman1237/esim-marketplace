@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Share2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Share2, UserCheck } from "lucide-react";
 import { api } from "@/lib/api";
 import { ReplyBox, StatusBadge, Thread, TypingDots } from "@/components/support/TicketThread";
 import { useSupportSocket } from "@/components/support/useSupportSocket";
@@ -16,7 +16,20 @@ import SharePicker from "@/components/support/SharePicker";
  * FR-C206 adds the reconnect/re-fetch half of that, this FR already never
  * relies on the socket alone for the initial state).
  */
-export default function LiveTicketThread({ ticketId, onBack }: { ticketId: string; onBack: () => void }) {
+export default function LiveTicketThread({
+  ticketId, onBack, forStaff = false, onTicketChanged,
+}: {
+  ticketId: string;
+  onBack: () => void;
+  /** FR-C302: same component, for_staff mode - customer identity,
+   * assignment, and the Take it/Resolve actions SupportTab.tsx's own
+   * static view already had. */
+  forStaff?: boolean;
+  /** Lets a staff-side caller (SupportTab.tsx) refresh its own queue list
+   * right after an action here, in addition to whatever FR-C301's queue
+   * socket eventually delivers. */
+  onTicketChanged?: () => void;
+}) {
   const [ticket, setTicket] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -73,6 +86,7 @@ export default function LiveTicketThread({ ticketId, onBack }: { ticketId: strin
       form.append("body", body);
       files.forEach((f) => form.append("files", f));
       setTicket(await api.replyToTicket(token, ticketId, form));
+      onTicketChanged?.();
     } catch (err: any) {
       setError(err.message || "Couldn't send that");
     } finally {
@@ -97,10 +111,30 @@ export default function LiveTicketThread({ ticketId, onBack }: { ticketId: strin
       if (selection.kind === "order") form.append("shared_order_id", selection.orderId);
       else form.append("shared_product_id", selection.productId);
       setTicket(await api.replyToTicket(token, ticketId, form));
+      onTicketChanged?.();
     } catch (err: any) {
       setError(err.message || "Couldn't share that");
     } finally {
       setSending(false);
+    }
+  };
+
+  // FR-C302: the same two staff actions SupportTab.tsx's static view
+  // already had - reused here, not reimplemented.
+  const [acting, setActing] = useState(false);
+  const act = async (fn: (token: string, id: string) => Promise<any>) => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    setActing(true);
+    setError(null);
+    try {
+      await fn(token, ticketId);
+      await load();
+      onTicketChanged?.();
+    } catch (err: any) {
+      setError(err.message || "Couldn't do that");
+    } finally {
+      setActing(false);
     }
   };
 
@@ -140,8 +174,40 @@ export default function LiveTicketThread({ ticketId, onBack }: { ticketId: strin
         <div className="min-w-0 flex-1">
           <div className="text-xs font-bold text-slate-900 truncate">{ticket.subject}</div>
           <div className="text-[10px] text-slate-400 font-mono">{ticket.reference}</div>
+          {forStaff && (
+            <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+              {ticket.customer?.username} · {ticket.customer?.email}
+              {ticket.assigned_to ? <> · assigned to <strong>{ticket.assigned_to}</strong></> : null}
+            </div>
+          )}
         </div>
-        <StatusBadge status={ticket.status} />
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <StatusBadge status={ticket.status} staff={forStaff} />
+          {forStaff && (
+            <div className="flex gap-1.5">
+              {!ticket.assigned_to && (
+                <button
+                  type="button"
+                  onClick={() => act(api.assignTicket)}
+                  disabled={acting}
+                  className="inline-flex items-center gap-1 bg-white hover:bg-gray-50 border border-gray-300 text-slate-700 text-[10px] font-bold px-2 py-1 rounded-lg disabled:opacity-50"
+                >
+                  <UserCheck className="w-3 h-3" /> Take it
+                </button>
+              )}
+              {ticket.status !== "RESOLVED" && ticket.status !== "CLOSED" && (
+                <button
+                  type="button"
+                  onClick={() => act(api.resolveTicket)}
+                  disabled={acting}
+                  className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold px-2 py-1 rounded-lg disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-3 h-3" /> Resolve
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* FR-C206: never a hard error that blocks viewing/sending
@@ -195,7 +261,18 @@ export default function LiveTicketThread({ ticketId, onBack }: { ticketId: strin
             <Share2 className="w-3.5 h-3.5" /> Share an order or package
           </button>
         )}
-        <ReplyBox onSend={send} sending={sending} disabled={closed} onTyping={sendTyping} />
+        <ReplyBox
+          onSend={send}
+          sending={sending}
+          disabled={closed}
+          onTyping={sendTyping}
+          placeholder={forStaff ? "Reply to the customer…" : "Write a reply…"}
+        />
+        {forStaff && (
+          <p className="mt-2 text-[11px] text-slate-400">
+            The customer sees this as &ldquo;Support&rdquo; — your username isn&apos;t shown to them.
+          </p>
+        )}
       </div>
     </div>
   );
