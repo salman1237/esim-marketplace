@@ -6,10 +6,9 @@ Session log. Read first at session start, update last at session end.
   (see "Real production bug" entry below - the proxy-verification gap
   flagged under FR-C103 is now closed).
 - **Active feature:** none.
-- **Next step:** `FR-C205` (share an order/package from the chat UI),
-  then `FR-C206` (reconnect + fallback), then `FR-C301`/`FR-C302`
-  (admin). All backend transport FRs (`FR-C101`-`FR-C107`) are done.
-  Mobile is a separate repo, built
+- **Next step:** `FR-C206` (reconnect + fallback), then `FR-C301`/
+  `FR-C302` (admin). All backend transport FRs (`FR-C101`-`FR-C107`)
+  are done. Mobile is a separate repo, built
   after a web FR is live on beta - see `Triptel-flutter/claude-progress.md`.
   That "live on beta" bar is now actually met in the full sense (connect
   AND delivery), not just connect - worth remembering since it wasn't,
@@ -268,6 +267,19 @@ Session log. Read first at session start, update last at session end.
   on the correct side. Same browser-verification gap as `FR-C203` - the
   underlying typing-broadcast path itself was already proven by
   `FR-C103`'s own two-socket test.
+
+- 2026-11-18 — **FR-C205 passing.** `SharePicker.tsx` (your orders /
+  browse packages, each reusing an existing fetch). `GET /orders/
+  my-esims` gained `order_id` - the only new backend surface this FR
+  needed, purely additive. **Worth flagging, not just this FR's own
+  note:** the disposable-Postgres-in-Docker test environment's
+  background order provisioning now appears to fail to settle within
+  10s on *most* runs here, not occasionally as earlier notes this
+  session assumed - confirmed unrelated to every diff tested against it
+  so far (stash-and-rerun gives the identical failure every time), but
+  if this keeps being this frequent it may be worth a dedicated look at
+  what changed about this disposable-Postgres setup specifically,
+  rather than continuing to route around it per-test.
 
 ## Blocked / needs confirming during build (not blocking the harness itself)
 - (Resolved 2026-11-18 - see the "Real production bug" entry above.)

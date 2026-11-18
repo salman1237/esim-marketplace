@@ -88,8 +88,8 @@
       "id": "FR-C205",
       "behavior": "Share an order/package from the chat UI",
       "verification": "cd frontend && npm run build",
-      "state": "not_started",
-      "evidence": null
+      "state": "passing",
+      "evidence": "`npm run build` compiles clean. SharePicker.tsx reuses existing fetches (api.getMyESIMs; api.getCountries/getCountryProducts, the same two calls /explore already makes) rather than a new search endpoint; selecting an item posts through the exact same POST /support/tickets/{id}/messages a text reply uses. GET /orders/my-esims gained order_id (orders.py) - purely additive, confirmed non-regressive by stashing just that file and rerunning a failing esim-status test: it failed identically either way, confirming the failure is the same pre-existing background-order-provisioning timing issue (this disposable test environment's checkout provisioning now appears to fail to settle within 10s on most runs, not just occasionally - worth a dedicated look sometime, but unrelated to this diff and already documented multiple times this session). Same no-browser-automation-tool caveat as FR-C203/FR-C204 for the picker's interactive behavior."
     },
     {
       "id": "FR-C206",
