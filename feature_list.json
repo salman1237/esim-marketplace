@@ -53,8 +53,8 @@
       "id": "FR-C107",
       "behavior": "serialize_message includes author_avatar_url",
       "verification": "cd backend && python -m pytest tests/test_support_chat_model.py -k avatar",
-      "state": "not_started",
-      "evidence": null
+      "state": "passing",
+      "evidence": "3/3 avatar tests in backend/tests/test_support_chat_model.py pass: author_avatar_url passes through straight from User.avatar_url for a customer message, is always null for a staff message (same anonymization as author->\"Support\"), and null stays null rather than a generated placeholder (Rules.md's Avatars section). Non-vacuous: monkeypatched the staff-hiding behavior away, confirmed exactly test_a_staff_messages_avatar_is_hidden_same_as_their_name failed, restored, reconfirmed green. Regression: 43/44 across test_support_chat_model.py+test_support_chat_ws.py+test_support_chat_share.py+test_support.py; the 1 failure is the same pre-existing background-order-provisioning timing flake diagnosed as unrelated multiple times this session."
     },
     {
       "id": "FR-C201",

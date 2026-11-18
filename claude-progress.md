@@ -6,11 +6,13 @@ Session log. Read first at session start, update last at session end.
   (see "Real production bug" entry below - the proxy-verification gap
   flagged under FR-C103 is now closed).
 - **Active feature:** none.
-- **Next step:** `FR-C107` (author_avatar_url), then the frontend FRs `FR-C201`+, then
-  `FR-C301`/`FR-C302` (admin). Mobile is a separate repo, built after a
-  web FR is live on beta - see `Triptel-flutter/claude-progress.md`. That
-  "live on beta" bar is now actually met in the full sense (connect AND
-  delivery), not just connect - worth remembering since it wasn't, briefly.
+- **Next step:** the frontend FRs `FR-C201`+ (floating chat button through
+  reconnect), then `FR-C301`/`FR-C302` (admin). All backend transport
+  FRs (`FR-C101`-`FR-C107`) are done. Mobile is a separate repo, built
+  after a web FR is live on beta - see `Triptel-flutter/claude-progress.md`.
+  That "live on beta" bar is now actually met in the full sense (connect
+  AND delivery), not just connect - worth remembering since it wasn't,
+  briefly.
 
 ## Done
 - 2026-11-18 — **FR-C101 passing.** `SupportMessage` gains `message_type`
@@ -208,6 +210,17 @@ Session log. Read first at session start, update last at session end.
   through checkout - sidesteps the pre-existing order-settlement timing
   flake entirely rather than fighting it, since sharing logic doesn't
   need real provisioning.
+
+- 2026-11-18 — **FR-C107 passing - backend transport for chat
+  (FR-C101-C107) is now fully done.** `serialize_message` gained
+  `author_avatar_url`, straight from `User.avatar_url` (Rules.md), never
+  a generated placeholder for a user with none. Hidden for staff
+  messages exactly like `author` is replaced with "Support" - showing a
+  staff member's personal photo while hiding their username would leak
+  the identity that's there to hide. Both call sites
+  (`broadcast_message`, `support.py`'s `_thread()`) updated. 3/3 new
+  tests pass; non-vacuous (monkeypatched the staff-hiding away, confirmed
+  only that test failed, restored).
 
 ## Blocked / needs confirming during build (not blocking the harness itself)
 - (Resolved 2026-11-18 - see the "Real production bug" entry above.)
