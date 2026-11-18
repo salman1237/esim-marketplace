@@ -2,13 +2,16 @@
 Session log. Read first at session start, update last at session end.
 
 ## Current state (2026-11-18) — mode: AUTONOMOUS, web ships first
-- **Phase:** Initialize (harness written, no feature code yet).
+- **Phase:** FR-C101-C105 shipped and now genuinely confirmed live on beta
+  (see "Real production bug" entry below - the proxy-verification gap
+  flagged under FR-C103 is now closed).
 - **Active feature:** none.
-- **Next step:** `FR-C105` (broadcast-on-write wiring into
-  `support_svc.post_message`/`create_ticket`), then `FR-C106`/`FR-C107`,
-  then the frontend FRs, then `FR-C301`/`FR-C302` (admin). Mobile is a
-  separate repo, built after a web FR is live on beta - see
-  `Triptel-flutter/claude-progress.md`.
+- **Next step:** `FR-C106` (share an order/product in a message), then
+  `FR-C107` (author_avatar_url), then the frontend FRs `FR-C201`+, then
+  `FR-C301`/`FR-C302` (admin). Mobile is a separate repo, built after a
+  web FR is live on beta - see `Triptel-flutter/claude-progress.md`. That
+  "live on beta" bar is now actually met in the full sense (connect AND
+  delivery), not just connect - worth remembering since it wasn't, briefly.
 
 ## Done
 - 2026-11-18 — **FR-C101 passing.** `SupportMessage` gains `message_type`
@@ -143,12 +146,58 @@ Session log. Read first at session start, update last at session end.
   today (pure renderer, no polling) - this is a genuine real-time gap, not
   an upgrade over an existing poll.
 
+- 2026-11-18 — **Real production bug found and fixed during "verify
+  everything in production": real-time chat delivery was completely
+  broken on beta despite FR-C103/C104/C105 all showing green.** WS
+  connect/accept/reject verifiably worked through the real Dokploy/
+  Traefik proxy (confirmed via two live external test scripts against
+  wss://beta.triptel.co, then a third run from inside the backend
+  container's own loopback - ruling out the proxy/network entirely), but
+  a real broadcast never reached a real connected client, with zero
+  exceptions visible anywhere. Root cause only surfaced after adding
+  structured logging to `ws_manager.py` (commit `e6d0123`) and reading
+  beta's own logs: `serialize_message()` passed `message.created_at` - a
+  raw `datetime` - straight into `websocket.send_json()`, which uses
+  plain `json.dumps` with no datetime encoder (unlike the REST response
+  path, which goes through FastAPI's own encoder and never hit this).
+  `ConnectionManager`'s best-effort except-and-drop swallowed the
+  `TypeError` on every single broadcast attempt - correct behavior for a
+  dead socket, silently wrong behavior for a payload bug.
+  Fixed (commit `7349a62`): `created_at` now serializes to
+  `.isoformat()` before reaching `send_json`, matching the pattern
+  `broadcast_message` already used for `last_message_at`.
+  **Also fixed the test gap this exposed:** `FakeWebSocket.send_json` in
+  `test_support_chat_ws.py` just appended the raw dict to a list -it
+  never actually called `json.dumps` - so the existing 16/16 "passing"
+  suite could never have caught this. It now round-trips every payload
+  through `json.dumps`/`json.loads`, exactly like Starlette's real
+  `send_json`.
+  **Verification, in order:** (1) live external test against
+  `wss://beta.triptel.co` - failed, nothing received after 25s; (2) same
+  test run from inside the backend container's own loopback, bypassing
+  Traefik/Dokploy entirely - still failed, proving it wasn't the proxy;
+  (3) added diagnostic logging, redeployed, reran - logs showed
+  `ws_send_failed` with the exact `TypeError`; (4) fixed, redeployed,
+  reran the internal test - received cleanly; (5) reran a full real
+  end-to-end check against the actual public domain (register -> create
+  ticket -> open a real `wss://` socket -> POST a reply -> receive it
+  over the socket) - succeeded; (6) spun up a disposable Postgres via
+  Docker (Docker Desktop wasn't running at the start of this session;
+  the user opened it mid-task) and reran the full suite locally:
+  29/30 pass, the 1 failure being the same pre-existing
+  background-order-provisioning timing flake already diagnosed as
+  unrelated multiple times this session (nothing in this diff touches
+  orders/checkout).
+  **Lesson for any future WS-touching FR, worth keeping:** a fake
+  WebSocket test double that doesn't actually serialize its payload
+  proves nothing about serialization - this is now fixed project-wide in
+  this file, but watch for the same shortcut in any new fake transport.
+
 ## Blocked / needs confirming during build (not blocking the harness itself)
-- Whether Dokploy's reverse proxy (Traefik, typically) passes WebSocket
-  upgrade headers through cleanly for `esim-backend`/`esim-backend-beta` -
-  not yet confirmed live. Confirm this the moment FR-C103 is built, against
-  beta, before marking it `passing` - a WS endpoint that only works in an
-  in-process test client but not through the real proxy is not actually done.
+- (Resolved 2026-11-18 - see the "Real production bug" entry above.)
+  Dokploy's reverse proxy does pass WebSocket upgrade headers through
+  cleanly; the real gap turned out to be a backend serialization bug,
+  not the proxy.
 
 ## Mirrored in Triptel-flutter
 `Triptel-flutter/feature_list.json` has mobile chat FRs appended, `blocked`
