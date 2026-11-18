@@ -23,13 +23,24 @@ export default function LiveTicketThread({ ticketId, onBack }: { ticketId: strin
   const [sharing, setSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const { messages: liveMessages, typingFrom, sendTyping } = useSupportSocket(ticketId);
 
   const load = useCallback(async () => {
     const token = localStorage.getItem("esim_token");
     if (!token) return;
     setTicket(await api.getTicket(token, ticketId));
   }, [ticketId]);
+
+  // FR-C206: re-fetch on reconnect so a message sent by the other side
+  // while this socket was dropped isn't silently missed (Reliability gate,
+  // Non_Functional_Requirements.md) - the socket is never trusted as the
+  // only source of truth, same reasoning as the initial load above.
+  const onReconnect = useCallback(() => {
+    load().catch(() => {
+      // A reconnect is best-effort by nature; the next successful one
+      // (or a manual refresh, surfaced below while disconnected) tries again.
+    });
+  }, [load]);
+  const { messages: liveMessages, typingFrom, sendTyping, connected } = useSupportSocket(ticketId, onReconnect);
 
   useEffect(() => {
     setLoading(true);
@@ -132,6 +143,22 @@ export default function LiveTicketThread({ ticketId, onBack }: { ticketId: strin
         </div>
         <StatusBadge status={ticket.status} />
       </div>
+
+      {/* FR-C206: never a hard error that blocks viewing/sending
+          (Non_Functional_Requirements.md) - just a visible notice plus a
+          manual way to catch up while the socket reconnects on its own. */}
+      {!connected && (
+        <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 flex items-center justify-between gap-2 shrink-0">
+          <span className="text-[11px] text-amber-800">Live updates paused - reconnecting…</span>
+          <button
+            type="button"
+            onClick={() => load().catch(() => {})}
+            className="text-[11px] font-bold text-amber-900 underline shrink-0"
+          >
+            Refresh
+          </button>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-4">
         {error && <p className="mb-3 text-xs text-rose-600">{error}</p>}
