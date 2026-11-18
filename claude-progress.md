@@ -4,10 +4,11 @@ Session log. Read first at session start, update last at session end.
 ## Current state (2026-11-18) — mode: AUTONOMOUS, web ships first
 - **Phase:** Initialize (harness written, no feature code yet).
 - **Active feature:** none.
-- **Next step:** `FR-C103` (ticket WebSocket endpoint), then `FR-C104` →
-  `FR-C107` (backend transport), then the frontend FRs, then `FR-C301`/
-  `FR-C302` (admin). Mobile is a separate repo, built after a web FR is live
-  on beta - see `Triptel-flutter/claude-progress.md`.
+- **Next step:** `FR-C105` (broadcast-on-write wiring into
+  `support_svc.post_message`/`create_ticket`), then `FR-C106`/`FR-C107`,
+  then the frontend FRs, then `FR-C301`/`FR-C302` (admin). Mobile is a
+  separate repo, built after a web FR is live on beta - see
+  `Triptel-flutter/claude-progress.md`.
 
 ## Done
 - 2026-11-18 — **FR-C101 passing.** `SupportMessage` gains `message_type`
@@ -34,6 +35,43 @@ Session log. Read first at session start, update last at session end.
   confirmed exactly the 3 broadcast-dependent tests failed, restored,
   re-confirmed green. Real two-socket-through-an-actual-endpoint proof is
   FR-C103's job next - this only proves the manager's own fan-out logic.
+- 2026-11-18 — **FR-C103 and FR-C104 passing.** `app/api/v1/ws_support.py`:
+  `WS /ws/support/tickets/{id}` (customer-or-staff, ownership-checked
+  exactly like the REST endpoints, typing broadcast excluding the sender)
+  and `WS /ws/support/queue` (staff-only). Auth decodes `?token=` with the
+  exact same `app.core.security.decode_access_token` the HTTP
+  `Authorization` dependency uses - no second implementation. Both open
+  their own `AsyncSessionLocal()` (a WS connection outlives one request's
+  DI cycle).
+  **Real build problem solved, worth remembering:** proving this with
+  genuine two-socket evidence (not just "the endpoint accepts a
+  connection") required `fastapi.testclient.TestClient`, not the async
+  httpx `client` fixture used everywhere else in this suite -
+  `TestClient` runs the ASGI app in its own background-thread "portal"
+  with its own event loop. Two real bugs this surfaced: (1) writing test
+  data via a plain `AsyncSessionLocal()` call from pytest's own loop and
+  THEN opening a TestClient WS connection corrupted the shared engine's
+  connection pool ("attached to a different loop") - fixed by doing ALL
+  test setup (register, log in, create a ticket) through TestClient's own
+  HTTP calls instead, so everything for a given test stays on one loop.
+  (2) Even with that fix, test order still mattered - each
+  `with TestClient(app) as tc:` block's portal thread dies at block-exit,
+  and a pooled connection it touched poisons the *next* test's turn at the
+  shared global `engine` regardless of which loop that is. Fixed with a
+  local, file-scoped autouse fixture that disposes the engine's pool
+  before and after every test in `test_support_chat_ws.py`. Both fixes are
+  documented in that file's own module docstring for the next FR that
+  needs this pattern.
+  13/13 tests pass, including a real two-direction typing-event exchange
+  between two live sockets. Ownership check proven non-vacuous (broke it,
+  confirmed the rejection test failed, restored). 26/27 broader regression
+  (`tests/test_support.py`) pass; the one failure is the same pre-existing
+  background-order-provisioning timing flake already diagnosed twice this
+  session as unrelated (nothing here touches orders/checkout).
+  **Still open, not yet done:** confirming this actually works through
+  Dokploy's real reverse proxy on beta (WS upgrade headers passed through
+  cleanly) - only verified via TestClient so far. Do the real check before
+  the frontend FRs that depend on it are marked passing.
 - 2026-11-18 — Harness initialized for this feature: `CLAUDE.md`, `AGENTS.md`,
   `docs/{Architecture,Rules,Functional_Requirements,Technical_Requirements,
   Non_Functional_Requirements}.md`, `feature_list.json` (15 FRs),

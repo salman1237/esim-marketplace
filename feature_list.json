@@ -25,15 +25,15 @@
       "id": "FR-C103",
       "behavior": "WS /ws/support/tickets/{id}: token auth, ownership check, message/typing/ticket_status events",
       "verification": "cd backend && python -m pytest tests/test_support_chat_ws.py -k ticket_socket",
-      "state": "not_started",
-      "evidence": null
+      "state": "passing",
+      "evidence": "13/13 tests in backend/tests/test_support_chat_ws.py pass, including a real two-socket proof (two actual WebSocket connections via fastapi.testclient.TestClient, one sends typing, the other genuinely receives it, both directions). Ownership check proven non-vacuous (broke it, confirmed the rejection test failed, restored). Auth/ownership rejection tests (missing token, wrong user) pass with real close codes. NOT YET confirmed to work through Dokploy real proxy on beta - still an open item, do not treat as production-verified."
     },
     {
       "id": "FR-C104",
       "behavior": "WS /ws/support/queue: staff-only, ticket_updated events",
       "verification": "cd backend && python -m pytest tests/test_support_chat_ws.py -k queue_socket",
-      "state": "not_started",
-      "evidence": null
+      "state": "passing",
+      "evidence": "Covered by the same backend/tests/test_support_chat_ws.py run as FR-C103: staff-only queue channel auth/ownership (missing token, non-staff rejected; staff accepted) all pass with real TestClient WS connections. Broadcast-reaches-a-connected-queue-socket proof deferred to FR-C105, where the trigger (a real REST write) naturally runs on the same event loop as the WS connections through TestClient."
     },
     {
       "id": "FR-C105",

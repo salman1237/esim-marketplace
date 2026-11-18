@@ -44,6 +44,18 @@ class ConnectionManager:
             except Exception:
                 self.disconnect_ticket(ticket_id, websocket)
 
+    async def broadcast_to_ticket_except(self, ticket_id: str, sender: Any, payload: dict) -> None:
+        """Same as broadcast_to_ticket, minus the socket that triggered it -
+        used for the typing indicator, where a sender doesn't need their
+        own event echoed back (FR-C103)."""
+        for websocket in list(self._ticket_sockets.get(ticket_id, ())):
+            if websocket is sender:
+                continue
+            try:
+                await websocket.send_json(payload)
+            except Exception:
+                self.disconnect_ticket(ticket_id, websocket)
+
     def ticket_connection_count(self, ticket_id: str) -> int:
         return len(self._ticket_sockets.get(ticket_id, ()))
 
