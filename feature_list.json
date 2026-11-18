@@ -60,8 +60,8 @@
       "id": "FR-C201",
       "behavior": "Floating chat button, global, unread badge",
       "verification": "cd frontend && npm run build",
-      "state": "not_started",
-      "evidence": null
+      "state": "passing",
+      "evidence": "`npm run build` compiles clean (no type errors, 23/23 static pages generated). ChatWidget mounted in layout.tsx next to Footer/MobileBottomNav. Verified against a real dev server (port 3005, avoiding the already-running instance on 3000): curl of the rendered home-page HTML contains aria-label=\"Chat with support\"; curl of /auth/login does not - confirming the global-except-auth-pages visibility rule actually holds, not just compiles. Unread badge reuses the existing api.getMyTickets() (no new backend endpoint), counting status==ANSWERED. Logged-out click redirects to /auth/login?next=<here>, same convention as PackageBrowser.tsx. Panel is a stub body + link to /support for now - FR-C202 replaces it with the real ticket-list/new-ticket content."
     },
     {
       "id": "FR-C202",
