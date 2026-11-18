@@ -53,9 +53,15 @@ async def _ticket_for(db: AsyncSession, ticket_id: str, user: User) -> SupportTi
 
 
 async def _thread(db: AsyncSession, ticket: SupportTicket, viewer: User) -> list:
-    owner = (await db.execute(select(User.username).where(User.id == ticket.user_id))).scalar_one_or_none()
-    name = "You" if viewer.id == ticket.user_id else (owner or "Customer")
-    return [support_svc.serialize_message(m, author_name=name) for m in ticket.messages]
+    owner = (await db.execute(
+        select(User.username, User.avatar_url).where(User.id == ticket.user_id)
+    )).first()
+    name = "You" if viewer.id == ticket.user_id else ((owner.username if owner else None) or "Customer")
+    avatar_url = owner.avatar_url if owner else None
+    return [
+        support_svc.serialize_message(m, author_name=name, author_avatar_url=avatar_url)
+        for m in ticket.messages
+    ]
 
 
 def _notify_new_message(ticket: SupportTicket, *, from_staff: bool, customer_email: str, body: str) -> None:

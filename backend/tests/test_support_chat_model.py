@@ -15,6 +15,7 @@ from app.models.order import Order, PaymentMethod, OrderStatus
 from app.models.support import MessageType, SupportMessage, SupportTicket, TicketCategory
 from app.models.user import User, UserRole, UserStatus
 from app.core.security import get_password_hash
+from app.services.support_svc import serialize_message
 
 pytestmark = pytest.mark.asyncio
 
@@ -136,3 +137,47 @@ async def test_deleting_a_shared_order_sets_the_message_field_null_not_cascades(
     )).scalar_one()
     assert refreshed.shared_order_id is None
     assert refreshed.body == "my order"
+
+
+# --- FR-C107: author avatar in the serializer -------------------------------
+
+async def test_serialize_message_includes_the_authors_avatar_url(db_session):
+    user = await _user(db_session)
+    ticket = await _ticket(db_session, user)
+    msg = SupportMessage(ticket_id=ticket.id, author_id=user.id, is_staff=False, body="hi")
+    db_session.add(msg)
+    await db_session.commit()
+    await db_session.refresh(msg, attribute_names=["attachments", "shared_order", "shared_product"])
+
+    data = serialize_message(msg, author_name=user.username, author_avatar_url="https://example.com/me.png")
+    assert data["author_avatar_url"] == "https://example.com/me.png"
+
+
+async def test_a_staff_messages_avatar_is_hidden_same_as_their_name(db_session):
+    """Same anonymization as "author" -> "Support" (Rules.md/support_svc.py):
+    hiding a staff member's username but showing their personal photo would
+    leak the identity "Support" exists to hide."""
+    staff = await _user(db_session)
+    ticket = await _ticket(db_session, staff)
+    msg = SupportMessage(ticket_id=ticket.id, author_id=staff.id, is_staff=True, body="how can we help?")
+    db_session.add(msg)
+    await db_session.commit()
+    await db_session.refresh(msg, attribute_names=["attachments", "shared_order", "shared_product"])
+
+    data = serialize_message(msg, author_name=staff.username, author_avatar_url="https://example.com/staff.png")
+    assert data["author"] == "Support"
+    assert data["author_avatar_url"] is None
+
+
+async def test_a_user_with_no_avatar_gets_none_not_a_generated_one(db_session):
+    """Never invent a generated-avatar service call for a user with no
+    photo (Rules.md) - the client shows initials instead."""
+    user = await _user(db_session)
+    ticket = await _ticket(db_session, user)
+    msg = SupportMessage(ticket_id=ticket.id, author_id=user.id, is_staff=False, body="hi")
+    db_session.add(msg)
+    await db_session.commit()
+    await db_session.refresh(msg, attribute_names=["attachments", "shared_order", "shared_product"])
+
+    data = serialize_message(msg, author_name=user.username, author_avatar_url=None)
+    assert data["author_avatar_url"] is None

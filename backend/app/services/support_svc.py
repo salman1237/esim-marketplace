@@ -231,7 +231,7 @@ async def broadcast_message(
         await db.refresh(message.shared_order, attribute_names=["product"])
     await manager.broadcast_to_ticket(ticket.id, {
         "type": "message",
-        "message": serialize_message(message, author_name=author.username),
+        "message": serialize_message(message, author_name=author.username, author_avatar_url=author.avatar_url),
     })
     await manager.broadcast_to_queue({
         "type": "ticket_updated",
@@ -296,7 +296,9 @@ def serialize_attachment(attachment: SupportAttachment) -> dict:
     }
 
 
-def serialize_message(message: SupportMessage, author_name: Optional[str] = None) -> dict:
+def serialize_message(
+    message: SupportMessage, author_name: Optional[str] = None, author_avatar_url: Optional[str] = None,
+) -> dict:
     return {
         "id": message.id,
         "body": message.body,
@@ -309,6 +311,12 @@ def serialize_message(message: SupportMessage, author_name: Optional[str] = None
         # Customers see "Support" rather than a staff member's username: who
         # answered is our business, not theirs.
         "author": "Support" if message.is_staff else (author_name or "You"),
+        # Same anonymization as "author" above, applied to the photo too -
+        # hiding a staff member's username but showing their personal photo
+        # would leak the identity "Support" is there to hide. Straight from
+        # User.avatar_url, never a generated-avatar service call for someone
+        # with no photo - the client shows initials instead (Rules.md).
+        "author_avatar_url": None if message.is_staff else author_avatar_url,
         # message_type is explicit, never inferred from "is a shared_*_id
         # set" (Rules.md) - a client switches on this, not on field presence.
         "message_type": message.message_type.value,
