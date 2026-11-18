@@ -18,6 +18,7 @@ from app.models.support import (
     SupportAttachment, SupportMessage, SupportTicket, TicketStatus, new_reference,
 )
 from app.models.user import User, UserRole
+from app.services.ws_manager import manager
 
 UPLOAD_DIR = Path(settings.SUPPORT_UPLOADS_DIR)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -82,8 +83,9 @@ async def save_attachments(files: Optional[Iterable[UploadFile]]) -> list[dict]:
 async def create_ticket(
     db: AsyncSession, user: User, *, subject: str, category, body: str,
     order_id: Optional[str], attachments: list[dict],
-) -> SupportTicket:
-    """Caller commits."""
+) -> tuple[SupportTicket, SupportMessage]:
+    """Caller commits. Returns the message too (not just the ticket) so the
+    caller can broadcast it (FR-C105) without a second query."""
     subject = (subject or "").strip()
     if len(subject) < 3:
         raise SupportError("Give your ticket a subject.")
@@ -98,8 +100,8 @@ async def create_ticket(
     )
     db.add(ticket)
     await db.flush()
-    await post_message(db, ticket, user, body=body, attachments=attachments)
-    return ticket
+    message = await post_message(db, ticket, user, body=body, attachments=attachments)
+    return ticket, message
 
 
 async def post_message(
@@ -139,6 +141,43 @@ async def post_message(
     return message
 
 
+async def broadcast_message(
+    db: AsyncSession, ticket: SupportTicket, message: SupportMessage, *, author: User,
+) -> None:
+    """Pushes a just-committed message to the ticket's WebSocket channel,
+    and a lightweight summary to the staff queue channel - FR-C105. Caller
+    must call this AFTER db.commit(), never before - see
+    D:\\eSim\\docs\\Rules.md: writes stay REST, this only pushes what REST
+    already durably wrote.
+
+    One payload goes to every connection on the ticket channel (customer
+    and any staff watching), so "author" here is the real identity, never
+    the REST serializer's viewer-relative "You" - a client personalizes
+    that itself by comparing author_id to its own user id.
+
+    `message.attachments` is unloaded on a message that was only just
+    created+flushed in this same session (attachments were added via a
+    bare FK, never through the ORM collection) - accessing it in
+    serialize_message() without this refresh first triggers an implicit
+    async lazy-load, which SQLAlchemy refuses (MissingGreenlet) because
+    the greenlet bridge that makes `await_only()` work has already
+    returned control by the time this runs. Confirmed live while building
+    this: every ticket/reply broadcast failed the whole request until this
+    explicit, awaited refresh was added.
+    """
+    await db.refresh(message, attribute_names=["attachments"])
+    await manager.broadcast_to_ticket(ticket.id, {
+        "type": "message",
+        "message": serialize_message(message, author_name=author.username),
+    })
+    await manager.broadcast_to_queue({
+        "type": "ticket_updated",
+        "ticket_id": ticket.id,
+        "status": ticket.status.value,
+        "last_message_at": ticket.last_message_at.isoformat() if ticket.last_message_at else None,
+    })
+
+
 async def resolve_ticket(db: AsyncSession, ticket: SupportTicket) -> None:
     if ticket.status == TicketStatus.CLOSED:
         raise SupportError("This ticket is already closed.")
@@ -169,6 +208,11 @@ def serialize_message(message: SupportMessage, author_name: Optional[str] = None
         "id": message.id,
         "body": message.body,
         "is_staff": message.is_staff,
+        # Lets a client personalize "author" into "You" itself by comparing
+        # this to its own user id - needed for a WebSocket broadcast, where
+        # one payload reaches every viewer and the server can't know which
+        # one is "me" (see broadcast_message, FR-C105).
+        "author_id": message.author_id,
         # Customers see "Support" rather than a staff member's username: who
         # answered is our business, not theirs.
         "author": "Support" if message.is_staff else (author_name or "You"),

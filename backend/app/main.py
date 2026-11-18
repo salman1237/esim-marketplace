@@ -120,7 +120,20 @@ async def lifespan(app: FastAPI):
         await db.commit()
 
     scheduler = AsyncIOScheduler()
-    if settings.CATALOG_SYNC_INTERVAL_HOURS > 0:
+    # The whole scheduler block below (job registration AND the
+    # fire-once-at-startup background tasks) is real work: it hits
+    # VivaPe/eSIM Access, recovers orders, retries webhooks. A test run
+    # constructs this app's lifespan once per TestClient `with` block
+    # (e.g. any WebSocket test - see tests/test_support_chat_ws.py), and
+    # each fire-and-forget asyncio.create_task() can outlive that block's
+    # own short-lived portal thread once it exits, leaving an orphaned
+    # AsyncSessionLocal() connection idle-in-transaction - confirmed live
+    # while building the chat feature: these held locks that eventually
+    # deadlocked a later test's schema reset. No test anywhere in this
+    # suite needs real background jobs to run, so skip the whole block in
+    # the test environment rather than let every future WS/lifespan test
+    # inherit this same failure mode.
+    if settings.ENVIRONMENT != "test" and settings.CATALOG_SYNC_INTERVAL_HOURS > 0:
         async def _scheduled_catalog_sync():
             async with AsyncSessionLocal() as db:
                 try:
@@ -169,55 +182,56 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(_scheduled_catalog_sync())
         asyncio.create_task(_scheduled_esimaccess_catalog_sync())
 
-    async def _scheduled_webhook_retry():
-        async with AsyncSessionLocal() as db:
+    if settings.ENVIRONMENT != "test":
+        async def _scheduled_webhook_retry():
+            async with AsyncSessionLocal() as db:
+                try:
+                    result = await retry_failed_webhooks(db)
+                    if result["retried"]:
+                        logger.info("scheduled_webhook_retry_completed", **result)
+                except Exception as e:
+                    logger.warning("scheduled_webhook_retry_failed", error=str(e))
+
+        scheduler.add_job(
+            _scheduled_webhook_retry, "interval", minutes=5,
+            id="partner_webhook_retry_sweep", max_instances=1,
+        )
+
+        async def _scheduled_order_recovery():
             try:
-                result = await retry_failed_webhooks(db)
-                if result["retried"]:
-                    logger.info("scheduled_webhook_retry_completed", **result)
+                result = await recover_stuck_orders()
+                if any(result.values()):
+                    logger.info("scheduled_order_recovery_completed", **result)
             except Exception as e:
-                logger.warning("scheduled_webhook_retry_failed", error=str(e))
+                logger.warning("scheduled_order_recovery_failed", error=str(e))
 
-    scheduler.add_job(
-        _scheduled_webhook_retry, "interval", minutes=5,
-        id="partner_webhook_retry_sweep", max_instances=1,
-    )
+        scheduler.add_job(
+            _scheduled_order_recovery, "interval", minutes=2,
+            id="stuck_order_recovery", max_instances=1,
+        )
+        # Also once at startup: a deploy is exactly the event that kills
+        # in-flight background provisioning tasks.
+        asyncio.create_task(_scheduled_order_recovery())
 
-    async def _scheduled_order_recovery():
-        try:
-            result = await recover_stuck_orders()
-            if any(result.values()):
-                logger.info("scheduled_order_recovery_completed", **result)
-        except Exception as e:
-            logger.warning("scheduled_order_recovery_failed", error=str(e))
+        async def _scheduled_trip_feedback():
+            async with AsyncSessionLocal() as db:
+                try:
+                    result = await send_due_trip_feedback_reminders(db)
+                    if result["candidates"]:
+                        logger.info("scheduled_trip_feedback_completed", **result)
+                except Exception as e:
+                    logger.warning("scheduled_trip_feedback_failed", error=str(e))
 
-    scheduler.add_job(
-        _scheduled_order_recovery, "interval", minutes=2,
-        id="stuck_order_recovery", max_instances=1,
-    )
-    # Also once at startup: a deploy is exactly the event that kills
-    # in-flight background provisioning tasks.
-    asyncio.create_task(_scheduled_order_recovery())
+        # Every 6 hours is frequent enough that the 36-hour lookback window
+        # (REMINDER_WINDOW in trip_feedback_svc) comfortably overlaps runs,
+        # without emailing anyone within hours of their trip actually ending.
+        scheduler.add_job(
+            _scheduled_trip_feedback, "interval", hours=6,
+            id="trip_feedback_reminder", max_instances=1,
+        )
 
-    async def _scheduled_trip_feedback():
-        async with AsyncSessionLocal() as db:
-            try:
-                result = await send_due_trip_feedback_reminders(db)
-                if result["candidates"]:
-                    logger.info("scheduled_trip_feedback_completed", **result)
-            except Exception as e:
-                logger.warning("scheduled_trip_feedback_failed", error=str(e))
-
-    # Every 6 hours is frequent enough that the 36-hour lookback window
-    # (REMINDER_WINDOW in trip_feedback_svc) comfortably overlaps runs,
-    # without emailing anyone within hours of their trip actually ending.
-    scheduler.add_job(
-        _scheduled_trip_feedback, "interval", hours=6,
-        id="trip_feedback_reminder", max_instances=1,
-    )
-
-    if not scheduler.running:
-        scheduler.start()
+        if not scheduler.running:
+            scheduler.start()
 
     yield
 

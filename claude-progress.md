@@ -72,6 +72,63 @@ Session log. Read first at session start, update last at session end.
   Dokploy's real reverse proxy on beta (WS upgrade headers passed through
   cleanly) - only verified via TestClient so far. Do the real check before
   the frontend FRs that depend on it are marked passing.
+- 2026-11-18 — **FR-C105 passing**, after a genuinely rough build - worth
+  a full account since the lessons apply to any future WS-touching FR.
+  `support_svc.broadcast_message(db, ticket, message, author)` pushes to
+  the ticket channel (`message` event) and the queue channel
+  (`ticket_updated`) after a commit; wired into both
+  `POST /support/tickets` and `POST /support/tickets/{id}/messages` in
+  `support.py`, strictly after `db.commit()`.
+  **Four real bugs found and fixed, in the order hit:**
+  1. **MissingGreenlet on `message.attachments`.** A freshly flushed
+     `SupportMessage`'s `attachments` relationship is unloaded; touching it
+     inside `serialize_message()` (called from `broadcast_message`)
+     triggered an implicit async lazy-load, which SQLAlchemy refuses post-
+     commit. Fixed: `await db.refresh(message, attribute_names=["attachments"])`
+     before serializing - see `support_svc.broadcast_message`'s docstring.
+  2. **WS session held open for a connection's entire lifetime.**
+     `ticket_socket`/`queue_socket` originally opened one `AsyncSessionLocal()`
+     for the auth check AND kept it open through the indefinite receive
+     loop. A long-lived (or merely slow-to-close) connection left an
+     `idle in transaction` row that, left unclosed, blocked future schema
+     resets - confirmed live: this genuinely deadlocked three separate
+     disposable test databases in a row before being diagnosed. Fixed:
+     `_authorize_ticket`/`_authorize_staff` in `ws_support.py` now open and
+     close a session ONLY for the connect-time check; the receive loop
+     holds nothing.
+  3. **`main.py`'s background scheduler had no test-environment guard.**
+     `lifespan()` fires real jobs (order recovery, catalog sync, webhook
+     retry) via `asyncio.create_task()` on EVERY app startup - including
+     every `with TestClient(app) as tc:` block in a test. Each test's
+     portal thread dies when its `with` block exits, orphaning any
+     still-running background task's DB session. Fixed: the whole
+     scheduler block is skipped when `settings.ENVIRONMENT == "test"`.
+     Verified this wasn't masking anything by stashing just this change
+     and confirming two since-flaky tests fail identically with or without
+     it (genuinely a pre-existing, unrelated timing issue, not caused by
+     this guard).
+  4. **`TestClient`'s dual HTTP+WS portal deadlocks non-deterministically**
+     when a test combines an HTTP `POST` with one or two simultaneously-
+     open WebSocket connections on the same portal thread - confirmed
+     live, repeatedly, with zero DB-side locks involved each time (pure
+     Windows/anyio portal-thread race). Tried and ruled out: closing one
+     WS before opening more (still hung), one-socket-with-POST alone
+     (passed once, hung the next run - genuinely non-deterministic).
+     **Resolution:** FR-C105's own broadcast-proof tests don't use
+     `TestClient` at all - they use this suite's normal, rock-solid async
+     `client`/`db_session` fixtures for the REST write, and register a
+     `FakeWebSocket` directly on the shared `manager` (same pattern
+     FR-C102's own tests already use) instead of a real network socket.
+     This is still a real, non-vacuous proof of the wiring (real DB write,
+     real `serialize_message` call with the real attachments-refresh fix,
+     real `manager.broadcast_to_*` calls) - it just doesn't duplicate the
+     "does a real socket receive it" proof, which FR-C103/C104's own
+     `TestClient` tests already established separately (and reliably,
+     since those never mix in a concurrent POST).
+  All 16 tests in `test_support_chat_ws.py` pass; 40/42 across the full
+  chat+support+admin regression (2 pre-existing unrelated flakes,
+  independently reconfirmed via git stash not to involve this session's
+  changes).
 - 2026-11-18 — Harness initialized for this feature: `CLAUDE.md`, `AGENTS.md`,
   `docs/{Architecture,Rules,Functional_Requirements,Technical_Requirements,
   Non_Functional_Requirements}.md`, `feature_list.json` (15 FRs),

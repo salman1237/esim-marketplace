@@ -38,7 +38,8 @@ from fastapi.testclient import TestClient
 
 from app.core.database import engine
 from app.main import app
-from app.services.ws_manager import ConnectionManager
+from app.services.ws_manager import ConnectionManager, manager
+from conftest import register_and_login
 
 pytestmark = pytest.mark.asyncio
 
@@ -275,3 +276,122 @@ def test_queue_socket_accepts_a_staff_user():
         staff_token = _login_superadmin(tc)
         with tc.websocket_connect(f"/api/v1/ws/support/queue?token={staff_token}"):
             pass  # connecting and cleanly closing is the assertion here
+
+
+# --- FR-C105: creating a ticket / replying broadcasts over the sockets ------
+#
+# These deliberately do NOT use fastapi.testclient.TestClient. Mixing an
+# HTTP POST with one or two simultaneously-open WebSocket connections on
+# TestClient's background-thread portal was found to deadlock
+# non-deterministically on this Windows/anyio combination - confirmed
+# live, repeatedly, across several different structural rewrites (close-
+# then-reopen, two-sockets-no-POST, one-socket-with-POST all individually
+# fine in isolation, but the combination still hung unpredictably with
+# zero DB-side locks involved - a portal-thread race, not a feature bug).
+# Real two-socket WS delivery is already proven with TestClient by
+# test_ticket_socket_two_real_connections_exchange_a_typing_event above
+# (FR-C103) - that doesn't mix in a concurrent REST call, and has never
+# hung. What FR-C105 actually needs to prove is narrower: that a REST
+# write calls support_svc.broadcast_message with the right data. Proving
+# THAT reliably means going back to this suite's normal, rock-solid async
+# `client`/`db_session` fixtures (used by hundreds of other tests here
+# without incident) for the REST write, and registering a FakeWebSocket
+# directly on the shared `manager` - the same proven pattern FR-C102's own
+# tests already use - instead of a real network socket for the "did it
+# arrive" check.
+
+async def test_creating_a_ticket_broadcasts_to_the_queue_channel(client, db_session, promote_role):
+    staff = await register_and_login(client, "chatbroadcast1staff")
+    await promote_role(staff["user_id"], "ADMIN")
+    customer = await register_and_login(client, "chatbroadcast1cust")
+
+    fake_queue = FakeWebSocket()
+    manager.connect_queue(fake_queue)
+    try:
+        res = await client.post(
+            "/api/v1/support/tickets",
+            data={"subject": "Broadcast test", "body": "hello from REST", "category": "OTHER"},
+            headers=customer["headers"],
+        )
+        assert res.status_code == 200, res.text
+        ticket_id = res.json()["id"]
+
+        assert len(fake_queue.received) == 1
+        assert fake_queue.received[0]["type"] == "ticket_updated"
+        assert fake_queue.received[0]["ticket_id"] == ticket_id
+    finally:
+        manager.disconnect_queue(fake_queue)
+
+
+async def test_replying_to_a_ticket_broadcasts_to_both_channels(client, db_session, promote_role):
+    staff = await register_and_login(client, "chatbroadcast2staff")
+    await promote_role(staff["user_id"], "ADMIN")
+    customer = await register_and_login(client, "chatbroadcast2cust")
+
+    res = await client.post(
+        "/api/v1/support/tickets",
+        data={"subject": "Reply broadcast test", "body": "hello", "category": "OTHER"},
+        headers=customer["headers"],
+    )
+    assert res.status_code == 200, res.text
+    ticket_id = res.json()["id"]
+
+    fake_ticket_ws = FakeWebSocket()
+    fake_queue = FakeWebSocket()
+    manager.connect_ticket(ticket_id, fake_ticket_ws)
+    manager.connect_queue(fake_queue)
+    try:
+        res = await client.post(
+            f"/api/v1/support/tickets/{ticket_id}/messages",
+            data={"body": "a reply"},
+            headers=staff["headers"],
+        )
+        assert res.status_code == 200, res.text
+
+        assert len(fake_ticket_ws.received) == 1
+        message_event = fake_ticket_ws.received[0]
+        assert message_event["type"] == "message"
+        assert message_event["message"]["body"] == "a reply"
+        assert message_event["message"]["is_staff"] is True
+        # The identity is real (not the REST response's viewer-relative
+        # "You") - see broadcast_message's docstring.
+        assert message_event["message"]["author"] != "You"
+
+        assert len(fake_queue.received) == 1
+        queue_event = fake_queue.received[0]
+        assert queue_event["type"] == "ticket_updated"
+        assert queue_event["ticket_id"] == ticket_id
+        assert queue_event["status"] == "ANSWERED"
+    finally:
+        manager.disconnect_ticket(ticket_id, fake_ticket_ws)
+        manager.disconnect_queue(fake_queue)
+
+
+async def test_creating_a_ticket_with_a_file_attachment_still_broadcasts(client, db_session):
+    """Specifically exercises the one real risk this wiring has: a freshly
+    created SupportMessage's `attachments` relationship is unloaded in this
+    same session, and serialize_message() touches it - if that triggers an
+    async lazy-load instead of using already-available data, broadcasting
+    would raise instead of silently doing nothing, which is exactly the
+    kind of bug that must be caught here, not assumed away. (This is the
+    test that first caught the real MissingGreenlet bug - see
+    support_svc.broadcast_message's docstring for the fix.)"""
+    customer = await register_and_login(client, "chatbroadcastattach")
+
+    fake_queue = FakeWebSocket()
+    manager.connect_queue(fake_queue)
+    try:
+        res = await client.post(
+            "/api/v1/support/tickets",
+            data={"subject": "With attachment", "body": "see attached", "category": "OTHER"},
+            files={"files": ("note.txt", b"hello world", "text/plain")},
+            headers=customer["headers"],
+        )
+        assert res.status_code == 200, res.text
+        ticket_id = res.json()["id"]
+
+        assert len(fake_queue.received) == 1
+        assert fake_queue.received[0]["type"] == "ticket_updated"
+        assert fake_queue.received[0]["ticket_id"] == ticket_id
+    finally:
+        manager.disconnect_queue(fake_queue)

@@ -114,7 +114,7 @@ async def create_ticket(
 ):
     try:
         attachments = await support_svc.save_attachments(files)
-        ticket = await support_svc.create_ticket(
+        ticket, message = await support_svc.create_ticket(
             db, current_user, subject=subject, category=category, body=body,
             order_id=order_id, attachments=attachments,
         )
@@ -123,6 +123,9 @@ async def create_ticket(
         raise HTTPException(status_code=400, detail=str(e))
 
     await db.commit()
+    # Real-time push, strictly after the commit above - see
+    # support_svc.broadcast_message's own docstring and docs/Rules.md.
+    await support_svc.broadcast_message(db, ticket, message, author=current_user)
     # Re-read with the thread eagerly loaded: after the commit the instance is
     # expired, and touching ticket.messages would be a lazy load in async
     # context, which SQLAlchemy refuses rather than blocking the event loop.
@@ -173,13 +176,16 @@ async def reply(
     ticket = await _ticket_for(db, ticket_id, current_user)
     try:
         attachments = await support_svc.save_attachments(files)
-        await support_svc.post_message(db, ticket, current_user, body=body, attachments=attachments)
+        message = await support_svc.post_message(db, ticket, current_user, body=body, attachments=attachments)
     except support_svc.SupportError as e:
         await db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
     await db.commit()
     await db.refresh(ticket)
+    # Real-time push, strictly after the commit above - see
+    # support_svc.broadcast_message's own docstring and docs/Rules.md.
+    await support_svc.broadcast_message(db, ticket, message, author=current_user)
 
     customer_email = (await db.execute(
         select(User.email).where(User.id == ticket.user_id)
