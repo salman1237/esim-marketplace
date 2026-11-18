@@ -23,14 +23,39 @@ async function fetchDestination(slug: string): Promise<Destination | null> {
   }
 }
 
-export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+export async function generateMetadata({
+  params, searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ package?: string }>;
+}): Promise<Metadata> {
   const { slug } = await params;
+  const { package: packageId } = await searchParams;
   const data = await fetchDestination(slug);
   if (!data) return { title: "Destination not found" };
   const name = data.country.name_en;
   const cheapest = data.products.length
     ? Math.min(...data.products.map((p: any) => parseFloat(p.retail_price)))
     : null;
+
+  // A package's own shareable link (?package=<id>, PackageBrowser.tsx's
+  // share button) gets a link preview for THAT package, not the generic
+  // country page - the point of sharing one specific package is that
+  // whoever opens the link (e.g. on WhatsApp) sees what was actually
+  // shared before they even tap it.
+  const shared = packageId ? data.products.find((p: any) => p.id === packageId) : null;
+  if (shared) {
+    const dataLabel = shared.is_unlimited ? "Unlimited data" : `${Number(shared.data_amount_gb)} GB`;
+    return {
+      title: `${name} eSIM — ${dataLabel}, ${shared.validity_days} days`,
+      description: `${dataLabel} for ${shared.validity_days} days in ${name}, from €${Number(shared.retail_price).toFixed(2)}. Instant QR delivery, no roaming bills.`,
+      openGraph: {
+        title: `${name} eSIM — ${dataLabel}, ${shared.validity_days} days`,
+        description: `From €${Number(shared.retail_price).toFixed(2)} - instant QR delivery.`,
+      },
+    };
+  }
+
   const description = cheapest
     ? `Travel eSIM for ${name} from €${cheapest.toFixed(2)}. Instant QR delivery, no roaming bills, ${data.products.length} packages to choose from.`
     : `Travel eSIM packages for ${name}. Instant QR delivery, no roaming bills.`;

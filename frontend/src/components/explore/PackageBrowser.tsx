@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { ArrowRight, CheckCircle2, Star, X } from "lucide-react";
+import React, { useMemo, useRef, useState } from "react";
+import { ArrowRight, Check, CheckCircle2, Share2, Star, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
 import { esimInstallLinks } from "@/lib/esimInstall";
@@ -63,6 +63,11 @@ const dataLabel = (p: Product) => {
 };
 
 const PENDING_KEY = "esim_pending_purchase";
+// Every package's own shareable link: /explore/<slug>?package=<id>. Opening
+// it scrolls straight to and highlights that card - a shared link that
+// lands on a generic country page someone then has to search through isn't
+// actually "clickable" in the sense that matters.
+const PACKAGE_PARAM = "package";
 
 // A rough, client-side estimate from the public (pre-login) code check -
 // just enough to show "you'll save about this much" on every card. The
@@ -101,6 +106,36 @@ export default function PackageBrowser({ country, products }: { country: any; pr
   const [checkingCode, setCheckingCode] = useState(false);
   const [checkedOk, setCheckedOk] = useState<{ code: string; note: string } | null>(null);
   const [genericDiscount, setGenericDiscount] = useState<{ discount_type: string; value: string; max_discount_amount: string | null } | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  const shareProduct = async (p: Product) => {
+    const url = new URL(window.location.href);
+    url.search = "";
+    url.searchParams.set(PACKAGE_PARAM, p.id);
+    const shareUrl = url.toString();
+    const brand = "Triptel";
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `${country.name_en} eSIM — ${dataLabel(p)}, ${p.validity_days} days`,
+          text: `${dataLabel(p)} for ${p.validity_days} days in ${country.name_en}, from ${brand}.`,
+          url: shareUrl,
+        });
+        return;
+      } catch {
+        // Cancelled, or sharing isn't allowed here - fall through to copy.
+      }
+    }
+    try {
+      await navigator.clipboard?.writeText(shareUrl);
+      setCopiedId(p.id);
+      setTimeout(() => setCopiedId((cur) => (cur === p.id ? null : cur)), 1800);
+    } catch {
+      // Clipboard permission denied or unavailable - nothing more to do.
+    }
+  };
 
   const applyCode = async () => {
     const typed = code.trim();
@@ -154,6 +189,36 @@ export default function PackageBrowser({ country, products }: { country: any; pr
     setTimeout(() => buyNow(product, pending!.code || undefined), 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Opening a package's own shareable link (?package=<id>) switches to
+  // whichever tab it's actually in, clears any filter that would otherwise
+  // hide it, then scrolls to and highlights its card - the whole point of
+  // a per-package link is landing exactly on that package, not just the
+  // country page.
+  React.useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get(PACKAGE_PARAM);
+    if (!id) return;
+    const product = products.find((p) => p.id === id);
+    if (!product) return;
+    if (hasBothPlanTypes) {
+      setPlanType(product.supplier_period_num ? "daypass" : "fixed");
+    }
+    filters.reset();
+    setHighlightedId(id);
+    // A short delay, not requestAnimationFrame - the tab switch and filter
+    // reset above still need to commit and re-render (possibly adding the
+    // card to the DOM for the first time) before there's anything to
+    // scroll to.
+    const scrollTimer = setTimeout(() => {
+      cardRefs.current[id]?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 150);
+    const clearTimer = setTimeout(() => setHighlightedId((cur) => (cur === id ? null : cur)), 4000);
+    return () => {
+      clearTimeout(scrollTimer);
+      clearTimeout(clearTimer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products]);
 
   React.useEffect(() => {
     if (flow?.stage !== "working") {
@@ -370,11 +435,15 @@ export default function PackageBrowser({ country, products }: { country: any; pr
             const thisOne = flow?.product?.id === p.id;
             const basePrice = priceOf(p);
             const discountedPrice = genericDiscount ? basePrice - estimateDiscount(basePrice, genericDiscount) : null;
+            const highlighted = highlightedId === p.id;
             return (
               <div
                 key={p.id}
-                className={`glass-card rounded-2xl p-5 border flex flex-col relative ${
-                  p.is_featured ? "border-amber-300 ring-1 ring-amber-200" : "border-gray-200"
+                ref={(el) => { cardRefs.current[p.id] = el; }}
+                className={`glass-card rounded-2xl p-5 border flex flex-col relative transition-shadow ${
+                  highlighted
+                    ? "border-brand-400 ring-2 ring-brand-300"
+                    : p.is_featured ? "border-amber-300 ring-1 ring-amber-200" : "border-gray-200"
                 }`}
               >
                 {p.is_featured && (
@@ -382,6 +451,14 @@ export default function PackageBrowser({ country, products }: { country: any; pr
                     <Star className="w-3 h-3 fill-white" /> Recommended
                   </span>
                 )}
+                <button
+                  type="button"
+                  onClick={() => shareProduct(p)}
+                  aria-label="Copy a link to this package"
+                  className="absolute top-3 right-3 p-1.5 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50"
+                >
+                  {copiedId === p.id ? <Check className="w-4 h-4 text-emerald-600" /> : <Share2 className="w-4 h-4" />}
+                </button>
                 <div className="text-xl font-black text-slate-900">{dataLabel(p)}</div>
                 <div className="text-xs text-slate-500 mt-0.5">{p.validity_days} days validity · 4G/5G</div>
                 {p.coverage_countries && p.coverage_countries.length > 0 && (
