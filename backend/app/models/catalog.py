@@ -70,6 +70,17 @@ class Product(Base):
     # level: the admin console is what keeps it to a sane couple of picks
     # per country, the same way is_popular is self-policed on Country.
     is_featured = Column(Boolean, default=False, server_default="false", nullable=False)
+    # Deliberately separate from is_featured above, which is a per-country
+    # "recommended pick" (as of 2026-11-18, set on 235 different products -
+    # effectively one per destination) and so cannot answer "which single
+    # product is THE storefront-wide Global card". An admin picks one (or a
+    # few) products here instead - see GET /catalog/featured. Confirmed
+    # live against beta: there are three separate "Global"-named pseudo-
+    # countries (plain esimgo_bundle "Global", eSIM Access "Global139",
+    # "Global (120+ areas)"), each with several size/validity variants, so
+    # there is no automatic way to derive "the" global package from
+    # existing fields - it must be an explicit admin choice.
+    is_storefront_highlight = Column(Boolean, default=False, server_default="false", nullable=False)
     supplier_reference = Column(String(100), nullable=True)  # esimgo_bundle or worldmove_esim
     # VivaPe's own receiver_amount_min for this product, stored verbatim
     # from the catalog sync and passed straight back to create-transaction.

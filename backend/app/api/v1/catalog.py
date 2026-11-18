@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.database import get_db
 from app.models.catalog import Country, Product
-from app.schemas.catalog import CountryResponse, DestinationResponse, ProductResponse
+from app.schemas.catalog import CountryResponse, DestinationResponse, ProductResponse, FeaturedPackageResponse
 from app.services.supplier_settings_svc import get_enabled_suppliers, supplier_visible_filter
 
 router = APIRouter(prefix="/catalog", tags=["Catalog"])
@@ -73,6 +73,47 @@ async def list_countries(
         query = query.order_by(Country.name_en.asc())
     res = await db.execute(query)
     return res.scalars().all()
+
+@router.get("/featured", response_model=List[FeaturedPackageResponse])
+async def list_featured_packages(db: AsyncSession = Depends(get_db)):
+    """The storefront's "Global" header card(s) - a cheap, flat summary of
+    whichever product(s) an admin has marked is_storefront_highlight (see
+    Product.is_storefront_highlight's own comment for why this needs to be
+    a deliberate admin pick rather than derived from is_featured or any
+    other existing field). Usually zero or one row; shaped as a list in
+    case a future promotion wants to show more than one."""
+    enabled = await get_enabled_suppliers(db)
+    res = await db.execute(
+        select(Product, Country)
+        .join(Country, Product.country_id == Country.id)
+        .where(
+            Product.is_storefront_highlight == True,  # noqa: E712
+            Product.is_active == True,
+            Country.is_active == True,
+            supplier_visible_filter(Product.supplier_reference, enabled),
+        )
+        .order_by(Product.retail_price.asc())
+    )
+    out = []
+    for p, c in res.all():
+        country_count = None
+        if p.coverage_country_isos:
+            country_count = len([code for code in p.coverage_country_isos.split(",") if code])
+        out.append(FeaturedPackageResponse(
+            product_id=p.id,
+            title=p.title_en,
+            retail_price=p.retail_price,
+            currency=p.currency,
+            data_amount_gb=p.data_amount_gb,
+            validity_days=p.validity_days,
+            is_unlimited=p.is_unlimited,
+            country_count=country_count,
+            country_iso2=c.iso2,
+            country_name=c.name_en,
+            country_slug=country_slug(c.name_en),
+            flag_url=c.flag_url,
+        ))
+    return out
 
 @router.get("/countries/{iso2}/products", response_model=List[ProductResponse])
 async def list_country_products(iso2: str, db: AsyncSession = Depends(get_db)):

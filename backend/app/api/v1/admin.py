@@ -79,6 +79,9 @@ class ProductUpdateRequest(BaseModel):
     retail_price: Optional[float] = None
     is_active: Optional[bool] = None
     is_featured: Optional[bool] = None
+    # Picks the product GET /catalog/featured returns for the storefront's
+    # "Global" search-sheet card - see Product.is_storefront_highlight.
+    is_storefront_highlight: Optional[bool] = None
 
 class UserRoleUpdateRequest(BaseModel):
     role: UserRole
@@ -1690,6 +1693,7 @@ async def get_admin_catalog(
     country_iso: str | None = None,
     is_active: bool | None = None,
     featured_only: bool = False,
+    highlighted_only: bool = False,
     limit: int = 100,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
@@ -1698,7 +1702,8 @@ async def get_admin_catalog(
     grew this from ~135 rows to thousands, so returning a flat newest-200
     slice was no longer a usable way for an admin to find one product.
     featured_only is the quick way to review every currently-recommended
-    pick across the whole catalog in one screen."""
+    pick across the whole catalog in one screen; highlighted_only is the
+    same for is_storefront_highlight (GET /catalog/featured's picks)."""
     limit = max(1, min(limit, 200))
     filters = []
     if q:
@@ -1710,6 +1715,8 @@ async def get_admin_catalog(
         filters.append(Product.is_active == is_active)
     if featured_only:
         filters.append(Product.is_featured == True)  # noqa: E712
+    if highlighted_only:
+        filters.append(Product.is_storefront_highlight == True)  # noqa: E712
 
     base = select(Product, Country).join(Country, Product.country_id == Country.id)
     if filters:
@@ -1746,6 +1753,7 @@ async def get_admin_catalog(
                 
                 "is_active": p.is_active,
                 "is_featured": p.is_featured,
+                "is_storefront_highlight": p.is_storefront_highlight,
             }
             for p, c in res.all()
         ],
@@ -1889,23 +1897,34 @@ async def update_product(
     if not p:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    before = {"retail_price": float(p.retail_price), "is_active": p.is_active, "is_featured": p.is_featured}
+    before = {
+        "retail_price": float(p.retail_price), "is_active": p.is_active,
+        "is_featured": p.is_featured, "is_storefront_highlight": p.is_storefront_highlight,
+    }
     if req.retail_price is not None:
         p.retail_price = Decimal(str(req.retail_price))
     if req.is_active is not None:
         p.is_active = req.is_active
     if req.is_featured is not None:
         p.is_featured = req.is_featured
+    if req.is_storefront_highlight is not None:
+        p.is_storefront_highlight = req.is_storefront_highlight
 
     await AuditService.log_action(
         db, actor_id=admin_user.id, actor_role=admin_user.role.value,
         action="UPDATE_CATALOG_PRODUCT", before_state=before,
-        after_state={"product_id": p.id, "retail_price": float(p.retail_price), "is_active": p.is_active, "is_featured": p.is_featured},
+        after_state={
+            "product_id": p.id, "retail_price": float(p.retail_price), "is_active": p.is_active,
+            "is_featured": p.is_featured, "is_storefront_highlight": p.is_storefront_highlight,
+        },
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent")
     )
     await db.commit()
-    return {"status": "success", "product_id": p.id, "is_featured": p.is_featured}
+    return {
+        "status": "success", "product_id": p.id,
+        "is_featured": p.is_featured, "is_storefront_highlight": p.is_storefront_highlight,
+    }
 
 # --- Pricing: global selling profit % ---
 

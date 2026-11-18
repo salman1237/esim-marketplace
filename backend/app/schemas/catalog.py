@@ -54,6 +54,30 @@ class DestinationResponse(BaseModel):
     country: CountryResponse
     products: List[ProductResponse]
 
+class FeaturedPackageResponse(BaseModel):
+    """One admin-picked product for the storefront's top "Global" card -
+    see GET /catalog/featured. A cheap, flat summary so a search-sheet
+    header doesn't need to fetch every country's products to find it."""
+    product_id: str
+    title: str
+    retail_price: Decimal
+    currency: str
+    data_amount_gb: Decimal
+    validity_days: int
+    is_unlimited: bool
+    # None when the product's own coverage_country_isos isn't populated
+    # (true for a plain VivaPe/esimgo_bundle "Global" row - that supplier
+    # never reports a coverage list, only eSIM Access's regional packages
+    # do). The client should omit a "covers N countries" line rather than
+    # show 0 when this is None.
+    country_count: Optional[int] = None
+    # The destination to open on tap - same country the product belongs
+    # to, via its existing /catalog/destinations/{slug or iso2} endpoint.
+    country_iso2: str
+    country_name: str
+    country_slug: str
+    flag_url: Optional[str] = None
+
 class PriceMarkupRequest(BaseModel):
     product_id: str
     new_retail_price: Decimal
