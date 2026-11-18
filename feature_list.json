@@ -67,8 +67,8 @@
       "id": "FR-C202",
       "behavior": "Slide-over panel: ticket list / new ticket",
       "verification": "cd frontend && npm run build",
-      "state": "not_started",
-      "evidence": null
+      "state": "passing",
+      "evidence": "`npm run build` compiles clean. The /support page's own ticket-list/new-ticket logic moved into components/support/TicketListAndCompose.tsx, reused by both /support (full page) and ChatWidget's panel (compact=true) - confirmed not duplicated: /support/page.tsx is now a 4-line wrapper, and its own bundle size dropped from 4.62kB to 1.31kB in the build output since the logic now lives in the shared chunk. Real dev server smoke check: / and /support both return 200 with no server errors; the floating button's aria-label is still present. onOpenTicket is parameterized (full nav on the page, close-panel-then-router.push in the widget) so FR-C203 can swap it to an in-place live thread without touching the shared list/compose logic."
     },
     {
       "id": "FR-C203",

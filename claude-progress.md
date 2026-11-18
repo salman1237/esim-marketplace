@@ -6,10 +6,10 @@ Session log. Read first at session start, update last at session end.
   (see "Real production bug" entry below - the proxy-verification gap
   flagged under FR-C103 is now closed).
 - **Active feature:** none.
-- **Next step:** `FR-C202` (slide-over panel's ticket list/new-ticket
-  content, replacing FR-C201's stub body), then `FR-C203`-`FR-C206`,
-  then `FR-C301`/`FR-C302` (admin). All backend transport FRs
-  (`FR-C101`-`FR-C107`) are done. Mobile is a separate repo, built
+- **Next step:** `FR-C203` (live thread inside the panel via
+  `useSupportSocket`), then `FR-C204`-`FR-C206`, then `FR-C301`/
+  `FR-C302` (admin). All backend transport FRs (`FR-C101`-`FR-C107`)
+  are done. Mobile is a separate repo, built
   after a web FR is live on beta - see `Triptel-flutter/claude-progress.md`.
   That "live on beta" bar is now actually met in the full sense (connect
   AND delivery), not just connect - worth remembering since it wasn't,
@@ -238,6 +238,15 @@ Session log. Read first at session start, update last at session end.
   is actually present on the home page and actually absent on
   `/auth/login` - the "global except auth pages" rule is observed
   working, not just assumed from the code.
+
+- 2026-11-18 — **FR-C202 passing.** Extracted `/support`'s own
+  ticket-list/new-ticket logic into
+  `components/support/TicketListAndCompose.tsx`; both `/support`
+  (full page) and `ChatWidget`'s panel (`compact`) now use the exact
+  same component - `/support/page.tsx` is a 4-line wrapper.
+  `onOpenTicket` is parameterized so the panel can close-then-navigate
+  today and switch to an in-place live thread once `FR-C203` ships,
+  without another rewrite of the list/compose logic itself.
 
 ## Blocked / needs confirming during build (not blocking the harness itself)
 - (Resolved 2026-11-18 - see the "Real production bug" entry above.)
