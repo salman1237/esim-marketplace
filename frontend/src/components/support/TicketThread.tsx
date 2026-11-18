@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import { FileText, Paperclip, Send, X } from "lucide-react";
+import { FileText, Package, Paperclip, Receipt, Send, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatDateTime } from "@/lib/datetime";
+import { useAppSettings } from "@/lib/AppSettingsContext";
 
 export const STATUS_STYLE: Record<string, { badge: string; label: string }> = {
   OPEN: { badge: "bg-amber-50 text-amber-700 border-amber-200", label: "Waiting for support" },
@@ -58,20 +59,86 @@ function AttachmentChip({ attachment }: { attachment: any }) {
   );
 }
 
+// author_avatar_url comes straight from User.avatar_url (Rules.md) - never
+// a generated-avatar service call for a user with none; initials instead.
+function Avatar({ name, url }: { name: string; url?: string | null }) {
+  if (url) {
+    return <img src={url} alt="" referrerPolicy="no-referrer" className="w-6 h-6 rounded-full object-cover shrink-0" />;
+  }
+  const initial = (name || "?").trim().charAt(0).toUpperCase() || "?";
+  return (
+    <span className="w-6 h-6 rounded-full bg-gray-200 text-slate-600 text-[11px] font-bold flex items-center justify-center shrink-0">
+      {initial}
+    </span>
+  );
+}
+
+function SharedOrderCard({ order }: { order: any }) {
+  const { formatPrice } = useAppSettings();
+  if (!order) {
+    return (
+      <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-slate-500">
+        This order is no longer available.
+      </div>
+    );
+  }
+  return (
+    <div className="mt-2 rounded-xl border border-gray-200 bg-white px-3 py-2 flex items-center gap-2">
+      <Receipt className="w-4 h-4 text-brand-500 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="text-[11px] font-bold text-slate-900 truncate">{order.product_title || "Order"}</div>
+        <div className="text-[10px] text-slate-400 font-mono">{order.order_no}</div>
+      </div>
+      <div className="text-[11px] font-bold text-slate-700 shrink-0">
+        {formatPrice(Number(order.total_amount))}
+      </div>
+    </div>
+  );
+}
+
+function SharedProductCard({ product }: { product: any }) {
+  const { formatPrice } = useAppSettings();
+  if (!product) {
+    return (
+      <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-slate-500">
+        This package isn&apos;t available any more.
+      </div>
+    );
+  }
+  const dataLabel = product.is_unlimited ? "Unlimited" : `${Number(product.data_amount_gb)} GB`;
+  return (
+    <div className="mt-2 rounded-xl border border-gray-200 bg-white px-3 py-2 flex items-center gap-2">
+      <Package className="w-4 h-4 text-brand-500 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="text-[11px] font-bold text-slate-900 truncate">{product.title}</div>
+        <div className="text-[10px] text-slate-400">{dataLabel} · {product.validity_days} days</div>
+      </div>
+      <div className="text-[11px] font-bold text-slate-700 shrink-0">
+        {formatPrice(Number(product.retail_price))}
+      </div>
+    </div>
+  );
+}
+
 /** The conversation, shown identically to the customer and to staff. */
 export function Thread({ messages }: { messages: any[] }) {
   return (
     <div className="space-y-4">
       {messages.map((m) => (
-        <div key={m.id} className={`flex ${m.is_staff ? "justify-start" : "justify-end"}`}>
-          <div className={`max-w-[85%] rounded-2xl px-4 py-3 border ${
+        <div key={m.id} className={`flex items-end gap-2 ${m.is_staff ? "justify-start" : "justify-end flex-row-reverse"}`}>
+          <Avatar name={m.author} url={m.author_avatar_url} />
+          <div className={`max-w-[80%] rounded-2xl px-4 py-3 border ${
             m.is_staff ? "bg-white border-gray-200" : "bg-brand-50 border-brand-200"
           }`}>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-[11px] font-bold text-slate-900">{m.author}</span>
               <span className="text-[10px] text-slate-400">{formatDateTime(m.created_at)}</span>
             </div>
-            <p className="text-xs text-slate-700 whitespace-pre-wrap break-words">{m.body}</p>
+            {m.body && m.body !== "(attachment only)" && (
+              <p className="text-xs text-slate-700 whitespace-pre-wrap break-words">{m.body}</p>
+            )}
+            {m.message_type === "ORDER_SHARE" && <SharedOrderCard order={m.shared_order} />}
+            {m.message_type === "PRODUCT_SHARE" && <SharedProductCard product={m.shared_product} />}
             {m.attachments?.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {m.attachments.map((a: any) => <AttachmentChip key={a.id} attachment={a} />)}

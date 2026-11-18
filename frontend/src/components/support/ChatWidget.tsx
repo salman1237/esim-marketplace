@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { MessageCircle, X } from "lucide-react";
 import { api } from "@/lib/api";
 import TicketListAndCompose from "@/components/support/TicketListAndCompose";
+import LiveTicketThread from "@/components/support/LiveTicketThread";
 
 const UNREAD_POLL_MS = 30_000;
 
@@ -43,11 +44,14 @@ function useFocusTrap(containerRef: React.RefObject<HTMLElement | null>, active:
 
 export default function ChatWidget() {
   const pathname = usePathname();
-  const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [slideIn, setSlideIn] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  // FR-C203: which view the panel shows - "list" or a specific ticket's
+  // live thread, switched in-place rather than navigating away (FR-C202
+  // left this as a close-panel-then-navigate stub for FR-C203 to replace).
+  const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -84,6 +88,7 @@ export default function ChatWidget() {
   useEffect(() => {
     if (!open) {
       setSlideIn(false);
+      setActiveTicketId(null);
       return;
     }
     closeButtonRef.current?.focus();
@@ -162,19 +167,17 @@ export default function ChatWidget() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-4">
-              {/* FR-C202: same ticket-list/new-ticket logic as /support,
-                  never a second implementation. FR-C203 will swap
-                  onOpenTicket to switch this panel to an in-place live
-                  thread instead of leaving it. */}
-              <TicketListAndCompose
-                compact
-                onOpenTicket={(ticketId) => {
-                  setOpen(false);
-                  router.push(`/support/${ticketId}`);
-                }}
-              />
-            </div>
+            {activeTicketId ? (
+              <div className="flex-1 min-h-0">
+                <LiveTicketThread ticketId={activeTicketId} onBack={() => setActiveTicketId(null)} />
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto p-4">
+                {/* FR-C202: same ticket-list/new-ticket logic as /support,
+                    never a second implementation. */}
+                <TicketListAndCompose compact onOpenTicket={(ticketId) => setActiveTicketId(ticketId)} />
+              </div>
+            )}
           </div>
         </div>
       )}
