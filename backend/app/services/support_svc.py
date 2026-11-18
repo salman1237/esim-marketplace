@@ -216,7 +216,14 @@ def serialize_message(message: SupportMessage, author_name: Optional[str] = None
         # Customers see "Support" rather than a staff member's username: who
         # answered is our business, not theirs.
         "author": "Support" if message.is_staff else (author_name or "You"),
-        "created_at": message.created_at,
+        # isoformat string, not a raw datetime: this dict is also sent
+        # straight through websocket.send_json() in broadcast_message,
+        # which uses plain json.dumps and has no datetime encoder (unlike
+        # FastAPI's REST response path, which does) - confirmed live on
+        # beta: a raw datetime here silently killed every broadcast with
+        # "Object of type datetime is not JSON serializable", swallowed by
+        # ConnectionManager's best-effort except-and-drop.
+        "created_at": message.created_at.isoformat() if message.created_at else None,
         "attachments": [serialize_attachment(a) for a in (message.attachments or [])],
     }
 

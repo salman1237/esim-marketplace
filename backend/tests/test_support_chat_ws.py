@@ -30,6 +30,7 @@ building this). The fix has two parts:
    order/combination even once (1) was fixed; with it, order stopped
    mattering.
 """
+import json
 import uuid
 
 import pytest
@@ -56,7 +57,16 @@ SUPERADMIN_PASSWORD = "SuperAdmin2026!"
 
 class FakeWebSocket:
     """Duck-types the one method ConnectionManager calls. Records every
-    payload sent to it so a test can assert exactly what it received."""
+    payload sent to it so a test can assert exactly what it received.
+
+    Round-trips through json.dumps/loads exactly like Starlette's real
+    send_json does (plain stdlib json, no datetime encoder) - a raw
+    datetime slipping into a payload previously passed silently here
+    because this fake just appended the dict, never actually serializing
+    it. That gap let FR-C105 ship with 16/16 "passing" tests while every
+    real broadcast on beta was failing with "Object of type datetime is
+    not JSON serializable" - confirmed live. Don't remove this round-trip.
+    """
     def __init__(self, *, fail: bool = False):
         self.fail = fail
         self.received: list[dict] = []
@@ -64,7 +74,7 @@ class FakeWebSocket:
     async def send_json(self, payload: dict) -> None:
         if self.fail:
             raise RuntimeError("socket is closed")
-        self.received.append(payload)
+        self.received.append(json.loads(json.dumps(payload)))
 
 
 def test_a_manager_starts_with_no_connections():
