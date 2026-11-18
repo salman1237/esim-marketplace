@@ -18,8 +18,8 @@
       "id": "FR-C102",
       "behavior": "WS connection manager (register/unregister/broadcast, ticket + queue channels)",
       "verification": "cd backend && python -m pytest tests/test_support_chat_ws.py -k manager",
-      "state": "not_started",
-      "evidence": null
+      "state": "passing",
+      "evidence": "7/7 tests in backend/tests/test_support_chat_ws.py pass (pure in-process, fake-socket unit tests: ticket-channel fan-out, cross-ticket isolation, disconnect, dead-socket pruning, queue-channel fan-out, channel separation). Proven non-vacuous: broke broadcast_to_ticket (early return), confirmed exactly the 3 broadcast-dependent tests failed, restored, confirmed green again."
     },
     {
       "id": "FR-C103",

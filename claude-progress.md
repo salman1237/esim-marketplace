@@ -4,7 +4,7 @@ Session log. Read first at session start, update last at session end.
 ## Current state (2026-11-18) — mode: AUTONOMOUS, web ships first
 - **Phase:** Initialize (harness written, no feature code yet).
 - **Active feature:** none.
-- **Next step:** `FR-C102` (WS connection manager), then `FR-C103` →
+- **Next step:** `FR-C103` (ticket WebSocket endpoint), then `FR-C104` →
   `FR-C107` (backend transport), then the frontend FRs, then `FR-C301`/
   `FR-C302` (admin). Mobile is a separate repo, built after a web FR is live
   on beta - see `Triptel-flutter/claude-progress.md`.
@@ -25,6 +25,15 @@ Session log. Read first at session start, update last at session end.
   (nothing in this diff touches orders/checkout). No frontend/admin
   serializer changes yet — `support_svc.serialize_message` doesn't expose
   these fields until FR-C106/C107.
+- 2026-11-18 — **FR-C102 passing.** `app/services/ws_manager.py`:
+  `ConnectionManager` with two channels (per-ticket set, staff queue set),
+  `broadcast_to_*` that drops a socket on send failure instead of breaking
+  delivery to everyone else. 7/7 pure in-process tests (fake socket, no
+  network, no DB query content - though the session-scoped DB fixture still
+  spins up since it's autouse). Non-vacuous: broke `broadcast_to_ticket`,
+  confirmed exactly the 3 broadcast-dependent tests failed, restored,
+  re-confirmed green. Real two-socket-through-an-actual-endpoint proof is
+  FR-C103's job next - this only proves the manager's own fan-out logic.
 - 2026-11-18 — Harness initialized for this feature: `CLAUDE.md`, `AGENTS.md`,
   `docs/{Architecture,Rules,Functional_Requirements,Technical_Requirements,
   Non_Functional_Requirements}.md`, `feature_list.json` (15 FRs),
