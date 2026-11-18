@@ -6,8 +6,8 @@ Session log. Read first at session start, update last at session end.
   (see "Real production bug" entry below - the proxy-verification gap
   flagged under FR-C103 is now closed).
 - **Active feature:** none.
-- **Next step:** `FR-C204` (typing indicator UI, animated dots + wiring
-  `sendTyping`), then `FR-C205`/`FR-C206`, then `FR-C301`/`FR-C302`
+- **Next step:** `FR-C205` (share an order/package from the chat UI),
+  then `FR-C206` (reconnect + fallback), then `FR-C301`/`FR-C302`
   (admin). All backend transport FRs (`FR-C101`-`FR-C107`) are done.
   Mobile is a separate repo, built
   after a web FR is live on beta - see `Triptel-flutter/claude-progress.md`.
@@ -260,6 +260,14 @@ Session log. Read first at session start, update last at session end.
   (in `TicketThread.tsx`) now renders avatars and rich cards for
   `ORDER_SHARE`/`PRODUCT_SHARE` messages - shared by both the panel and
   the full `/support/[id]` page, not duplicated.
+
+- 2026-11-18 — **FR-C204 passing.** `TypingDots` (animated, aria-hidden -
+  a parallel `aria-live` region covers screen readers); `ReplyBox` gained
+  a throttled `onTyping` callback (~once per 2s of active typing);
+  `LiveTicketThread` wires `sendTyping` through it and renders the dots
+  on the correct side. Same browser-verification gap as `FR-C203` - the
+  underlying typing-broadcast path itself was already proven by
+  `FR-C103`'s own two-socket test.
 
 ## Blocked / needs confirming during build (not blocking the harness itself)
 - (Resolved 2026-11-18 - see the "Real production bug" entry above.)

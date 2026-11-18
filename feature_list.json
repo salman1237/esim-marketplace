@@ -81,8 +81,8 @@
       "id": "FR-C204",
       "behavior": "Typing indicator UI, debounced outbound events",
       "verification": "cd frontend && npm run build",
-      "state": "not_started",
-      "evidence": null
+      "state": "passing",
+      "evidence": "`npm run build` compiles clean. TypingDots renders aria-hidden (a separate aria-live region already announces it - Accessibility gate). ReplyBox's new onTyping callback is throttled client-side to at most once per ~2s of active typing. LiveTicketThread wires useSupportSocket's sendTyping through it and renders the dots on the correct side (staff left, customer right) whenever typingFrom is set. Not independently browser-verified for the same reason as FR-C203 (no browser automation tool in this session) - the underlying typing broadcast path (ticket_socket's receive loop -> broadcast_to_ticket_except) was already proven in FR-C103's own two-socket TestClient test."
     },
     {
       "id": "FR-C205",
