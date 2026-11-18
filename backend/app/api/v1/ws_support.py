@@ -11,6 +11,7 @@ divergent implementation - see D:\\eSim\\docs\\Rules.md).
 """
 from typing import Optional
 
+import structlog
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +23,7 @@ from app.models.user import User, UserStatus
 from app.services import support_svc
 from app.services.ws_manager import manager
 
+logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/ws/support", tags=["Support Chat (WebSocket)"])
 
 # Same close-code family FastAPI/Starlette reserve for app-defined reasons
@@ -117,6 +119,8 @@ async def ticket_socket(websocket: WebSocket, ticket_id: str, token: Optional[st
                 )
     except WebSocketDisconnect:
         pass
+    except Exception as exc:
+        logger.warning("ws_ticket_socket_error", ticket_id=ticket_id, error=str(exc), error_type=type(exc).__name__)
     finally:
         manager.disconnect_ticket(ticket_id, websocket)
 

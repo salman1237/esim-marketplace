@@ -18,30 +18,54 @@ on the same channel - best-effort delivery, per Rules.md.
 """
 from typing import Any, Dict, Set
 
+import structlog
+
+logger = structlog.get_logger(__name__)
+
 
 class ConnectionManager:
     def __init__(self) -> None:
         self._ticket_sockets: Dict[str, Set[Any]] = {}
         self._queue_sockets: Set[Any] = set()
+        logger.info("ws_manager_instance_created", manager_id=id(self))
 
     # --- per-ticket channel ---------------------------------------------
 
     def connect_ticket(self, ticket_id: str, websocket: Any) -> None:
         self._ticket_sockets.setdefault(ticket_id, set()).add(websocket)
+        logger.info(
+            "ws_ticket_connected",
+            manager_id=id(self),
+            ticket_id=ticket_id,
+            ticket_id_type=type(ticket_id).__name__,
+            socket_count=len(self._ticket_sockets[ticket_id]),
+        )
 
     def disconnect_ticket(self, ticket_id: str, websocket: Any) -> None:
         sockets = self._ticket_sockets.get(ticket_id)
         if sockets is None:
             return
         sockets.discard(websocket)
+        logger.info("ws_ticket_disconnected", manager_id=id(self), ticket_id=ticket_id)
         if not sockets:
             self._ticket_sockets.pop(ticket_id, None)
 
     async def broadcast_to_ticket(self, ticket_id: str, payload: dict) -> None:
-        for websocket in list(self._ticket_sockets.get(ticket_id, ())):
+        sockets = list(self._ticket_sockets.get(ticket_id, ()))
+        logger.info(
+            "ws_broadcast_to_ticket",
+            manager_id=id(self),
+            ticket_id=ticket_id,
+            ticket_id_type=type(ticket_id).__name__,
+            known_ticket_ids=list(self._ticket_sockets.keys()),
+            matched_socket_count=len(sockets),
+        )
+        for websocket in sockets:
             try:
                 await websocket.send_json(payload)
-            except Exception:
+                logger.info("ws_send_ok", ticket_id=ticket_id)
+            except Exception as exc:
+                logger.warning("ws_send_failed", ticket_id=ticket_id, error=str(exc))
                 self.disconnect_ticket(ticket_id, websocket)
 
     async def broadcast_to_ticket_except(self, ticket_id: str, sender: Any, payload: dict) -> None:
