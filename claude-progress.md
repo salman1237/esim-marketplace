@@ -6,10 +6,10 @@ Session log. Read first at session start, update last at session end.
   (see "Real production bug" entry below - the proxy-verification gap
   flagged under FR-C103 is now closed).
 - **Active feature:** none.
-- **Next step:** `FR-C203` (live thread inside the panel via
-  `useSupportSocket`), then `FR-C204`-`FR-C206`, then `FR-C301`/
-  `FR-C302` (admin). All backend transport FRs (`FR-C101`-`FR-C107`)
-  are done. Mobile is a separate repo, built
+- **Next step:** `FR-C204` (typing indicator UI, animated dots + wiring
+  `sendTyping`), then `FR-C205`/`FR-C206`, then `FR-C301`/`FR-C302`
+  (admin). All backend transport FRs (`FR-C101`-`FR-C107`) are done.
+  Mobile is a separate repo, built
   after a web FR is live on beta - see `Triptel-flutter/claude-progress.md`.
   That "live on beta" bar is now actually met in the full sense (connect
   AND delivery), not just connect - worth remembering since it wasn't,
@@ -247,6 +247,19 @@ Session log. Read first at session start, update last at session end.
   `onOpenTicket` is parameterized so the panel can close-then-navigate
   today and switch to an in-place live thread once `FR-C203` ships,
   without another rewrite of the list/compose logic itself.
+
+- 2026-11-18 — **FR-C203 passing**, with one honest gap flagged rather
+  than papered over: `useSupportSocket` + `LiveTicketThread` compile
+  clean and speak the exact WS protocol already proven end-to-end live
+  on beta earlier this session, but no browser automation tool is
+  available in this environment, so an actual live message rendering
+  in the panel was never watched happen - only inferred from the
+  protocol-level proof plus a clean build/dev-server smoke check.
+  Worth a real browser check (or the Flutter-side equivalent once that
+  work starts) before fully trusting this without reservation. `Thread`
+  (in `TicketThread.tsx`) now renders avatars and rich cards for
+  `ORDER_SHARE`/`PRODUCT_SHARE` messages - shared by both the panel and
+  the full `/support/[id]` page, not duplicated.
 
 ## Blocked / needs confirming during build (not blocking the harness itself)
 - (Resolved 2026-11-18 - see the "Real production bug" entry above.)

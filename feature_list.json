@@ -74,8 +74,8 @@
       "id": "FR-C203",
       "behavior": "Slide-over panel: live thread via useSupportSocket, avatars, rich cards",
       "verification": "cd frontend && npm run build",
-      "state": "not_started",
-      "evidence": null
+      "state": "passing",
+      "evidence": "`npm run build` compiles clean. useSupportSocket opens the exact WS protocol already proven end-to-end live on beta this session (see FR-C103/FR-C105's evidence); messages are deduped against the initial REST fetch, never trusting the socket alone. Thread extended with avatars (author_avatar_url, initials fallback) and ORDER_SHARE/PRODUCT_SHARE rich cards (degrading gracefully if the shared item was deleted) - this benefits the full /support/[id] page too, not just the panel. ChatWidget's panel now switches in-place between the ticket list and a live thread instead of navigating away. Real dev server smoke check: home and /support both return 200, no server errors. Not independently verified: a real end-to-end browser check of a live message actually rendering in the panel - no browser automation tool was available in this session; the underlying WS protocol itself was already proven live separately."
     },
     {
       "id": "FR-C204",
