@@ -325,6 +325,19 @@ Session log. Read first at session start, update last at session end.
   non-vacuous (fails identically with `Form(...)` restored), confirmed
   fixed live on beta with a fresh throwaway account immediately after
   redeploy.
+- 2026-11-18 — **Follow-up, same session: shared order/package cards
+  made clickable.** The user noticed (from a screenshot of a product
+  share in the admin console) that the card had no link. Added
+  `esim_profile_id` to `serialize_shared_order` and `country_slug` to
+  `serialize_shared_product` (a local one-line regex mirroring
+  `catalog.py`'s own `country_slug` helper, not a backwards
+  services->api import). `TicketThread.tsx`'s cards now link to the
+  existing `/my-esims/{id}` or `/explore/{slug}` pages (new tab, so
+  staff don't lose their place in the queue) when that target exists,
+  plain non-clickable text otherwise. 2 new tests confirm the fields
+  are actually populated, not just present-but-null; confirmed live on
+  beta with a real product share (`country_slug: "bangladesh"`,
+  `/explore/bangladesh` confirmed 200).
 
 ## Blocked / needs confirming during build (not blocking the harness itself)
 - (Resolved 2026-11-18 - see the "Real production bug" entry above.)
