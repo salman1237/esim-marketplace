@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { MessageCircle, X } from "lucide-react";
 import { api } from "@/lib/api";
+import TicketListAndCompose from "@/components/support/TicketListAndCompose";
 
 const UNREAD_POLL_MS = 30_000;
 
@@ -43,6 +43,7 @@ function useFocusTrap(containerRef: React.RefObject<HTMLElement | null>, active:
 
 export default function ChatWidget() {
   const pathname = usePathname();
+  const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [slideIn, setSlideIn] = useState(false);
@@ -161,18 +162,18 @@ export default function ChatWidget() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col items-center justify-center text-center gap-3">
-              <MessageCircle className="w-10 h-10 text-brand-300" />
-              <p className="text-sm text-slate-600 max-w-[260px]">
-                Your conversations with support will appear here.
-              </p>
-              <Link
-                href="/support"
-                onClick={() => setOpen(false)}
-                className="text-xs font-bold text-brand-600 hover:text-brand-500 underline"
-              >
-                Open full support page
-              </Link>
+            <div className="flex-1 overflow-y-auto p-4">
+              {/* FR-C202: same ticket-list/new-ticket logic as /support,
+                  never a second implementation. FR-C203 will swap
+                  onOpenTicket to switch this panel to an in-place live
+                  thread instead of leaving it. */}
+              <TicketListAndCompose
+                compact
+                onOpenTicket={(ticketId) => {
+                  setOpen(false);
+                  router.push(`/support/${ticketId}`);
+                }}
+              />
             </div>
           </div>
         </div>
