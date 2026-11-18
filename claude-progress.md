@@ -4,12 +4,27 @@ Session log. Read first at session start, update last at session end.
 ## Current state (2026-11-18) — mode: AUTONOMOUS, web ships first
 - **Phase:** Initialize (harness written, no feature code yet).
 - **Active feature:** none.
-- **Next step:** `FR-C101` (SupportMessage columns + migration), then
-  `FR-C102` → `FR-C107` (backend transport), then the frontend FRs, then
-  `FR-C301`/`FR-C302` (admin). Mobile is a separate repo, built after a web
-  FR is live on beta - see `Triptel-flutter/claude-progress.md`.
+- **Next step:** `FR-C102` (WS connection manager), then `FR-C103` →
+  `FR-C107` (backend transport), then the frontend FRs, then `FR-C301`/
+  `FR-C302` (admin). Mobile is a separate repo, built after a web FR is live
+  on beta - see `Triptel-flutter/claude-progress.md`.
 
 ## Done
+- 2026-11-18 — **FR-C101 passing.** `SupportMessage` gains `message_type`
+  (TEXT/ORDER_SHARE/PRODUCT_SHARE, default TEXT), `shared_order_id`,
+  `shared_product_id` (both `ON DELETE SET NULL`). Migration
+  `c3f7a2e81d94` (chain: ...→b8e4f2a917c3→c3f7a2e81d94). Verified against a
+  disposable local Postgres instance (not the user's shared one, not
+  beta/prod) — migration applies cleanly on the full history, 4/4 new tests
+  pass, the SET NULL behavior specifically proven non-vacuous (temporarily
+  removed `ondelete`, confirmed the test fails with a real IntegrityError,
+  restored, confirmed green again). 17/18 existing `tests/test_support.py`
+  tests still pass; the one failure is the same pre-existing
+  background-order-provisioning-doesn't-settle-in-10s environment flake
+  already diagnosed as unrelated during the `GET /catalog/featured` work
+  (nothing in this diff touches orders/checkout). No frontend/admin
+  serializer changes yet — `support_svc.serialize_message` doesn't expose
+  these fields until FR-C106/C107.
 - 2026-11-18 — Harness initialized for this feature: `CLAUDE.md`, `AGENTS.md`,
   `docs/{Architecture,Rules,Functional_Requirements,Technical_Requirements,
   Non_Functional_Requirements}.md`, `feature_list.json` (15 FRs),

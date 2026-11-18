@@ -35,6 +35,16 @@ class TicketCategory(str, enum.Enum):
     OTHER = "OTHER"
 
 
+class MessageType(str, enum.Enum):
+    """Explicit, not inferred from a non-null shared_*_id - see
+    docs/Rules.md. TEXT is the default for every existing and ordinary
+    message; a chat message can still carry file attachments regardless
+    of its type."""
+    TEXT = "TEXT"
+    ORDER_SHARE = "ORDER_SHARE"
+    PRODUCT_SHARE = "PRODUCT_SHARE"
+
+
 class SupportTicket(Base):
     __tablename__ = "support_tickets"
 
@@ -78,10 +88,21 @@ class SupportMessage(Base):
     # speaking as support in an old thread.
     is_staff = Column(Boolean, default=False, nullable=False)
     body = Column(Text, nullable=False)
+    message_type = Column(Enum(MessageType), default=MessageType.TEXT, server_default="TEXT", nullable=False)
+    # Real-time chat: sharing an order or a package inline. Both ON DELETE
+    # SET NULL - a message stays readable ("this item is no longer
+    # available") even if what it referenced is later removed. Ownership is
+    # enforced at write time in support_svc.py, not here - see docs/Rules.md
+    # in the repo root (sender must own the order they're sharing; staff may
+    # share any order; a product is public catalog data, shareable by anyone).
+    shared_order_id = Column(String(36), ForeignKey("orders.id", ondelete="SET NULL"), nullable=True)
+    shared_product_id = Column(String(36), ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
     ticket = relationship("SupportTicket", back_populates="messages")
     attachments = relationship("SupportAttachment", back_populates="message", cascade="all, delete-orphan")
+    shared_order = relationship("Order", foreign_keys=[shared_order_id])
+    shared_product = relationship("Product", foreign_keys=[shared_product_id])
 
 
 class SupportAttachment(Base):

@@ -7,20 +7,110 @@
     "Order = build order. Backend transport (C101-C107) must land before any frontend item that depends on it."
   ],
   "features": [
-    {"id": "FR-C101", "behavior": "SupportMessage gains message_type/shared_order_id/shared_product_id", "verification": "cd backend && python -m pytest tests/test_support_chat_model.py", "state": "not_started", "evidence": null},
-    {"id": "FR-C102", "behavior": "WS connection manager (register/unregister/broadcast, ticket + queue channels)", "verification": "cd backend && python -m pytest tests/test_support_chat_ws.py -k manager", "state": "not_started", "evidence": null},
-    {"id": "FR-C103", "behavior": "WS /ws/support/tickets/{id}: token auth, ownership check, message/typing/ticket_status events", "verification": "cd backend && python -m pytest tests/test_support_chat_ws.py -k ticket_socket", "state": "not_started", "evidence": null},
-    {"id": "FR-C104", "behavior": "WS /ws/support/queue: staff-only, ticket_updated events", "verification": "cd backend && python -m pytest tests/test_support_chat_ws.py -k queue_socket", "state": "not_started", "evidence": null},
-    {"id": "FR-C105", "behavior": "post_message/create_ticket broadcast to ticket + queue channels after commit", "verification": "cd backend && python -m pytest tests/test_support_chat_ws.py -k broadcast", "state": "not_started", "evidence": null},
-    {"id": "FR-C106", "behavior": "Share an order or product in a message, ownership-checked", "verification": "cd backend && python -m pytest tests/test_support_chat_share.py", "state": "not_started", "evidence": null},
-    {"id": "FR-C107", "behavior": "serialize_message includes author_avatar_url", "verification": "cd backend && python -m pytest tests/test_support_chat_model.py -k avatar", "state": "not_started", "evidence": null},
-    {"id": "FR-C201", "behavior": "Floating chat button, global, unread badge", "verification": "cd frontend && npm run build", "state": "not_started", "evidence": null},
-    {"id": "FR-C202", "behavior": "Slide-over panel: ticket list / new ticket", "verification": "cd frontend && npm run build", "state": "not_started", "evidence": null},
-    {"id": "FR-C203", "behavior": "Slide-over panel: live thread via useSupportSocket, avatars, rich cards", "verification": "cd frontend && npm run build", "state": "not_started", "evidence": null},
-    {"id": "FR-C204", "behavior": "Typing indicator UI, debounced outbound events", "verification": "cd frontend && npm run build", "state": "not_started", "evidence": null},
-    {"id": "FR-C205", "behavior": "Share an order/package from the chat UI", "verification": "cd frontend && npm run build", "state": "not_started", "evidence": null},
-    {"id": "FR-C206", "behavior": "Reconnect with backoff + manual-refresh fallback", "verification": "cd frontend && npm run build", "state": "not_started", "evidence": null},
-    {"id": "FR-C301", "behavior": "Admin support queue subscribes to queue WS, live updates", "verification": "cd frontend && npm run build", "state": "not_started", "evidence": null},
-    {"id": "FR-C302", "behavior": "Staff reply uses the same live thread component (for_staff mode)", "verification": "cd frontend && npm run build", "state": "not_started", "evidence": null}
+    {
+      "id": "FR-C101",
+      "behavior": "SupportMessage gains message_type/shared_order_id/shared_product_id",
+      "verification": "cd backend && python -m pytest tests/test_support_chat_model.py",
+      "state": "passing",
+      "evidence": "4/4 tests in backend/tests/test_support_chat_model.py pass; ON DELETE SET NULL behavior proven non-vacuous (removed ondelete, confirmed test fails, restored, confirmed passes); migration c3f7a2e81d94 applies cleanly on top of full history; 17/18 pre-existing tests/test_support.py tests pass (1 unrelated pre-existing env flake, same class confirmed during GET /catalog/featured work)."
+    },
+    {
+      "id": "FR-C102",
+      "behavior": "WS connection manager (register/unregister/broadcast, ticket + queue channels)",
+      "verification": "cd backend && python -m pytest tests/test_support_chat_ws.py -k manager",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "FR-C103",
+      "behavior": "WS /ws/support/tickets/{id}: token auth, ownership check, message/typing/ticket_status events",
+      "verification": "cd backend && python -m pytest tests/test_support_chat_ws.py -k ticket_socket",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "FR-C104",
+      "behavior": "WS /ws/support/queue: staff-only, ticket_updated events",
+      "verification": "cd backend && python -m pytest tests/test_support_chat_ws.py -k queue_socket",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "FR-C105",
+      "behavior": "post_message/create_ticket broadcast to ticket + queue channels after commit",
+      "verification": "cd backend && python -m pytest tests/test_support_chat_ws.py -k broadcast",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "FR-C106",
+      "behavior": "Share an order or product in a message, ownership-checked",
+      "verification": "cd backend && python -m pytest tests/test_support_chat_share.py",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "FR-C107",
+      "behavior": "serialize_message includes author_avatar_url",
+      "verification": "cd backend && python -m pytest tests/test_support_chat_model.py -k avatar",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "FR-C201",
+      "behavior": "Floating chat button, global, unread badge",
+      "verification": "cd frontend && npm run build",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "FR-C202",
+      "behavior": "Slide-over panel: ticket list / new ticket",
+      "verification": "cd frontend && npm run build",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "FR-C203",
+      "behavior": "Slide-over panel: live thread via useSupportSocket, avatars, rich cards",
+      "verification": "cd frontend && npm run build",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "FR-C204",
+      "behavior": "Typing indicator UI, debounced outbound events",
+      "verification": "cd frontend && npm run build",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "FR-C205",
+      "behavior": "Share an order/package from the chat UI",
+      "verification": "cd frontend && npm run build",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "FR-C206",
+      "behavior": "Reconnect with backoff + manual-refresh fallback",
+      "verification": "cd frontend && npm run build",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "FR-C301",
+      "behavior": "Admin support queue subscribes to queue WS, live updates",
+      "verification": "cd frontend && npm run build",
+      "state": "not_started",
+      "evidence": null
+    },
+    {
+      "id": "FR-C302",
+      "behavior": "Staff reply uses the same live thread component (for_staff mode)",
+      "verification": "cd frontend && npm run build",
+      "state": "not_started",
+      "evidence": null
+    }
   ]
 }
