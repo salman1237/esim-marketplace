@@ -13,11 +13,16 @@ from typing import Iterable, Optional
 from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import select
+
 from app.core.config import settings
+from app.models.catalog import Product
+from app.models.order import Order
 from app.models.support import (
-    SupportAttachment, SupportMessage, SupportTicket, TicketStatus, new_reference,
+    MessageType, SupportAttachment, SupportMessage, SupportTicket, TicketStatus, new_reference,
 )
 from app.models.user import User, UserRole
+from app.services.supplier_settings_svc import get_enabled_suppliers, supplier_visible_filter
 from app.services.ws_manager import manager
 
 UPLOAD_DIR = Path(settings.SUPPORT_UPLOADS_DIR)
@@ -80,9 +85,45 @@ async def save_attachments(files: Optional[Iterable[UploadFile]]) -> list[dict]:
     return staged
 
 
+async def _check_shared_order(db: AsyncSession, author: User, order_id: str) -> None:
+    """FR-C106/Rules.md "Sharing an order or package": a customer can only
+    share THEIR OWN order (buyer or beneficiary) - never let a customer
+    reference someone else's order id in a chat message. Staff can share
+    any order (they're troubleshooting it). Same ownership check as
+    esims.py's `_load`, not a second, divergent implementation."""
+    if is_staff(author):
+        order = (await db.execute(select(Order.id).where(Order.id == order_id))).scalar_one_or_none()
+        if not order:
+            raise SupportError("That order doesn't exist.")
+        return
+    order = (await db.execute(
+        select(Order.id).where(
+            Order.id == order_id,
+            (Order.buyer_id == author.id) | (Order.beneficiary_id == author.id),
+        )
+    )).scalar_one_or_none()
+    if not order:
+        raise SupportError("You can only share your own order.")
+
+
+async def _check_shared_product(db: AsyncSession, product_id: str) -> None:
+    """A product is public catalog data - same visibility rule as
+    `GET /catalog/products/{id}`, shareable by anyone (Rules.md)."""
+    enabled = await get_enabled_suppliers(db)
+    product = (await db.execute(
+        select(Product.id).where(
+            Product.id == product_id, Product.is_active == True,
+            supplier_visible_filter(Product.supplier_reference, enabled),
+        )
+    )).scalar_one_or_none()
+    if not product:
+        raise SupportError("That package isn't available.")
+
+
 async def create_ticket(
     db: AsyncSession, user: User, *, subject: str, category, body: str,
     order_id: Optional[str], attachments: list[dict],
+    shared_order_id: Optional[str] = None, shared_product_id: Optional[str] = None,
 ) -> tuple[SupportTicket, SupportMessage]:
     """Caller commits. Returns the message too (not just the ticket) so the
     caller can broadcast it (FR-C105) without a second query."""
@@ -100,16 +141,22 @@ async def create_ticket(
     )
     db.add(ticket)
     await db.flush()
-    message = await post_message(db, ticket, user, body=body, attachments=attachments)
+    message = await post_message(
+        db, ticket, user, body=body, attachments=attachments,
+        shared_order_id=shared_order_id, shared_product_id=shared_product_id,
+    )
     return ticket, message
 
 
 async def post_message(
     db: AsyncSession, ticket: SupportTicket, author: User, *, body: str, attachments: list[dict],
+    shared_order_id: Optional[str] = None, shared_product_id: Optional[str] = None,
 ) -> SupportMessage:
     """Adds a message and moves the ticket to whoever it now waits on."""
+    if shared_order_id and shared_product_id:
+        raise SupportError("A message can share an order or a package, not both.")
     body = (body or "").strip()
-    if not body and not attachments:
+    if not body and not attachments and not shared_order_id and not shared_product_id:
         raise SupportError("Write a message or attach a file.")
     if len(body) > MAX_BODY_CHARS:
         raise SupportError("That message is too long.")
@@ -118,11 +165,22 @@ async def post_message(
     if not staff and ticket.status not in CUSTOMER_WRITABLE:
         raise SupportError("This ticket is closed. Please open a new one.")
 
+    message_type = MessageType.TEXT
+    if shared_order_id:
+        await _check_shared_order(db, author, shared_order_id)
+        message_type = MessageType.ORDER_SHARE
+    elif shared_product_id:
+        await _check_shared_product(db, shared_product_id)
+        message_type = MessageType.PRODUCT_SHARE
+
     message = SupportMessage(
         ticket_id=ticket.id,
         author_id=author.id,
         is_staff=staff,
         body=body or "(attachment only)",
+        message_type=message_type,
+        shared_order_id=shared_order_id or None,
+        shared_product_id=shared_product_id or None,
     )
     db.add(message)
     await db.flush()
@@ -165,7 +223,12 @@ async def broadcast_message(
     this: every ticket/reply broadcast failed the whole request until this
     explicit, awaited refresh was added.
     """
-    await db.refresh(message, attribute_names=["attachments"])
+    await db.refresh(message, attribute_names=["attachments", "shared_order", "shared_product"])
+    if message.shared_order:
+        # serialize_shared_order() also reaches into order.product.title_en -
+        # a second lazy-load hop that the refresh above doesn't cover on its
+        # own, same MissingGreenlet risk as the attachments refresh above.
+        await db.refresh(message.shared_order, attribute_names=["product"])
     await manager.broadcast_to_ticket(ticket.id, {
         "type": "message",
         "message": serialize_message(message, author_name=author.username),
@@ -192,6 +255,36 @@ async def close_ticket(db: AsyncSession, ticket: SupportTicket) -> None:
     ticket.closed_at = datetime.now(timezone.utc)
 
 
+def serialize_shared_order(order: Optional[Order]) -> Optional[dict]:
+    """None covers both "nothing was shared" and "it was shared, but the
+    order is gone now" - ON DELETE SET NULL (Rules.md) leaves the message
+    readable either way, never a broken reference."""
+    if not order:
+        return None
+    return {
+        "id": order.id,
+        "order_no": order.order_no,
+        "status": order.status.value,
+        "total_amount": str(order.total_amount),
+        "currency": order.currency,
+        "product_title": order.product.title_en if order.product else None,
+    }
+
+
+def serialize_shared_product(product: Optional[Product]) -> Optional[dict]:
+    if not product:
+        return None
+    return {
+        "id": product.id,
+        "title": product.title_en,
+        "data_amount_gb": str(product.data_amount_gb),
+        "validity_days": product.validity_days,
+        "is_unlimited": product.is_unlimited,
+        "retail_price": str(product.retail_price),
+        "currency": product.currency,
+    }
+
+
 def serialize_attachment(attachment: SupportAttachment) -> dict:
     return {
         "id": attachment.id,
@@ -216,6 +309,11 @@ def serialize_message(message: SupportMessage, author_name: Optional[str] = None
         # Customers see "Support" rather than a staff member's username: who
         # answered is our business, not theirs.
         "author": "Support" if message.is_staff else (author_name or "You"),
+        # message_type is explicit, never inferred from "is a shared_*_id
+        # set" (Rules.md) - a client switches on this, not on field presence.
+        "message_type": message.message_type.value,
+        "shared_order": serialize_shared_order(message.shared_order),
+        "shared_product": serialize_shared_product(message.shared_product),
         # isoformat string, not a raw datetime: this dict is also sent
         # straight through websocket.send_json() in broadcast_message,
         # which uses plain json.dumps and has no datetime encoder (unlike

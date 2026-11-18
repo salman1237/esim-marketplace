@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_admin
 from app.core.logging import get_logger
+from app.models.order import Order
 from app.models.support import (
     SupportAttachment, SupportMessage, SupportTicket, TicketCategory, TicketStatus,
 )
@@ -36,7 +37,13 @@ UPLOAD_DIR = Path(settings.SUPPORT_UPLOADS_DIR)
 async def _ticket_for(db: AsyncSession, ticket_id: str, user: User) -> SupportTicket:
     ticket = (await db.execute(
         select(SupportTicket)
-        .options(selectinload(SupportTicket.messages).selectinload(SupportMessage.attachments))
+        .options(
+            selectinload(SupportTicket.messages).selectinload(SupportMessage.attachments),
+            selectinload(SupportTicket.messages)
+            .selectinload(SupportMessage.shared_order)
+            .selectinload(Order.product),
+            selectinload(SupportTicket.messages).selectinload(SupportMessage.shared_product),
+        )
         .where(SupportTicket.id == ticket_id)
     )).scalar_one_or_none()
     # Same 404 either way, so ticket ids can't be probed for existence.
@@ -108,6 +115,8 @@ async def create_ticket(
     body: str = Form(...),
     category: TicketCategory = Form(TicketCategory.OTHER),
     order_id: Optional[str] = Form(None),
+    shared_order_id: Optional[str] = Form(None),
+    shared_product_id: Optional[str] = Form(None),
     files: List[UploadFile] = File(default=[]),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -117,6 +126,7 @@ async def create_ticket(
         ticket, message = await support_svc.create_ticket(
             db, current_user, subject=subject, category=category, body=body,
             order_id=order_id, attachments=attachments,
+            shared_order_id=shared_order_id, shared_product_id=shared_product_id,
         )
     except support_svc.SupportError as e:
         await db.rollback()
@@ -167,6 +177,8 @@ async def get_ticket(
 async def reply(
     ticket_id: str,
     body: str = Form(...),
+    shared_order_id: Optional[str] = Form(None),
+    shared_product_id: Optional[str] = Form(None),
     files: List[UploadFile] = File(default=[]),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -176,7 +188,10 @@ async def reply(
     ticket = await _ticket_for(db, ticket_id, current_user)
     try:
         attachments = await support_svc.save_attachments(files)
-        message = await support_svc.post_message(db, ticket, current_user, body=body, attachments=attachments)
+        message = await support_svc.post_message(
+            db, ticket, current_user, body=body, attachments=attachments,
+            shared_order_id=shared_order_id, shared_product_id=shared_product_id,
+        )
     except support_svc.SupportError as e:
         await db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
