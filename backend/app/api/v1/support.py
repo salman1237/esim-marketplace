@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_admin
 from app.core.logging import get_logger
+from app.models.catalog import Product
 from app.models.order import Order
 from app.models.support import (
     SupportAttachment, SupportMessage, SupportTicket, TicketCategory, TicketStatus,
@@ -42,7 +43,12 @@ async def _ticket_for(db: AsyncSession, ticket_id: str, user: User) -> SupportTi
             selectinload(SupportTicket.messages)
             .selectinload(SupportMessage.shared_order)
             .selectinload(Order.product),
-            selectinload(SupportTicket.messages).selectinload(SupportMessage.shared_product),
+            selectinload(SupportTicket.messages)
+            .selectinload(SupportMessage.shared_order)
+            .selectinload(Order.esim_profile),
+            selectinload(SupportTicket.messages)
+            .selectinload(SupportMessage.shared_product)
+            .selectinload(Product.country),
         )
         .where(SupportTicket.id == ticket_id)
     )).scalar_one_or_none()

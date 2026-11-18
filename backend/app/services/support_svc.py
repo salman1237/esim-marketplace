@@ -5,6 +5,7 @@ Status is never set by hand at a call site. Every message routes through
 always answers "what is waiting on me" correctly, and a customer replying to a
 resolved ticket reopens it instead of vanishing.
 """
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -225,10 +226,15 @@ async def broadcast_message(
     """
     await db.refresh(message, attribute_names=["attachments", "shared_order", "shared_product"])
     if message.shared_order:
-        # serialize_shared_order() also reaches into order.product.title_en -
-        # a second lazy-load hop that the refresh above doesn't cover on its
-        # own, same MissingGreenlet risk as the attachments refresh above.
-        await db.refresh(message.shared_order, attribute_names=["product"])
+        # serialize_shared_order() also reaches into order.product.title_en
+        # and order.esim_profile.id (for the card's click target) - two more
+        # lazy-load hops the refresh above doesn't cover on its own, same
+        # MissingGreenlet risk as the attachments refresh above.
+        await db.refresh(message.shared_order, attribute_names=["product", "esim_profile"])
+    if message.shared_product:
+        # serialize_shared_product() reaches into product.country.name_en
+        # for the card's click target - same reasoning.
+        await db.refresh(message.shared_product, attribute_names=["country"])
     await manager.broadcast_to_ticket(ticket.id, {
         "type": "message",
         "message": serialize_message(message, author_name=author.username, author_avatar_url=author.avatar_url),
@@ -255,6 +261,13 @@ async def close_ticket(db: AsyncSession, ticket: SupportTicket) -> None:
     ticket.closed_at = datetime.now(timezone.utc)
 
 
+def _country_slug(name: str) -> str:
+    """Mirrors catalog.py's own country_slug helper exactly (not imported -
+    api/v1 depending on services is the normal direction, not the reverse;
+    this one-line regex is cheaper to keep in sync than to invert that)."""
+    return re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
+
+
 def serialize_shared_order(order: Optional[Order]) -> Optional[dict]:
     """None covers both "nothing was shared" and "it was shared, but the
     order is gone now" - ON DELETE SET NULL (Rules.md) leaves the message
@@ -268,6 +281,12 @@ def serialize_shared_order(order: Optional[Order]) -> Optional[dict]:
         "total_amount": str(order.total_amount),
         "currency": order.currency,
         "product_title": order.product.title_en if order.product else None,
+        # The card's click target - the existing /my-esims/{id} page,
+        # which already allows the order's owner OR staff (esims.py's
+        # _load), so this works the same for a customer viewing the
+        # panel and a staff member viewing the admin queue. None (not
+        # clickable) while the order hasn't provisioned an eSIM yet.
+        "esim_profile_id": order.esim_profile.id if order.esim_profile else None,
     }
 
 
@@ -282,6 +301,11 @@ def serialize_shared_product(product: Optional[Product]) -> Optional[dict]:
         "is_unlimited": product.is_unlimited,
         "retail_price": str(product.retail_price),
         "currency": product.currency,
+        # The card's click target - the existing /explore/{slug} country
+        # page, same slug GET /catalog/countries already computes
+        # (catalog.py's country_slug helper, reused here rather than a
+        # second implementation).
+        "country_slug": _country_slug(product.country.name_en) if product.country else None,
     }
 
 

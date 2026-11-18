@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { FileText, Package, Paperclip, Receipt, Send, X } from "lucide-react";
+import Link from "next/link";
+import { ChevronRight, FileText, Package, Paperclip, Receipt, Send, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatDateTime } from "@/lib/datetime";
 import { useAppSettings } from "@/lib/AppSettingsContext";
@@ -82,8 +83,12 @@ function SharedOrderCard({ order }: { order: any }) {
       </div>
     );
   }
-  return (
-    <div className="mt-2 rounded-xl border border-gray-200 bg-white px-3 py-2 flex items-center gap-2">
+  // Clickable only once the order has an eSIM to show - the same
+  // /my-esims/{id} page esims.py's _load already lets the order's owner
+  // OR staff open (see support_svc.serialize_shared_order). Still readable
+  // as a plain card, just not a link, while the order is pre-provisioned.
+  const content = (
+    <>
       <Receipt className="w-4 h-4 text-brand-500 shrink-0" />
       <div className="min-w-0 flex-1">
         <div className="text-[11px] font-bold text-slate-900 truncate">{order.product_title || "Order"}</div>
@@ -92,6 +97,24 @@ function SharedOrderCard({ order }: { order: any }) {
       <div className="text-[11px] font-bold text-slate-700 shrink-0">
         {formatPrice(Number(order.total_amount))}
       </div>
+      {order.esim_profile_id && <ChevronRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />}
+    </>
+  );
+  if (order.esim_profile_id) {
+    return (
+      <Link
+        href={`/my-esims/${order.esim_profile_id}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-2 rounded-xl border border-gray-200 bg-white px-3 py-2 flex items-center gap-2 hover:border-brand-300 hover:bg-brand-50/40 transition-colors"
+      >
+        {content}
+      </Link>
+    );
+  }
+  return (
+    <div className="mt-2 rounded-xl border border-gray-200 bg-white px-3 py-2 flex items-center gap-2">
+      {content}
     </div>
   );
 }
@@ -106,8 +129,12 @@ function SharedProductCard({ product }: { product: any }) {
     );
   }
   const dataLabel = product.is_unlimited ? "Unlimited" : `${Number(product.data_amount_gb)} GB`;
-  return (
-    <div className="mt-2 rounded-xl border border-gray-200 bg-white px-3 py-2 flex items-center gap-2">
+  // Clickable to the product's destination page (the same slug
+  // GET /catalog/countries already computes - see
+  // support_svc.serialize_shared_product) - public, no auth needed, so
+  // this works identically for a customer and for staff.
+  const content = (
+    <>
       <Package className="w-4 h-4 text-brand-500 shrink-0" />
       <div className="min-w-0 flex-1">
         <div className="text-[11px] font-bold text-slate-900 truncate">{product.title}</div>
@@ -116,6 +143,24 @@ function SharedProductCard({ product }: { product: any }) {
       <div className="text-[11px] font-bold text-slate-700 shrink-0">
         {formatPrice(Number(product.retail_price))}
       </div>
+      {product.country_slug && <ChevronRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />}
+    </>
+  );
+  if (product.country_slug) {
+    return (
+      <Link
+        href={`/explore/${product.country_slug}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-2 rounded-xl border border-gray-200 bg-white px-3 py-2 flex items-center gap-2 hover:border-brand-300 hover:bg-brand-50/40 transition-colors"
+      >
+        {content}
+      </Link>
+    );
+  }
+  return (
+    <div className="mt-2 rounded-xl border border-gray-200 bg-white px-3 py-2 flex items-center gap-2">
+      {content}
     </div>
   );
 }

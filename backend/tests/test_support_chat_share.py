@@ -20,7 +20,7 @@ import pytest
 from sqlalchemy import select
 
 from app.models.catalog import Product
-from app.models.order import Order, OrderStatus, PaymentMethod
+from app.models.order import ESIMProfile, Order, OrderStatus, PaymentMethod
 from app.services.ws_manager import manager
 from conftest import create_test_product, register_and_login
 
@@ -85,6 +85,50 @@ async def test_a_customer_can_share_their_own_order(client, db_session):
     assert message["shared_order"]["id"] == order_id
     assert message["shared_order"]["product_title"] == product.title_en
     assert message["shared_product"] is None
+    # No eSIM yet (this order was built directly, bypassing provisioning) -
+    # the card has nothing to link to, so the frontend renders it as plain
+    # text rather than a dead link (TicketThread.tsx's SharedOrderCard).
+    assert message["shared_order"]["esim_profile_id"] is None
+
+
+async def test_a_shared_orders_card_links_to_its_esim_once_one_exists(client, db_session):
+    """esim_profile_id is the click target TicketThread.tsx's SharedOrderCard
+    uses to link to the existing /my-esims/{id} page (esims.py's _load
+    already allows the order's owner - no new auth path)."""
+    user = await register_and_login(client, "sharerwithesim")
+    order_id, _ = await _own_an_order(db_session, user)
+    profile = ESIMProfile(order_id=order_id, beneficiary_id=user["user_id"])
+    db_session.add(profile)
+    await db_session.commit()
+    await db_session.refresh(profile)
+    ticket_id = await _open_ticket(client, user)
+
+    res = await client.post(
+        f"/api/v1/support/tickets/{ticket_id}/messages",
+        data={"body": "Check this out", "shared_order_id": order_id},
+        headers=user["headers"],
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["messages"][-1]["shared_order"]["esim_profile_id"] == profile.id
+
+
+async def test_a_shared_products_card_links_to_its_destination_page(client, db_session):
+    """country_slug is the click target TicketThread.tsx's SharedProductCard
+    uses to link to /explore/{slug} - the exact slug GET /catalog/countries
+    already computes (catalog.py's country_slug helper)."""
+    user = await register_and_login(client, "sharerwithslug")
+    product = await create_test_product(db_session, price=Decimal("5.00"))
+    ticket_id = await _open_ticket(client, user)
+
+    res = await client.post(
+        f"/api/v1/support/tickets/{ticket_id}/messages",
+        data={"body": "Check this out", "shared_product_id": product.id},
+        headers=user["headers"],
+    )
+    assert res.status_code == 200, res.text
+    slug = res.json()["messages"][-1]["shared_product"]["country_slug"]
+    assert slug and slug == slug.lower()
+    assert " " not in slug
 
 
 async def test_a_customer_cannot_share_someone_elses_order(client, db_session):
