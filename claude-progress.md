@@ -338,6 +338,26 @@ Session log. Read first at session start, update last at session end.
   are actually populated, not just present-but-null; confirmed live on
   beta with a real product share (`country_slug: "bangladesh"`,
   `/explore/bangladesh` confirmed 200).
+- 2026-11-18 — **Separate storefront feature, requested as important,
+  not part of the original chat FR list: every package gets its own
+  real page.** First attempt (a `?package=<id>` query param that
+  scrolled to and highlighted the card on the listing page) was
+  explicitly rejected by the user - "not like this ,every package
+  should be clickable that will open a page with title &
+  desription & buying option". Rebuilt properly: new route
+  `/explore/<slug>/<productId>`, a real page with its own title,
+  description paragraph, specs, and a working Buy Now - same purchase
+  logic as the listing (discount code, wallet-vs-gateway, QR,
+  resume-after-login), extracted into `lib/usePackagePurchase.ts` +
+  `components/explore/PurchaseFlowModal.tsx` so both places share one
+  implementation, not two that could drift. Listing cards now link to
+  this real page; the share button copies that page's own URL (no
+  query param). `generateMetadata` returns that package's own title/
+  description/OG tags, so a shared link's preview actually matches
+  what was shared. Confirmed live on beta:
+  `GET /explore/bangladesh/<real-id>` returns 200 with
+  `<title>Bangladesh eSIM — 15 GB, 15 days</title>` and a working Buy
+  Now button.
 
 ## Blocked / needs confirming during build (not blocking the harness itself)
 - (Resolved 2026-11-18 - see the "Real production bug" entry above.)
