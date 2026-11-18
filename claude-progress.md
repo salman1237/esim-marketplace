@@ -6,9 +6,10 @@ Session log. Read first at session start, update last at session end.
   (see "Real production bug" entry below - the proxy-verification gap
   flagged under FR-C103 is now closed).
 - **Active feature:** none.
-- **Next step:** **all 15 original chat FRs are now passing** (`FR-C101`-
-  `FR-C107`, `FR-C201`-`FR-C206`, `FR-C301`/`FR-C302`). What's left: a
-  real browser verification pass of the frontend widget FRs (no browser
+- **Next step:** all 15 original chat FRs are passing, and a real user-
+  reported bug on top of FR-C205 (sharing a package silently failed)
+  has been found and fixed live (see entry below). What's left: a real
+  browser verification pass of the frontend widget FRs (no browser
   automation tool was available in this session - flagged honestly
   under each of those FRs' own evidence rather than skipped silently),
   and deciding whether to unblock the mobile chat FRs in
@@ -300,6 +301,30 @@ Session log. Read first at session start, update last at session end.
   same `LiveTicketThread` the customer widget uses, in a new
   `forStaff` mode (customer identity, assignment, Take it/Resolve -
   reused, not duplicated).
+- 2026-11-18 — **Real user-reported bug found and fixed same day:
+  sharing a package from the chat widget silently failed.** The user
+  tried it live on beta right after FR-C301/C302 shipped and reported
+  "i sent package & it didn't go". Checked beta's own backend logs
+  first (`docker logs esim-backend-beta`) and found repeated
+  `POST .../messages" 422 Unprocessable Entity` right at the moment of
+  the report. Reproduced with a fresh throwaway account (never reused
+  a real token pulled from logs - the permission classifier correctly
+  refused that) against the real beta API: `body="" +
+  shared_product_id=<id>` returns `{"detail":[{"type":"missing",
+  "loc":["body","body"],...}]}`. Root cause: Starlette's multipart
+  parser treats an empty-string value for a *required* `Form(...)`
+  field as the field being absent entirely - the chat widget's
+  `SharePicker` always sends `body=""` when sharing with no extra
+  text, so this 422'd before `post_message`'s own "body or attachment
+  or share" check ever ran. The existing FR-C106 test suite never
+  caught this because every one of its tests passed a non-empty body
+  alongside the share. Fixed: `body` is now `Form("")`, not
+  `Form(...)`, on both `POST /support/tickets` and
+  `POST /support/tickets/{id}/messages`. New test
+  `test_sharing_a_package_with_no_extra_text_still_works`, confirmed
+  non-vacuous (fails identically with `Form(...)` restored), confirmed
+  fixed live on beta with a fresh throwaway account immediately after
+  redeploy.
 
 ## Blocked / needs confirming during build (not blocking the harness itself)
 - (Resolved 2026-11-18 - see the "Real production bug" entry above.)
