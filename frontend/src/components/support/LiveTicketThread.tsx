@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Share2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { ReplyBox, StatusBadge, Thread, TypingDots } from "@/components/support/TicketThread";
 import { useSupportSocket } from "@/components/support/useSupportSocket";
+import SharePicker from "@/components/support/SharePicker";
 
 /**
  * FR-C203: the panel's live thread. Fetches the ticket once via the
@@ -19,6 +20,7 @@ export default function LiveTicketThread({ ticketId, onBack }: { ticketId: strin
   const [ticket, setTicket] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const { messages: liveMessages, typingFrom, sendTyping } = useSupportSocket(ticketId);
@@ -62,6 +64,30 @@ export default function LiveTicketThread({ ticketId, onBack }: { ticketId: strin
       setTicket(await api.replyToTicket(token, ticketId, form));
     } catch (err: any) {
       setError(err.message || "Couldn't send that");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // FR-C205: a share is its own message (ORDER_SHARE/PRODUCT_SHARE), posted
+  // through the exact same REST endpoint as a text reply - no new API
+  // client method, no second code path. Ownership is enforced server-side
+  // (support_svc._check_shared_order/_check_shared_product), not trusted
+  // from the picker alone.
+  const sendShare = async (selection: { kind: "order"; orderId: string } | { kind: "product"; productId: string }) => {
+    const token = localStorage.getItem("esim_token");
+    if (!token) return;
+    setSharing(false);
+    setSending(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append("body", "");
+      if (selection.kind === "order") form.append("shared_order_id", selection.orderId);
+      else form.append("shared_product_id", selection.productId);
+      setTicket(await api.replyToTicket(token, ticketId, form));
+    } catch (err: any) {
+      setError(err.message || "Couldn't share that");
     } finally {
       setSending(false);
     }
@@ -126,7 +152,22 @@ export default function LiveTicketThread({ ticketId, onBack }: { ticketId: strin
         <div ref={bottomRef} />
       </div>
 
-      <div className="p-4 border-t border-gray-100 shrink-0">
+      <div className="p-4 border-t border-gray-100 shrink-0 relative">
+        {sharing && (
+          <div className="absolute bottom-full left-4 right-4 mb-2">
+            <SharePicker onSelect={sendShare} onClose={() => setSharing(false)} />
+          </div>
+        )}
+        {!closed && (
+          <button
+            type="button"
+            onClick={() => setSharing((v) => !v)}
+            aria-expanded={sharing}
+            className="inline-flex items-center gap-1.5 mb-2 rounded-xl border border-gray-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-gray-50"
+          >
+            <Share2 className="w-3.5 h-3.5" /> Share an order or package
+          </button>
+        )}
         <ReplyBox onSend={send} sending={sending} disabled={closed} onTyping={sendTyping} />
       </div>
     </div>

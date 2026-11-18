@@ -167,6 +167,9 @@ async def list_my_esims(current_user: User = Depends(get_current_user), db: Asyn
     for profile, order, product in res.all():
         results.append({
             "id": profile.id,
+            # FR-C205: sharing "this order" in a support chat message needs
+            # the order id, not just its human-readable number.
+            "order_id": order.id,
             "order_no": order.order_no,
             "product_title": product.title_en,
             "data_amount_gb": float(product.data_amount_gb),
