@@ -6,8 +6,7 @@ Session log. Read first at session start, update last at session end.
   (see "Real production bug" entry below - the proxy-verification gap
   flagged under FR-C103 is now closed).
 - **Active feature:** none.
-- **Next step:** `FR-C106` (share an order/product in a message), then
-  `FR-C107` (author_avatar_url), then the frontend FRs `FR-C201`+, then
+- **Next step:** `FR-C107` (author_avatar_url), then the frontend FRs `FR-C201`+, then
   `FR-C301`/`FR-C302` (admin). Mobile is a separate repo, built after a
   web FR is live on beta - see `Triptel-flutter/claude-progress.md`. That
   "live on beta" bar is now actually met in the full sense (connect AND
@@ -192,6 +191,23 @@ Session log. Read first at session start, update last at session end.
   WebSocket test double that doesn't actually serialize its payload
   proves nothing about serialization - this is now fixed project-wide in
   this file, but watch for the same shortcut in any new fake transport.
+
+- 2026-11-18 — **FR-C106 passing.** `POST /support/tickets` and
+  `POST /support/tickets/{id}/messages` accept optional
+  `shared_order_id`/`shared_product_id`. `support_svc._check_shared_order`
+  enforces the ownership rule (buyer/beneficiary or staff - same check
+  `esims.py`'s `_load` uses); `_check_shared_product` reuses
+  `GET /catalog/products/{id}`'s visibility rule (active + supplier
+  enabled). `serialize_message` gained `message_type` plus
+  `shared_order`/`shared_product` summary blocks, flowing through the WS
+  broadcast too. 7/7 new tests pass (ownership accept/reject, staff
+  override, product active/inactive, both-at-once rejection, real
+  FakeWebSocket broadcast proof); non-vacuous (patched the ownership
+  check to always-allow, confirmed only the rejection test failed,
+  restored). This FR's tests build the order row directly instead of
+  through checkout - sidesteps the pre-existing order-settlement timing
+  flake entirely rather than fighting it, since sharing logic doesn't
+  need real provisioning.
 
 ## Blocked / needs confirming during build (not blocking the harness itself)
 - (Resolved 2026-11-18 - see the "Real production bug" entry above.)
