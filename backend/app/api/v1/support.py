@@ -118,7 +118,14 @@ async def my_tickets(current_user: User = Depends(get_current_user), db: AsyncSe
 @router.post("/tickets")
 async def create_ticket(
     subject: str = Form(...),
-    body: str = Form(...),
+    # NOT Form(...) - Starlette's multipart parser treats an empty-string
+    # value for a *required* Form field as the field being absent
+    # entirely ("missing", not "provided but empty"), rejecting the
+    # request with a 422 before post_message's own body-or-share-or-
+    # attachment check ever runs. Confirmed live: every share-only
+    # message (no text, just an order/product) failed with exactly this
+    # 422 until this default was added.
+    body: str = Form(""),
     category: TicketCategory = Form(TicketCategory.OTHER),
     order_id: Optional[str] = Form(None),
     shared_order_id: Optional[str] = Form(None),
@@ -182,7 +189,12 @@ async def get_ticket(
 @router.post("/tickets/{ticket_id}/messages")
 async def reply(
     ticket_id: str,
-    body: str = Form(...),
+    # NOT Form(...) - see create_ticket's own comment above: an empty
+    # string is rejected as "missing" by Starlette's multipart parser for
+    # a required Form field, which silently 422'd every share-only reply
+    # (no text, just a shared order/product) before post_message's own
+    # validation ever ran.
+    body: str = Form(""),
     shared_order_id: Optional[str] = Form(None),
     shared_product_id: Optional[str] = Form(None),
     files: List[UploadFile] = File(default=[]),

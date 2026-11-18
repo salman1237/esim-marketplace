@@ -137,6 +137,30 @@ async def test_anyone_can_share_a_public_product(client, db_session):
     assert message["shared_order"] is None
 
 
+async def test_sharing_a_package_with_no_extra_text_still_works(client, db_session):
+    """Confirmed live on beta: the real chat widget's share picker sends
+    body="" (no accompanying text) alongside shared_product_id - Starlette's
+    multipart parser treats an empty string for a *required* Form field as
+    the field being absent entirely, 422'ing before post_message's own
+    body-or-share-or-attachment check ever ran. Fixed in support.py by
+    giving `body` a Form("") default instead of Form(...). This is the one
+    real-world case the other share tests, which all pass a non-empty body
+    alongside the share, never actually exercised."""
+    user = await register_and_login(client, "sharernotext")
+    product = await create_test_product(db_session, price=Decimal("5.00"))
+    ticket_id = await _open_ticket(client, user)
+
+    res = await client.post(
+        f"/api/v1/support/tickets/{ticket_id}/messages",
+        data={"body": "", "shared_product_id": product.id},
+        headers=user["headers"],
+    )
+    assert res.status_code == 200, res.text
+    message = res.json()["messages"][-1]
+    assert message["message_type"] == "PRODUCT_SHARE"
+    assert message["shared_product"]["id"] == product.id
+
+
 async def test_sharing_an_inactive_product_is_rejected(client, db_session):
     user = await register_and_login(client, "shareroff")
     product = await create_test_product(db_session, price=Decimal("5.00"))
