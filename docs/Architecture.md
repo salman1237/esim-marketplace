@@ -155,14 +155,37 @@ one only if retrieval quality is measured to need it (YAGNI, matching this
 project's existing pattern of not building for a problem that isn't
 confirmed yet).
 
-### Model choice
-`ai_svc.py` calls Claude Haiku 5.5 (`claude-haiku-5-5`) - support chat is
-exactly the workload shape (chat/classification/Q&A, high volume, latency-
-sensitive) that the cheapest current model handles well, confirmed against
-Anthropic's own current cost-tuning guidance rather than assumed. If a
-later measurement shows Haiku's answers are the bottleneck (not latency or
-cost), the escalation path is effort/prompt tuning first, then a step up
-to Sonnet - not changing architecture.
+### Model choice: Azure OpenAI (`gpt-5-mini`), the user's existing resource
+`ai_svc.py` calls `gpt-5-mini` on the Azure OpenAI resource
+`campus365net-campus365a-resource` - a resource the user already has
+provisioned, not a new third-party dependency picked for the task
+(see `DECISIONS.md`). Two things that follow from `gpt-5-mini` being a
+*reasoning* model, both confirmed live during setup, not assumed:
+- It spends part of every response's token budget on an internal
+  reasoning pass before producing visible output - `max_completion_tokens`
+  caps **both** combined, never just the visible reply. Size it with
+  headroom (hundreds of tokens, not a few dozen) or a short, empty-looking
+  reply is a budget bug, not a model failure.
+- `reasoning_effort: "low"` is set on every support-chat call - this is
+  the latency lever for this model (less internal reasoning before
+  answering), the equivalent role `effort`/thinking-budget tuning plays
+  for an Anthropic model.
+
+Embeddings (FR-C502/503/504) use a text-embedding deployment on the
+**same** Azure resource - one provider, one API key, one place token
+spend is tracked, rather than mixing providers for chat vs. retrieval.
+
+If quality or latency doesn't hold up under real traffic, the escalation
+path is a bigger deployment on the same resource (e.g. `gpt-5`), not a
+provider switch - the HTTP integration code is already Azure-OpenAI-
+shaped either way.
+
+### Credentials
+`AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`,
+`AZURE_OPENAI_CHAT_DEPLOYMENT`, `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` are
+backend env vars, read exactly like every other secret in this project
+(`settings.py`, never hardcoded, never logged) - set separately on
+`esim-backend` and `esim-backend-beta`'s Dokploy env config. See Rules.md.
 
 ### Guardrails live in the service, not just the prompt
 FR-C510's refusal categories (refund/cancel/dispute/order-status) are

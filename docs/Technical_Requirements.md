@@ -9,6 +9,23 @@
   needed for the scope in `Functional_Requirements.md`.
 - Anything beyond that (Redis, a message broker) needs a `DECISIONS.md`
   entry first - see CLAUDE.md's Hard Constraints.
+- **AI assistant (FR-C501+):** `psycopg`/`sqlalchemy`'s pgvector support
+  (the `pgvector` Python package, or raw `vector(N)` column type via
+  SQLAlchemy's `Insert`/`Column` with a custom type - confirm which the
+  installed SQLAlchemy version needs before writing the migration) +
+  an HTTP client for Azure OpenAI (the `openai` Python package pointed at
+  `base_url=<AZURE_OPENAI_ENDPOINT>/openai/v1` works against Azure's
+  OpenAI-compatible endpoint - confirmed live during design, see
+  `DECISIONS.md`; no Azure-specific SDK needed). Both are new dependencies,
+  flagged here and in `DECISIONS.md` per CLAUDE.md's Hard Constraints.
+
+## Environment variables (AI assistant)
+| Var | Set on | Notes |
+|---|---|---|
+| `AZURE_OPENAI_API_KEY` | backend, beta + prod | secret - never committed |
+| `AZURE_OPENAI_ENDPOINT` | backend, beta + prod | e.g. `https://campus365net-campus365a-resource.openai.azure.com` |
+| `AZURE_OPENAI_CHAT_DEPLOYMENT` | backend, beta + prod | e.g. `gpt-5-mini` |
+| `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` | backend, beta + prod | confirm the deployment name + output dimension before FR-C501's migration |
 
 ## Commands
 | Command | Does |

@@ -65,14 +65,42 @@ tokens) becomes a real problem - add rate-limiting on
 `POST /support/guest/session` by IP before adding any heavier identity
 mechanism.
 
-## 2026-11-20 — claude-haiku-5-5 as the AI assistant's model
+## 2026-11-20 — claude-haiku-5-5 as the AI assistant's model (SUPERSEDED same day, see below)
 **What I did:** `ai_svc.py` calls Claude Haiku 5.5. **Why:** checked
 against Anthropic's own current cost/latency guidance rather than
 assumed - support chat (high-volume, latency-sensitive, Q&A/
 classification-shaped) is exactly the workload that model tier handles
 well; reserving a jump to Sonnet for if quality, not cost or latency, is
-later measured as the actual bottleneck. **Revisit if:** a quality
-measurement (not a feeling) shows Haiku's answers are the limiting factor.
+later measured as the actual bottleneck. **Superseded:** user already has
+an Azure OpenAI resource provisioned (`campus365net-campus365a-resource`,
+`gpt-5-mini` deployed) and wants it used instead - see the entry below.
+
+## 2026-11-20 — AI assistant + embeddings run on Azure OpenAI (`gpt-5-mini`), not Anthropic
+**What I did:** switched `ai_svc.py`'s model call and `kb_svc.py`'s
+embedding generation to the user's existing Azure OpenAI resource
+(`campus365net-campus365a-resource`), chat replies via `gpt-5-mini`
+(Chat Completions, `reasoning_effort: "low"` for latency,
+`max_completion_tokens` sized to leave room for reasoning + visible
+output - the reasoning-token budget trap confirmed live: a 16-token cap
+produced zero visible output because `gpt-5-mini` spent the whole budget
+reasoning), embeddings via a text-embedding deployment on the same
+resource (user confirmed one exists/will exist there). **Why:** user's
+explicit instruction, and it's infrastructure already provisioned and
+paid for rather than a new Anthropic API dependency - same "use what's
+already there" principle as pgvector-on-existing-Postgres. **New external
+dependency, flagged per CLAUDE.md:** this is Triptel's first call out to
+Azure OpenAI; needs `AZURE_OPENAI_API_KEY`/`AZURE_OPENAI_ENDPOINT`/
+`AZURE_OPENAI_CHAT_DEPLOYMENT`/`AZURE_OPENAI_EMBEDDING_DEPLOYMENT` as
+backend env vars (never committed - see Rules.md), set on both
+`esim-backend` and `esim-backend-beta`. **Security note:** the API key
+was pasted in plaintext in chat during this design conversation - flagged
+to the user to rotate it in the Azure portal before this ships, since a
+key that has appeared in any chat transcript should be treated as
+potentially exposed regardless of where that transcript lives.
+**Revisit if:** quality/latency on `gpt-5-mini` doesn't hold up under
+real traffic - the escalation path is a larger Azure OpenAI deployment
+(e.g. `gpt-5`) on the same resource, not a provider switch, since the
+integration code is provider-specific either way.
 
 ## 2026-11-18 — Extend SupportTicket/SupportMessage, don't build a parallel chat system
 A real-time "support chat" and the existing support ticket system are the

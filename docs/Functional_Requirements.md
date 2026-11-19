@@ -109,7 +109,9 @@ hits something it shouldn't attempt itself.
   the existing Postgres (flagged in `DECISIONS.md` - needs applying on
   beta/prod, not just local). New table `kb_chunks` (id, `source_type`
   enum: `CATALOG_PRODUCT`/`FAQ_ARTICLE`/`RESOLVED_TICKET`, `source_id`,
-  `content`, `embedding vector(N)`, `country_slug` nullable, `updated_at`).
+  `content`, `embedding vector(N)` - `N` = the Azure embedding
+  deployment's actual output dimension, confirmed before migrating, not
+  guessed - `country_slug` nullable, `updated_at`).
 - **FR-C502 Catalog embedding sync.** On product create/update/delete, a
   service re-embeds that product's `kb_chunks` row (title+description+
   country+price band). Backfill script for existing catalog.
@@ -126,9 +128,11 @@ hits something it shouldn't attempt itself.
   `<=>` operator), optional `source_type`/`country_slug` filter.
 - **FR-C506 AI reply service.** `ai_svc.reply(ticket, message)`: builds a
   system prompt (role, guardrails - see Rules.md) + retrieved context +
-  recent thread, calls the model, returns plain text or a structured
-  "recommend this product" action the caller renders as a `PRODUCT_SHARE`
-  message (reusing FR-C106, not a new message type).
+  recent thread, calls Azure OpenAI `gpt-5-mini` (Chat Completions,
+  `reasoning_effort: "low"`, `max_completion_tokens` sized with headroom
+  for the reasoning-token budget - see Architecture.md), returns plain
+  text or a structured "recommend this product" action the caller renders
+  as a `PRODUCT_SHARE` message (reusing FR-C106, not a new message type).
 - **FR-C507 sender_type on messages.** `SupportMessage.sender_type` enum
   (`CUSTOMER`/`STAFF`/`AI`), additive alongside the existing `is_staff`
   bool (kept for backward compat, derived together). Frontend shows a

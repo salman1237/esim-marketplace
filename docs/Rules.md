@@ -106,6 +106,16 @@
   mistake for a staff reply, in the widget or the admin queue - this is a
   trust property of the feature, not a cosmetic choice.
 
+## AI assistant credentials
+- `AZURE_OPENAI_API_KEY` and friends are backend env vars, read through
+  `settings.py` like every other secret in this project - never hardcoded
+  in a file, never logged (including in a request/response debug log of
+  the Azure call itself - log token counts, not payloads), never put in a
+  commit, a test fixture, or `claude-progress.md`/`DECISIONS.md` prose.
+- A credential that has ever appeared in a chat transcript, a screenshot,
+  or anywhere outside the deploy environment's own secret store should be
+  treated as exposed and rotated - don't wait for evidence of misuse.
+
 ## Process (harness)
 - **Autonomous** (CLAUDE.md -> Operating mode). Build, verify, commit, push,
   continue - no check-ins for ordinary feature work.
