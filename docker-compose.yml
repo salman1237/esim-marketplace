@@ -1,6 +1,13 @@
 services:
   esim-db:
-    image: postgres:16-alpine
+    # Swapped to pgvector/pgvector:pg16 for FR-C501 - same as esim-db-beta
+    # (docker-compose.beta.yml on development), verified clean there
+    # first: image swap + mandatory REINDEX (Alpine/musl -> Debian/glibc
+    # collation change under the same "en_US.utf8" locale name),
+    # confirmed data intact, extension working, and a real API smoke
+    # test passing. See DECISIONS.md for the full record and why this
+    # needed a REINDEX.
+    image: pgvector/pgvector:pg16
     container_name: esim-db
     restart: unless-stopped
     environment:
