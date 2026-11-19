@@ -33,6 +33,30 @@ Not `passing` until it clears the bars that apply to it.
 - Floating button and panel are keyboard-navigable; panel traps focus while open.
 - Text contrast meets WCAG AA in both the customer and staff bubble colors.
 
+## AI assistant (RAG)
+- Auto-reply (FR-C508) posts within **~3-5s** of the triggering customer
+  message under normal load - slower than the WS push itself, but the
+  customer should see *something* happen within one short wait, not a
+  silent gap before the first reply.
+- A guardrail refusal (FR-C510) must trigger **before** any fabricated
+  account-specific claim is sent, never as a correction after the fact -
+  the check runs on the model's structured output before `post_message`
+  is called, not as a post-hoc filter on already-sent text.
+- Retrieval (FR-C505) failing (DB error, embedding call error) degrades to
+  "no AI reply, ticket waits for staff normally" - never to a reply
+  generated with no retrieved context pretending to be grounded.
+- Token spend is visible: log `(ticket_id, input_tokens, output_tokens)`
+  per AI reply so cost-per-conversation can be checked against actual
+  usage before/if volume grows, rather than guessed at.
+
+## Guest chat
+- A guest conversation claimed on login (FR-C405) must show the full prior
+  thread immediately after claim - no gap, no re-fetch race where the
+  newly-authed view briefly shows zero tickets.
+- `guest_token` only ever grants access to the tickets it created - never
+  broadened into general API access (it is not a substitute auth token for
+  anything outside the two guest support endpoints + the ticket WS).
+
 ## Mobile-readiness (for the later Flutter build)
 - Every behavior here is described in terms the WS protocol itself
   guarantees (event shape, ownership, latency), not in terms of a specific

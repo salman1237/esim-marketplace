@@ -4,7 +4,8 @@
     "WIP = 1.",
     "States: not_started -> active -> passing | blocked.",
     "Only a passing verification command (proven to fail when reverted) moves an item to passing.",
-    "Order = build order. Backend transport (C101-C107) must land before any frontend item that depends on it."
+    "Order = build order. Backend transport (C101-C107) must land before any frontend item that depends on it.",
+    "FR-C4xx (guest chat) and FR-C5xx (AI/RAG assistant) added 2026-11-20 - see docs/Functional_Requirements.md secs H/I, docs/Architecture.md, DECISIONS.md. Build order: C401-C405 (guest backend) -> C406-C407 (guest frontend) -> C501-C505 (KB + retrieval) -> C506-C511 (AI reply + handoff) -> C512 (admin visibility)."
   ],
   "features": [
     {
@@ -111,6 +112,139 @@
       "verification": "cd frontend && npm run build",
       "state": "passing",
       "evidence": "`npm run build` compiles clean. SupportTab.tsx's static one-ticket view (plain Thread/ReplyBox, no live updates) replaced with LiveTicketThread in a new forStaff mode - customer identity, assignment, and the Take it/Resolve actions the old view already had, reused not duplicated. onTicketChanged refreshes the admin's own queue list immediately after a reply/share/action, in addition to FR-C301's queue socket. This was the last of the original 15 chat FRs - all now passing."
+    },
+    {
+      "id": "FR-C401",
+      "behavior": "SupportTicket supports nullable user_id with guest_token/guest_email",
+      "verification": "cd backend && python -m pytest tests/test_guest_chat.py",
+      "state": "not_started",
+      "evidence": ""
+    },
+    {
+      "id": "FR-C402",
+      "behavior": "POST /support/guest/session issues a guest_token",
+      "verification": "cd backend && python -m pytest tests/test_guest_chat.py",
+      "state": "not_started",
+      "evidence": ""
+    },
+    {
+      "id": "FR-C403",
+      "behavior": "Guest ticket create + reply endpoints, same validation/attachment logic as authed ones",
+      "verification": "cd backend && python -m pytest tests/test_guest_chat.py",
+      "state": "not_started",
+      "evidence": ""
+    },
+    {
+      "id": "FR-C404",
+      "behavior": "WS /ws/support/tickets/{id} accepts a guest_token for a guest-owned ticket",
+      "verification": "cd backend && python -m pytest tests/test_guest_chat_ws.py",
+      "state": "not_started",
+      "evidence": ""
+    },
+    {
+      "id": "FR-C405",
+      "behavior": "POST /support/guest/claim reassigns a guest_token's tickets to the logged-in user",
+      "verification": "cd backend && python -m pytest tests/test_guest_chat.py",
+      "state": "not_started",
+      "evidence": ""
+    },
+    {
+      "id": "FR-C406",
+      "behavior": "FloatingChatButton works signed out - mints a guest session instead of redirecting to login",
+      "verification": "cd frontend && npm run build",
+      "state": "not_started",
+      "evidence": ""
+    },
+    {
+      "id": "FR-C407",
+      "behavior": "Login/register success calls the claim endpoint when a guest_token exists in storage",
+      "verification": "cd frontend && npm run build",
+      "state": "not_started",
+      "evidence": ""
+    },
+    {
+      "id": "FR-C501",
+      "behavior": "pgvector extension + kb_chunks table",
+      "verification": "cd backend && python -m pytest tests/test_kb.py",
+      "state": "not_started",
+      "evidence": ""
+    },
+    {
+      "id": "FR-C502",
+      "behavior": "Catalog product save re-embeds its kb_chunks row; backfill script for existing catalog",
+      "verification": "cd backend && python -m pytest tests/test_kb.py",
+      "state": "not_started",
+      "evidence": ""
+    },
+    {
+      "id": "FR-C503",
+      "behavior": "faq_articles table + admin CRUD, re-embeds kb_chunks on save",
+      "verification": "cd backend && python -m pytest tests/test_kb.py",
+      "state": "not_started",
+      "evidence": ""
+    },
+    {
+      "id": "FR-C504",
+      "behavior": "Staff 'add to knowledge base' action on a CLOSED ticket - redacted, opt-in, never automatic",
+      "verification": "cd backend && python -m pytest tests/test_kb.py",
+      "state": "not_started",
+      "evidence": ""
+    },
+    {
+      "id": "FR-C505",
+      "behavior": "kb_svc.retrieve() - cosine-similarity top-K over kb_chunks, optional source_type/country_slug filter",
+      "verification": "cd backend && python -m pytest tests/test_kb.py",
+      "state": "not_started",
+      "evidence": ""
+    },
+    {
+      "id": "FR-C506",
+      "behavior": "ai_svc.reply() - Claude Haiku 5.5 call with retrieved context + recent thread",
+      "verification": "cd backend && python -m pytest tests/test_ai_svc.py",
+      "state": "not_started",
+      "evidence": ""
+    },
+    {
+      "id": "FR-C507",
+      "behavior": "SupportMessage.sender_type (CUSTOMER/STAFF/AI), frontend AI-assistant badge",
+      "verification": "cd backend && python -m pytest tests/test_support_chat_model.py && cd ../frontend && npm run build",
+      "state": "not_started",
+      "evidence": ""
+    },
+    {
+      "id": "FR-C508",
+      "behavior": "Auto-reply trigger - new CUSTOMER message + ai_enabled + no prior STAFF message -> background AI reply, broadcast via FR-C105",
+      "verification": "cd backend && python -m pytest tests/test_ai_svc.py",
+      "state": "not_started",
+      "evidence": ""
+    },
+    {
+      "id": "FR-C509",
+      "behavior": "ai_enabled flips true->false permanently on the first STAFF message",
+      "verification": "cd backend && python -m pytest tests/test_ai_svc.py",
+      "state": "not_started",
+      "evidence": ""
+    },
+    {
+      "id": "FR-C510",
+      "behavior": "Guardrail refusal (refund/cancel/dispute/order-status) posts canned handoff + sets ai_enabled=false immediately",
+      "verification": "cd backend && python -m pytest tests/test_ai_svc.py",
+      "state": "not_started",
+      "evidence": ""
+    },
+    {
+      "id": "FR-C511",
+      "behavior": "POST /support/tickets/{id}/ai-resume - staff-only manual hand-back to AI",
+      "verification": "cd backend && python -m pytest tests/test_ai_svc.py",
+      "state": "not_started",
+      "evidence": ""
+    },
+    {
+      "id": "FR-C512",
+      "behavior": "Staff queue shows AI-handled vs human-handled, flags guardrail-triggered handoffs distinctly",
+      "verification": "cd frontend && npm run build",
+      "state": "not_started",
+      "evidence": ""
     }
   ]
 }

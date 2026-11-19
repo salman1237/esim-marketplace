@@ -68,6 +68,95 @@ one event, confirm both actually receive it), not just "the endpoint
 accepts a connection." A WS handler that silently never broadcasts anything
 still "works" by that weaker bar - don't let that happen.
 
-## G. Mobile (separate repo, built second)
+## H. Guest (non-logged-in) chat
+A visitor can chat with Support before creating an account. Same ticket
+system, same WS transport, same ownership-check shape - identified by an
+anonymous device token instead of a JWT.
+
+- **FR-C401 Guest identity.** `SupportTicket.user_id` becomes nullable;
+  gains `guest_token` (UUID, nullable, unique) and `guest_email` (nullable,
+  settable mid-conversation). Exactly one of `user_id`/`guest_token` is set.
+- **FR-C402 Guest session issuance.** `POST /support/guest/session` (no
+  auth) returns a fresh `guest_token`. Frontend stores it in
+  `localStorage`; it is the entire guest identity - nothing server-side
+  needs a cookie.
+- **FR-C403 Guest ticket + reply endpoints.** `POST /support/guest/tickets`
+  and `POST /support/guest/tickets/{id}/messages` (no JWT) take
+  `guest_token` in the body/header; same validation/attachment logic as the
+  authed endpoints (shared helper, not a forked copy - see Rules.md).
+- **FR-C404 Guest WS auth.** `WS /ws/support/tickets/{id}?token=` accepts
+  either a JWT or a `guest_token` for a guest-owned ticket; same
+  `ConnectionManager`, no new channel type.
+- **FR-C405 Claim on sign-up/login.** `POST /support/guest/claim` (authed):
+  given the caller's `guest_token`, reassigns every ticket it owns to
+  `user_id = current_user.id`, clears `guest_token`. Called once by the
+  frontend right after a successful login/register if a guest token exists
+  in storage.
+- **FR-C406 Widget works signed out.** `FloatingChatButton` no longer
+  routes a logged-out visitor to login (overrides the FR-C201 behavior for
+  guests specifically); it mints a guest session on first open instead.
+- **FR-C407 Claim call on auth success.** Login/register success handler
+  calls FR-C405's endpoint when a `guest_token` is present, then discards
+  it from storage.
+
+## I. AI assistant (RAG) on support chat
+An AI drafts the first replies on a ticket - recommending packages,
+resolving known issues from a knowledge base - and goes permanently silent
+on that ticket the moment a staff member actually replies, or the moment it
+hits something it shouldn't attempt itself.
+
+- **FR-C501 pgvector + knowledge base table.** `CREATE EXTENSION vector` on
+  the existing Postgres (flagged in `DECISIONS.md` - needs applying on
+  beta/prod, not just local). New table `kb_chunks` (id, `source_type`
+  enum: `CATALOG_PRODUCT`/`FAQ_ARTICLE`/`RESOLVED_TICKET`, `source_id`,
+  `content`, `embedding vector(N)`, `country_slug` nullable, `updated_at`).
+- **FR-C502 Catalog embedding sync.** On product create/update/delete, a
+  service re-embeds that product's `kb_chunks` row (title+description+
+  country+price band). Backfill script for existing catalog.
+- **FR-C503 FAQ/known-issue authoring + embedding.** New `faq_articles`
+  table (title, body, tags) + admin CRUD; on save, re-embeds into
+  `kb_chunks`.
+- **FR-C504 Opt-in resolved-ticket mining.** A `CLOSED` ticket gets an
+  explicit staff action "Add to knowledge base" (per-ticket, never
+  automatic - see Rules.md and `DECISIONS.md`); on confirm, a redaction
+  pass strips the customer's name/email/order id before embedding the
+  Q&A pair as a `RESOLVED_TICKET` chunk.
+- **FR-C505 Retrieval service.** `kb_svc.retrieve(query, k, filters)`:
+  embeds the query, cosine-similarity top-K over `kb_chunks` (pgvector
+  `<=>` operator), optional `source_type`/`country_slug` filter.
+- **FR-C506 AI reply service.** `ai_svc.reply(ticket, message)`: builds a
+  system prompt (role, guardrails - see Rules.md) + retrieved context +
+  recent thread, calls the model, returns plain text or a structured
+  "recommend this product" action the caller renders as a `PRODUCT_SHARE`
+  message (reusing FR-C106, not a new message type).
+- **FR-C507 sender_type on messages.** `SupportMessage.sender_type` enum
+  (`CUSTOMER`/`STAFF`/`AI`), additive alongside the existing `is_staff`
+  bool (kept for backward compat, derived together). Frontend shows a
+  distinct "AI Assistant" badge for `AI` messages - never rendered
+  identically to a staff reply (see Rules.md, trust/disclosure).
+- **FR-C508 Auto-reply trigger.** On a new `CUSTOMER` message to a ticket
+  where `ai_enabled = true` and no `STAFF` message exists yet in the
+  thread, a background task calls FR-C506 and posts+broadcasts its result
+  like any other message (reuses FR-C105's broadcast-after-commit).
+- **FR-C509 Permanent handoff on staff reply.** `SupportTicket.ai_enabled`
+  (bool, default `true`). The first `STAFF` message ever posted on a
+  ticket flips it to `false`, in the same transaction. No auto-resume.
+- **FR-C510 Guardrail-triggered handoff.** FR-C506's prompt must refuse
+  (not attempt) anything account/order-specific - refunds, cancellations,
+  disputes, "where is my order" status claims. On a refusal, the service
+  sets `ai_enabled = false` immediately (doesn't wait for staff to reply)
+  and posts a canned "a team member will take it from here" message - see
+  Rules.md for the exact scope of what counts as a refusal trigger.
+- **FR-C511 Manual hand-back to AI.** Staff-only action
+  (`POST /support/tickets/{id}/ai-resume`) sets `ai_enabled = true` again -
+  the only way AI replying resumes once FR-C509/FR-C510 has silenced it.
+- **FR-C512 Admin visibility.** Staff queue (`SupportTab.tsx`) shows
+  whether a ticket is AI-handled or human-handled, and surfaces
+  guardrail-triggered handoffs (FR-C510) distinctly from a normal staff
+  takeover, so staff know which tickets are actually waiting on a human.
+
+## J. Mobile (separate repo, built second)
 Tracked in `Triptel-flutter/docs/Functional_Requirements.md` as its own
 FR range, `blocked` until the corresponding web FR here is live on beta.
+This applies to guest chat (H) and the AI assistant (I) the same way it
+already applies to A-C.

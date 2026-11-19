@@ -1,6 +1,79 @@
 # DECISIONS.md
 Judgment calls, newest first. Each: what, why, revisit-if.
 
+## 2026-11-20 — pgvector on the existing Postgres, not a dedicated vector DB
+**What I did:** the RAG knowledge base (`kb_chunks`) lives on the same
+single-instance Postgres already deployed, via the `pgvector` extension,
+instead of a managed vector DB (Pinecone/Qdrant/etc). **Why:** user's
+explicit choice when asked; also the only option that doesn't add new
+infrastructure beyond CLAUDE.md's existing single-instance constraint.
+**Needs an operator action, not just code:** `CREATE EXTENSION vector`
+must be applied on both `esim-backend`'s and `esim-backend-beta`'s
+Postgres before FR-C501 can land - confirm this is possible on the
+Dokploy-managed instance (most managed Postgres images ship pgvector, but
+it hasn't been confirmed on this specific deployment yet) before marking
+FR-C501 `passing`. **Revisit if:** retrieval volume or latency ever
+outgrows what pgvector handles well on a single instance - at that point a
+dedicated vector DB is a new infra decision, flagged here same as this one.
+
+## 2026-11-20 — AI goes silent for good on the first staff reply; no idle-timeout auto-resume
+**What I did:** `ai_enabled` flips `true -> false` permanently the moment
+any `STAFF` message is posted on a ticket (FR-C509), or the moment a
+guardrail trigger fires (FR-C510) - and only an explicit staff action
+(FR-C511) turns it back on. Considered: auto-resuming if staff goes idle
+for some timeout. **Why:** user's explicit choice when asked; an
+auto-resume risks the AI jumping back into a conversation a staff member
+is still actively tracking just because they haven't typed in N minutes -
+worse than a ticket waiting slightly longer for a reply. **Revisit if:**
+staff coverage gaps make "permanently stuck waiting for a human" a real
+problem at volume - the fix then is better staff-side queue triage, not
+reintroducing an automatic resume.
+
+## 2026-11-20 — Resolved-ticket KB mining is opt-in per ticket, not an automatic nightly job
+**What I did:** a closed ticket only enters the knowledge base
+(`RESOLVED_TICKET` chunks) when a staff member explicitly marks it "add to
+knowledge base," with a redaction pass before embedding (FR-C504).
+**Why:** the alternative the user confirmed interest in - mining past
+resolved tickets generally - raises a real PII risk if done automatically:
+one customer's name, email, or order details ending up retrievable in
+another customer's AI-drafted reply. An opt-in, staff-reviewed pipeline
+gets most of the value (reusing how staff actually solved recurring
+problems) without that risk. **Revisit if:** staff find the opt-in step
+too much friction to ever use - consider a "suggest for KB" prompt shown
+to staff on ticket close instead of fully automatic, before going fully
+automatic.
+
+## 2026-11-20 — Guardrails enforced in `ai_svc.py`, not left to prompting alone
+**What I did:** FR-C510's refusal categories are checked against a
+structured field the model is prompted to always fill in, with the
+service (not the model) deciding whether to post the canned handoff and
+flip `ai_enabled`. **Why:** a prompt-only guardrail degrades under
+adversarial or just unusual phrasing; a code-level check on a structured
+output is enforced regardless of how the model phrases its response.
+**Revisit if:** structured-output reliability issues ever require a
+secondary classifier pass - add one, don't fall back to prompt-only trust.
+
+## 2026-11-20 — Guest chat identity is a bare token, not a second session system
+**What I did:** `guest_token` is a UUID minted on request, stored
+client-side, sent back exactly where a JWT goes - never a cookie-backed
+session, never server-renewed, never expires server-side on its own.
+**Why:** user's explicit choice when asked (anonymous device token); it
+composes cleanly with claim-on-login (one UPDATE reassigning tickets) and
+avoids building a second identity/session concept next to JWT for one
+feature. **Revisit if:** abuse (spam ticket creation with throwaway
+tokens) becomes a real problem - add rate-limiting on
+`POST /support/guest/session` by IP before adding any heavier identity
+mechanism.
+
+## 2026-11-20 — claude-haiku-5-5 as the AI assistant's model
+**What I did:** `ai_svc.py` calls Claude Haiku 5.5. **Why:** checked
+against Anthropic's own current cost/latency guidance rather than
+assumed - support chat (high-volume, latency-sensitive, Q&A/
+classification-shaped) is exactly the workload that model tier handles
+well; reserving a jump to Sonnet for if quality, not cost or latency, is
+later measured as the actual bottleneck. **Revisit if:** a quality
+measurement (not a feeling) shows Haiku's answers are the limiting factor.
+
 ## 2026-11-18 — Extend SupportTicket/SupportMessage, don't build a parallel chat system
 A real-time "support chat" and the existing support ticket system are the
 same thing from the customer's point of view - one conversation with

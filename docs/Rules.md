@@ -61,6 +61,51 @@
   something to silently paper over by, e.g., writing to a DB column just to
   make it "work" without saying so in `DECISIONS.md`.
 
+## Guest chat
+- A guest ticket's ownership predicate is `(user_id == caller.user_id) or
+  (guest_token == caller.guest_token)` - never two separate code paths for
+  "is this mine," one shared check both authed and guest endpoints call
+  (see Architecture.md). A ticket has exactly one of `user_id`/
+  `guest_token` set, never both, never neither.
+- `guest_token` is bearer-equivalent to a password for that ticket's
+  content - treat it exactly like a JWT for logging/redaction purposes
+  (never log it in full, never put it in a URL that ends up in server
+  access logs beyond the WS `?token=` itself).
+- Claiming (FR-C405) is a reassignment, not a merge - a guest token that
+  owns multiple tickets gets all of them reassigned to the newly
+  logged-in user in one transaction. If the authed account already has
+  tickets of its own, nothing about those is touched.
+- A claimed ticket's existing messages are untouched (same `sender_type`,
+  same content) - claiming changes who owns the ticket, never what was
+  said in it.
+
+## AI assistant guardrails
+- The AI never claims an order-specific fact it hasn't actually retrieved
+  (status, tracking, refund eligibility) and never takes or promises an
+  account-changing action (refund, cancellation, dispute resolution,
+  changing an email/plan). Those are exactly the FR-C510 refusal triggers;
+  when the model's structured response indicates one, the service posts
+  the canned handoff message and sets `ai_enabled = false` - it does not
+  retry phrasing the same action more cautiously.
+- The AI **may** recommend packages (public catalog data, same visibility
+  rule as sharing a product in chat already has) and answer from
+  `kb_chunks` content. It must not answer a question the retrieved context
+  doesn't actually support by guessing - "I'm not sure, let me get a team
+  member" is the correct fallback over a fabricated answer.
+- `ai_enabled` only goes `true -> false` automatically. It never goes
+  `false -> true` automatically (FR-C509/FR-C510 are deliberately one-way);
+  only the explicit staff action in FR-C511 turns it back on. This is the
+  one behavior in this feature that's easy to get backwards under
+  "helpful" refactoring later - don't add an idle-timeout auto-resume.
+- Resolved-ticket mining (FR-C504) is **opt-in per ticket, staff-triggered,
+  always redacted before embedding** - never a scheduled job that mines
+  every `CLOSED` ticket automatically. A wrong resolution or another
+  customer's PII entering the KB silently is worse than a smaller KB; see
+  `DECISIONS.md`.
+- `sender_type = AI` is never rendered or labeled in a way a customer could
+  mistake for a staff reply, in the widget or the admin queue - this is a
+  trust property of the feature, not a cosmetic choice.
+
 ## Process (harness)
 - **Autonomous** (CLAUDE.md -> Operating mode). Build, verify, commit, push,
   continue - no check-ins for ordinary feature work.
