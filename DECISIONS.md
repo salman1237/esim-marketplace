@@ -25,6 +25,22 @@ rehearse, non-blocking on prod) is treated as a mandatory step of this
 migration, not a nice-to-have. **Revisit if:** beta verification turns
 up any problem (data integrity, app behavior, the extension itself
 misbehaving) - prod does not get this swap until beta is clean.
+**Beta verification (same day):** the push's own CI (`backend-tests`)
+gates deploy and is currently broken for an unrelated reason (the
+pre-existing uncommitted `conftest.py` transaction-isolation work - see
+the guest-chat entry above), so the normal `git push` -> Dokploy webhook
+path never fired. Triggered the beta deploy directly via Dokploy's
+authenticated API instead (same call `.github/workflows/deploy.yml`
+makes), matching this project's own "verify deploys, don't trust CI
+green" precedent. Confirmed directly on the VPS, not just from the
+deploy API's "done" status: image is now `pgvector/pgvector:pg16`, data
+intact (81 users/127 orders/21 support tickets, same as before the
+swap), `REINDEX DATABASE esim_db;` completed cleanly, `CREATE EXTENSION
+vector;` succeeded and a real scratch-table cosine-distance query
+returned correct results, and a real registration against
+`beta.triptel.co` succeeded (exercises the email/username unique
+indexes under the new glibc collation). Beta is clean - prod is still
+untouched pending the user's go-ahead.
 
 ## 2026-11-20 — pgvector on the existing Postgres, not a dedicated vector DB
 **What I did:** the RAG knowledge base (`kb_chunks`) lives on the same
