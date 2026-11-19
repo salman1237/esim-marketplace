@@ -364,3 +364,38 @@ async def test_categories_come_from_the_backend(client, db_session):
     values = [c["value"] for c in res.json()]
     assert "ESIM" in values and "REFUND" in values
     assert all(c["label"] for c in res.json())
+
+
+async def test_a_reply_returns_the_whole_thread_not_just_the_new_message(client, db_session, promote_role):
+    """Reported live: replying felt slow on mobile. The real cause was
+    reply() re-fetching and re-serializing the ENTIRE ticket+thread from the
+    DB a second time after already having everything it needed in memory -
+    fixed by building the response from what was already loaded/just
+    written instead. This is the regression that fix could introduce if
+    gotten wrong: earlier messages silently missing from a later reply's
+    response, not just the new one appended."""
+    user = await register_and_login(client, "threadcontinuity")
+    admin = await _staff(client, promote_role, "threadcontinuityadmin")
+    ticket = await _open_ticket(client, user, subject="Multi-reply thread", body="First message")
+
+    second = await client.post(
+        f"/api/v1/support/tickets/{ticket['id']}/messages",
+        data={"body": "Second message, from staff"}, headers=admin["headers"],
+    )
+    assert second.status_code == 200, second.text
+    assert [m["body"] for m in second.json()["messages"]] == ["First message", "Second message, from staff"]
+
+    third = await client.post(
+        f"/api/v1/support/tickets/{ticket['id']}/messages",
+        data={"body": "Third message, from the customer"}, headers=user["headers"],
+    )
+    assert third.status_code == 200, third.text
+    bodies = [m["body"] for m in third.json()["messages"]]
+    assert bodies == ["First message", "Second message, from staff", "Third message, from the customer"]
+    # Author labeling must still be correct per message, not just per
+    # response - the first two are unaffected by the third reply's own
+    # author/viewer context.
+    messages = third.json()["messages"]
+    assert messages[0]["author"] == "You"  # the customer, viewing their own ticket
+    assert messages[1]["author"] == "Support"
+    assert messages[2]["author"] == "You"

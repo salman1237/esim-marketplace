@@ -58,12 +58,23 @@ async def _ticket_for(db: AsyncSession, ticket_id: str, user: User) -> SupportTi
     return ticket
 
 
-async def _thread(db: AsyncSession, ticket: SupportTicket, viewer: User) -> list:
+async def _thread_author(db: AsyncSession, ticket: SupportTicket, viewer: User) -> tuple[str, Optional[str]]:
+    """The (name, avatar_url) every non-staff message in this ticket's thread
+    is shown with (serialize_message substitutes "Support"/None for staff
+    messages itself) - factored out of _thread() so a caller that's adding
+    exactly one new message to an already-serialized thread (reply() below)
+    doesn't need to re-run this query, or re-serialize the whole thread, just
+    to serialize that one message consistently."""
     owner = (await db.execute(
         select(User.username, User.avatar_url).where(User.id == ticket.user_id)
     )).first()
     name = "You" if viewer.id == ticket.user_id else ((owner.username if owner else None) or "Customer")
     avatar_url = owner.avatar_url if owner else None
+    return name, avatar_url
+
+
+async def _thread(db: AsyncSession, ticket: SupportTicket, viewer: User) -> list:
+    name, avatar_url = await _thread_author(db, ticket, viewer)
     return [
         support_svc.serialize_message(m, author_name=name, author_avatar_url=avatar_url)
         for m in ticket.messages
@@ -152,13 +163,24 @@ async def create_ticket(
         raise HTTPException(status_code=400, detail=str(e))
 
     await db.commit()
+    # NOT a re-fetch of the ticket afterwards - AsyncSessionLocal is
+    # configured with expire_on_commit=False (app/core/database.py), and
+    # every field post_message()/create_ticket() touch (ticket.status,
+    # message.id, message.created_at, ...) is a Python-side default, never
+    # server-generated - so the in-memory objects are already correct right
+    # now, with zero extra round trips. The stale comment this replaced
+    # ("after the commit the instance is expired") was simply wrong for this
+    # session's actual config; confirmed live as the real cause of several-
+    # second reply latency on mobile (a full eager-loaded ticket+thread
+    # requery plus a full thread re-serialization, on every single message,
+    # getting slower as a thread grows - see support_svc.reply's own note).
+    #
     # Real-time push, strictly after the commit above - see
-    # support_svc.broadcast_message's own docstring and docs/Rules.md.
+    # support_svc.broadcast_message's own docstring and docs/Rules.md. This
+    # is the one DB round-trip still genuinely needed: message.attachments
+    # was never loaded (added via a bare FK, not the ORM collection), so it
+    # has to be fetched once to serialize it below.
     await support_svc.broadcast_message(db, ticket, message, author=current_user)
-    # Re-read with the thread eagerly loaded: after the commit the instance is
-    # expired, and touching ticket.messages would be a lazy load in async
-    # context, which SQLAlchemy refuses rather than blocking the event loop.
-    ticket = await _ticket_for(db, ticket.id, current_user)
 
     notify_svc.notify_background(
         to=current_user.email,
@@ -169,7 +191,10 @@ async def create_ticket(
         cta_label="View the ticket", cta_path=f"/support/{ticket.id}",
         system_intro=f"{current_user.username} opened a ticket: {ticket.subject}",
     )
-    return support_svc.serialize_ticket(ticket, messages=await _thread(db, ticket, current_user))
+    # A brand-new ticket's thread is just this one message - the owner is
+    # always the current user for a ticket they're creating.
+    new_message = support_svc.serialize_message(message, author_name="You", author_avatar_url=current_user.avatar_url)
+    return support_svc.serialize_ticket(ticket, messages=[new_message])
 
 
 @router.get("/tickets/{ticket_id}")
@@ -210,6 +235,18 @@ async def reply(
     """One endpoint for both sides: support_svc decides what the reply does to
     the ticket's status based on who is writing."""
     ticket = await _ticket_for(db, ticket_id, current_user)
+    staff = support_svc.is_staff(current_user)
+    # Serialize the thread's EXISTING messages now, before post_message()
+    # adds the new one below - this is the full set of messages that's
+    # going back in the response regardless of what happens next, so there
+    # is no reason to ask the DB for it a second time later. See the note
+    # by the commit below for why a second fetch was happening at all.
+    author_name, author_avatar_url = await _thread_author(db, ticket, current_user)
+    existing_messages = [
+        support_svc.serialize_message(m, author_name=author_name, author_avatar_url=author_avatar_url)
+        for m in ticket.messages
+    ]
+
     try:
         attachments = await support_svc.save_attachments(files)
         message = await support_svc.post_message(
@@ -221,8 +258,19 @@ async def reply(
         raise HTTPException(status_code=400, detail=str(e))
 
     await db.commit()
-    await db.refresh(ticket)
-    # Real-time push, strictly after the commit above - see
+    # NOT a second _ticket_for()/thread re-fetch afterwards - AsyncSessionLocal
+    # is configured with expire_on_commit=False (app/core/database.py), and
+    # every field post_message() touches (ticket.status, message.id,
+    # message.created_at, ...) is a Python-side default, never server-
+    # generated - so `ticket` and `message` already hold correct values right
+    # now, no round trip needed. This endpoint used to re-run the full
+    # eager-loaded ticket+thread query AND re-serialize every message in it
+    # on every single reply (confirmed live as the real cause of several-
+    # second reply latency on mobile - it got slower as a thread grew, not a
+    # flat cost). The only genuine DB work left is broadcast_message's own
+    # refresh of this one new message's attachments/shared_order/
+    # shared_product, which were never loaded (added via a bare FK, not the
+    # ORM collection) - real-time push, strictly after the commit above, see
     # support_svc.broadcast_message's own docstring and docs/Rules.md.
     await support_svc.broadcast_message(db, ticket, message, author=current_user)
 
@@ -231,14 +279,13 @@ async def reply(
     )).scalar_one_or_none()
     if customer_email:
         _notify_new_message(
-            ticket, from_staff=support_svc.is_staff(current_user),
+            ticket, from_staff=staff,
             customer_email=customer_email, body=body,
         )
 
-    refreshed = await _ticket_for(db, ticket_id, current_user)
+    new_message = support_svc.serialize_message(message, author_name=author_name, author_avatar_url=author_avatar_url)
     return support_svc.serialize_ticket(
-        refreshed, messages=await _thread(db, refreshed, current_user),
-        for_staff=support_svc.is_staff(current_user),
+        ticket, messages=existing_messages + [new_message], for_staff=staff,
     )
 
 
