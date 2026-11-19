@@ -358,6 +358,34 @@ Session log. Read first at session start, update last at session end.
   `GET /explore/bangladesh/<real-id>` returns 200 with
   `<title>Bangladesh eSIM — 15 GB, 15 days</title>` and a working Buy
   Now button.
+- 2026-11-19 — **Reported from the mobile app: replying to a ticket
+  spun for a noticeable while. Found and fixed a real backend
+  bottleneck in `POST /support/tickets/{id}/messages` and
+  `POST /support/tickets`.** After committing the new message, both
+  handlers re-fetched the ENTIRE ticket with its full eager-loaded
+  thread a second time, then re-serialized every message in the
+  thread again from scratch - pure waste, not a defensive necessity:
+  `AsyncSessionLocal` is configured `expire_on_commit=False`
+  (`app/core/database.py`), and every field touched is a Python-side
+  default, never server-generated, so the in-memory objects were
+  already correct right after commit. The code's own comment claiming
+  otherwise was simply wrong for this session's actual config. Fixed
+  by serializing the thread's existing messages once (before the new
+  one is added) and appending the new message's own serialization
+  afterward, instead of two full redundant DB round-trips per reply.
+  New test proves earlier messages and per-message author labeling
+  survive the refactor; non-vacuous (temporarily returned only the new
+  message, confirmed exactly that test failed, restored).
+  **Measured, not assumed:** timed real replies against beta before
+  and after, growing a thread to 40 messages both times - server-side
+  latency was already small (0.14-0.28s) and didn't dramatically worsen
+  with thread size at this scale even before the fix, so this
+  architecture was genuinely wasteful and would compound on larger
+  threads/slower conditions, but it likely isn't the *entire* story
+  behind the multi-second delay reported from the mobile app - the
+  remaining gap is plausibly mobile-side (network, client processing)
+  and outside this backend fix's scope. Said so plainly rather than
+  claiming the user's full complaint was resolved.
 
 ## Blocked / needs confirming during build (not blocking the harness itself)
 - (Resolved 2026-11-18 - see the "Real production bug" entry above.)
