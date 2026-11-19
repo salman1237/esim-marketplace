@@ -23,8 +23,13 @@ const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
  * Auth travels as ?token= (a WS handshake can't carry an Authorization
  * header - docs/Rules.md), the same token everything else in this app reads
  * from localStorage, not a second auth mechanism.
+ *
+ * FR-C404: `authTokenOverride` lets a guest-viewed thread pass its
+ * guest_token instead - the backend accepts either on this same ?token=
+ * param (docs/Architecture.md "Guest chat"), so this hook doesn't need a
+ * second connection path, just a different value to put on the query string.
  */
-export function useSupportSocket(ticketId: string | null, onReconnect?: () => void) {
+export function useSupportSocket(ticketId: string | null, onReconnect?: () => void, authTokenOverride?: string | null) {
   const [connected, setConnected] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
   const [typingFrom, setTypingFrom] = useState<"staff" | "customer" | null>(null);
@@ -37,7 +42,7 @@ export function useSupportSocket(ticketId: string | null, onReconnect?: () => vo
     setMessages([]);
     setTypingFrom(null);
     if (!ticketId) return;
-    const token = localStorage.getItem("esim_token");
+    const token = authTokenOverride || localStorage.getItem("esim_token");
     if (!token) return;
 
     let stopped = false;
@@ -103,7 +108,7 @@ export function useSupportSocket(ticketId: string | null, onReconnect?: () => vo
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [ticketId]);
+  }, [ticketId, authTokenOverride]);
 
   const sendTyping = useCallback(() => {
     const socket = socketRef.current;

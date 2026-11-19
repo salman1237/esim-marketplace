@@ -288,6 +288,52 @@ def test_queue_socket_accepts_a_staff_user():
             pass  # connecting and cleanly closing is the assertion here
 
 
+# --- FR-C404: a guest_token works on the ticket WebSocket too --------------
+
+def _create_guest_ticket(tc: TestClient) -> tuple[str, str]:
+    """Returns (ticket_id, guest_token), same loop as everything else."""
+    guest_token = tc.post("/api/v1/support/guest/session").json()["guest_token"]
+    res = tc.post(
+        "/api/v1/support/guest/tickets",
+        data={"guest_token": guest_token, "subject": "Guest WS test", "body": "hello"},
+        files={},
+    )
+    assert res.status_code == 200, res.text
+    return res.json()["id"], guest_token
+
+
+def test_ticket_socket_accepts_a_guest_token_for_its_own_ticket():
+    """Non-vacuous two-socket proof for FR-C404: a guest's own guest_token
+    (not a JWT) authenticates the same WS endpoint a signed-in customer or
+    staff member uses - and staff, watching the same ticket, actually
+    receives what the guest sends."""
+    with TestClient(app) as tc:
+        ticket_id, guest_token = _create_guest_ticket(tc)
+        staff_token = _login_superadmin(tc)
+
+        with tc.websocket_connect(
+            f"/api/v1/ws/support/tickets/{ticket_id}?token={guest_token}"
+        ) as ws_guest, tc.websocket_connect(
+            f"/api/v1/ws/support/tickets/{ticket_id}?token={staff_token}"
+        ) as ws_staff:
+            ws_guest.send_json({"type": "typing"})
+            received_by_staff = ws_staff.receive_json()
+            assert received_by_staff == {"type": "typing", "from": "customer"}
+
+
+def test_ticket_socket_rejects_a_guest_token_for_someone_elses_ticket():
+    with TestClient(app) as tc:
+        ticket_id, _owner_guest_token = _create_guest_ticket(tc)
+        _other_ticket_id, other_guest_token = _create_guest_ticket(tc)
+        try:
+            with tc.websocket_connect(f"/api/v1/ws/support/tickets/{ticket_id}?token={other_guest_token}"):
+                pass
+            assert False, "expected the handshake to be rejected"
+        except Exception as e:
+            code = getattr(e, "code", None) or getattr(e, "status_code", None)
+            assert code == 4401, f"expected close code 4401, got {code!r} from {e!r}"
+
+
 # --- FR-C105: creating a ticket / replying broadcasts over the sockets ------
 #
 # These deliberately do NOT use fastapi.testclient.TestClient. Mixing an

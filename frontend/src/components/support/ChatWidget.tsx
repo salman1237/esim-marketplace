@@ -6,6 +6,8 @@ import { MessageCircle, X } from "lucide-react";
 import { api } from "@/lib/api";
 import TicketListAndCompose from "@/components/support/TicketListAndCompose";
 import LiveTicketThread from "@/components/support/LiveTicketThread";
+import GuestTicketCompose from "@/components/support/GuestTicketCompose";
+import { getActiveGuestTicketId, getOrCreateGuestToken } from "@/lib/guestChat";
 
 const UNREAD_POLL_MS = 30_000;
 
@@ -52,6 +54,10 @@ export default function ChatWidget() {
   // live thread, switched in-place rather than navigating away (FR-C202
   // left this as a close-panel-then-navigate stub for FR-C203 to replace).
   const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
+  // FR-C406: set only when the widget is being used signed-out. Minted
+  // lazily on first open, never on mount - a visitor who never opens the
+  // widget never gets a guest_token at all.
+  const [guestToken, setGuestToken] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -91,6 +97,23 @@ export default function ChatWidget() {
       setActiveTicketId(null);
       return;
     }
+    // FR-C406: a signed-out visitor gets a guest session on open, not on
+    // page load - mints one only if this browser doesn't already have one
+    // (getOrCreateGuestToken), and resumes the one active ticket this
+    // guest already has going, if any (there is no guest ticket LIST -
+    // Architecture.md).
+    if (!token) {
+      getOrCreateGuestToken()
+        .then((gt) => {
+          setGuestToken(gt);
+          const existingTicketId = getActiveGuestTicketId();
+          if (existingTicketId) setActiveTicketId(existingTicketId);
+        })
+        .catch(() => {
+          // Can't reach the backend to mint a session - the compose form
+          // below handles a null guestToken by just not submitting yet.
+        });
+    }
     closeButtonRef.current?.focus();
     // Mount off-screen first, then transition in on the next frame - a
     // plain Tailwind setup (no tailwindcss-animate plugin here) rather than
@@ -110,18 +133,12 @@ export default function ChatWidget() {
 
   if (isAuthPage(pathname)) return null;
 
-  const handleButtonClick = () => {
-    if (!token) {
-      // Confirmed: POST /support/tickets requires get_current_user - a
-      // ticket cannot be opened signed out (docs/Architecture.md). Same
-      // next= redirect convention PackageBrowser.tsx already uses, not a
-      // new mechanism.
-      const here = typeof window !== "undefined" ? window.location.pathname + window.location.search : "/";
-      window.location.href = `/auth/login?next=${encodeURIComponent(here)}`;
-      return;
-    }
-    setOpen((v) => !v);
-  };
+  // FR-C406: no longer redirects a signed-out visitor to login - the
+  // widget now works signed out via a guest session (see the open-time
+  // effect above). POST /support/tickets still requires get_current_user
+  // (Architecture.md) - that's exactly why guest tickets go through
+  // /support/guest/* instead, not a relaxed check on the authed endpoint.
+  const handleButtonClick = () => setOpen((v) => !v);
 
   return (
     <>
@@ -169,13 +186,28 @@ export default function ChatWidget() {
             </div>
             {activeTicketId ? (
               <div className="flex-1 min-h-0">
-                <LiveTicketThread ticketId={activeTicketId} onBack={() => setActiveTicketId(null)} />
+                <LiveTicketThread
+                  ticketId={activeTicketId}
+                  onBack={() => setActiveTicketId(null)}
+                  guestToken={token ? null : guestToken}
+                />
               </div>
-            ) : (
+            ) : token ? (
               <div className="flex-1 overflow-y-auto p-4">
                 {/* FR-C202: same ticket-list/new-ticket logic as /support,
                     never a second implementation. */}
                 <TicketListAndCompose compact onOpenTicket={(ticketId) => setActiveTicketId(ticketId)} />
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto p-4">
+                {/* FR-C406: signed-out visitors get a one-shot compose
+                    form, not the authed ticket list - there is no guest
+                    ticket list endpoint, and one open conversation is the
+                    whole guest use case (Architecture.md). */}
+                <GuestTicketCompose
+                  guestToken={guestToken}
+                  onOpened={(ticketId) => setActiveTicketId(ticketId)}
+                />
               </div>
             )}
           </div>

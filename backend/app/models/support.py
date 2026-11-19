@@ -13,7 +13,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -51,7 +51,18 @@ class SupportTicket(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     # Quotable in an email subject, which is what keeps a mail thread together.
     reference = Column(String(24), unique=True, nullable=False, index=True)
-    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Nullable since FR-C401 (guest chat): a ticket is owned by exactly one
+    # of user_id/guest_token, never both, never neither - enforced by the
+    # CheckConstraint below, not just by convention in the service layer.
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    # A bare UUID minted by POST /support/guest/session, never a cookie-
+    # backed session - see docs/Architecture.md "Guest chat". NOT unique -
+    # exactly like user_id, one guest identity can own many tickets.
+    guest_token = Column(String(36), nullable=True, index=True)
+    # Settable mid-conversation (not required to start chatting) - lets
+    # staff/the AI assistant follow up by email even though the visitor
+    # never created an account.
+    guest_email = Column(String(255), nullable=True)
 
     subject = Column(String(200), nullable=False)
     category = Column(Enum(TicketCategory), default=TicketCategory.OTHER, nullable=False)
@@ -74,6 +85,13 @@ class SupportTicket(Base):
     messages = relationship(
         "SupportMessage", back_populates="ticket", cascade="all, delete-orphan",
         order_by="SupportMessage.created_at",
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "(user_id IS NOT NULL) != (guest_token IS NOT NULL)",
+            name="ck_support_tickets_owner_xor",
+        ),
     )
 
 

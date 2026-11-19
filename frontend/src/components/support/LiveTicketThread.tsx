@@ -17,7 +17,7 @@ import SharePicker from "@/components/support/SharePicker";
  * relies on the socket alone for the initial state).
  */
 export default function LiveTicketThread({
-  ticketId, onBack, forStaff = false, onTicketChanged,
+  ticketId, onBack, forStaff = false, onTicketChanged, guestToken = null,
 }: {
   ticketId: string;
   onBack: () => void;
@@ -29,6 +29,12 @@ export default function LiveTicketThread({
    * right after an action here, in addition to whatever FR-C301's queue
    * socket eventually delivers. */
   onTicketChanged?: () => void;
+  /** FR-C404: when set, this thread belongs to a not-logged-in visitor -
+   * every REST call and the WS connection use this guest_token instead of
+   * the JWT in localStorage (docs/Architecture.md "Guest chat"). Staff
+   * actions (forStaff) never apply in guest mode - a guest viewing their
+   * own ticket is never staff. */
+  guestToken?: string | null;
 }) {
   const [ticket, setTicket] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,10 +44,14 @@ export default function LiveTicketThread({
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
+    if (guestToken) {
+      setTicket(await api.getGuestTicket(ticketId, guestToken));
+      return;
+    }
     const token = localStorage.getItem("esim_token");
     if (!token) return;
     setTicket(await api.getTicket(token, ticketId));
-  }, [ticketId]);
+  }, [ticketId, guestToken]);
 
   // FR-C206: re-fetch on reconnect so a message sent by the other side
   // while this socket was dropped isn't silently missed (Reliability gate,
@@ -53,7 +63,7 @@ export default function LiveTicketThread({
       // (or a manual refresh, surfaced below while disconnected) tries again.
     });
   }, [load]);
-  const { messages: liveMessages, typingFrom, sendTyping, connected } = useSupportSocket(ticketId, onReconnect);
+  const { messages: liveMessages, typingFrom, sendTyping, connected } = useSupportSocket(ticketId, onReconnect, guestToken);
 
   useEffect(() => {
     setLoading(true);
@@ -77,15 +87,20 @@ export default function LiveTicketThread({
   }, [allMessages.length]);
 
   const send = async (body: string, files: File[]) => {
-    const token = localStorage.getItem("esim_token");
-    if (!token) return;
+    const token = guestToken ? null : localStorage.getItem("esim_token");
+    if (!token && !guestToken) return;
     setSending(true);
     setError(null);
     try {
       const form = new FormData();
       form.append("body", body);
       files.forEach((f) => form.append("files", f));
-      setTicket(await api.replyToTicket(token, ticketId, form));
+      if (guestToken) {
+        form.append("guest_token", guestToken);
+        setTicket(await api.replyAsGuest(ticketId, form));
+      } else {
+        setTicket(await api.replyToTicket(token as string, ticketId, form));
+      }
       onTicketChanged?.();
     } catch (err: any) {
       setError(err.message || "Couldn't send that");
@@ -98,7 +113,11 @@ export default function LiveTicketThread({
   // through the exact same REST endpoint as a text reply - no new API
   // client method, no second code path. Ownership is enforced server-side
   // (support_svc._check_shared_order/_check_shared_product), not trusted
-  // from the picker alone.
+  // from the picker alone. Guests never reach this: the share button is
+  // hidden below when guestToken is set (a guest can't share an order -
+  // support_svc.post_message rejects it - and a product share isn't
+  // offered either, to keep the guest compose flow to the one thing it's
+  // for: asking a question before signing up).
   const sendShare = async (selection: { kind: "order"; orderId: string } | { kind: "product"; productId: string }) => {
     const token = localStorage.getItem("esim_token");
     if (!token) return;
@@ -251,7 +270,7 @@ export default function LiveTicketThread({
             <SharePicker onSelect={sendShare} onClose={() => setSharing(false)} />
           </div>
         )}
-        {!closed && (
+        {!closed && !guestToken && (
           <button
             type="button"
             onClick={() => setSharing((v) => !v)}

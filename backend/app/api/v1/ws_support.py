@@ -52,13 +52,21 @@ async def _authenticate(token: Optional[str], db: AsyncSession) -> Optional[User
     return user
 
 
-async def _authorize_ticket(token: Optional[str], ticket_id: str) -> tuple[int, Optional[User], bool]:
+async def _authorize_ticket(token: Optional[str], ticket_id: str) -> tuple[int, bool, bool, bool]:
     """A short-lived session, used ONLY for the connect-time auth/ownership
     check - never held open for the connection's lifetime. Returns
-    (close_code, user, is_staff): close_code is 0 on success, else
-    WS_UNAUTHORIZED (no/invalid token) or WS_FORBIDDEN (valid token, not
-    this ticket's owner or staff) - preserving the same distinction the
-    REST endpoints' 401-vs-403 makes, just via a close code.
+    (close_code, ok, is_staff, is_guest): close_code is 0 on success, else
+    WS_UNAUTHORIZED (no/invalid token, and not a matching guest_token
+    either) or WS_FORBIDDEN (valid identity, not this ticket's owner or
+    staff) - preserving the same distinction the REST endpoints' 401-vs-403
+    makes, just via a close code.
+
+    FR-C404: `?token=` is either a JWT or a guest_token (Architecture.md
+    "Guest chat") - a browser has no way to send two different kinds of
+    credential on a WS handshake, so this tries JWT auth first and falls
+    back to treating the same string as a guest_token. The two namespaces
+    can't collide: a JWT decodes successfully or it doesn't, and a
+    guest_token is never a valid JWT.
 
     Deliberately NOT the same session pattern as a background task (e.g.
     the welcome email task in auth.py): those run once and finish quickly.
@@ -70,19 +78,32 @@ async def _authorize_ticket(token: Optional[str], ticket_id: str) -> tuple[int, 
     deadlocks a schema reset against it. Open briefly, close immediately,
     then hold nothing."""
     async with AsyncSessionLocal() as db:
+        # No token at all is always WS_UNAUTHORIZED, independent of
+        # whether the ticket exists - same as before guest support, and
+        # what test_ticket_socket_rejects_a_missing_token checks: a
+        # missing credential is rejected before anything about the ticket
+        # is even looked at.
+        if not token:
+            return WS_UNAUTHORIZED, False, False, False
+
         user = await _authenticate(token, db)
-        if not user:
-            return WS_UNAUTHORIZED, None, False
         ticket = (await db.execute(
             select(SupportTicket).where(SupportTicket.id == ticket_id)
         )).scalar_one_or_none()
-        staff = support_svc.is_staff(user)
-        # Same 404-shaped check support.py's REST endpoints use (owner or
-        # staff) - here expressed as a close code, since a WebSocket
-        # handshake has no response body to put a 404 detail in.
-        if not ticket or (ticket.user_id != user.id and not staff):
-            return WS_FORBIDDEN, None, False
-        return 0, user, staff
+        if not ticket:
+            return WS_FORBIDDEN, False, False, False
+
+        if user:
+            staff = support_svc.is_staff(user)
+            if ticket.user_id != user.id and not staff:
+                return WS_FORBIDDEN, False, False, False
+            return 0, True, staff, False
+
+        # Not a valid JWT - try the same string as a guest_token.
+        if support_svc.owns_ticket(ticket, guest_token=token):
+            return 0, True, False, True
+
+        return WS_UNAUTHORIZED, False, False, False
 
 
 async def _authorize_staff(token: Optional[str]) -> tuple[int, Optional[User]]:
@@ -97,8 +118,8 @@ async def _authorize_staff(token: Optional[str]) -> tuple[int, Optional[User]]:
 
 @router.websocket("/tickets/{ticket_id}")
 async def ticket_socket(websocket: WebSocket, ticket_id: str, token: Optional[str] = Query(None)):
-    close_code, user, is_staff_viewer = await _authorize_ticket(token, ticket_id)
-    if not user:
+    close_code, ok, is_staff_viewer, _is_guest_viewer = await _authorize_ticket(token, ticket_id)
+    if not ok:
         await websocket.close(code=close_code)
         return
 

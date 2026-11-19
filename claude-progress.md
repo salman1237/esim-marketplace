@@ -387,7 +387,68 @@ Session log. Read first at session start, update last at session end.
   and outside this backend fix's scope. Said so plainly rather than
   claiming the user's full complaint was resolved.
 
+- 2026-11-20 — **Guest (non-logged-in) support chat shipped: FR-C401-C407,
+  all `passing`.** A visitor can now open and reply to a support ticket
+  without an account - identified by a bare `guest_token` (minted by
+  `POST /support/guest/session`, never a cookie session), reassigned to
+  their real account on login/register/Google sign-in
+  (`POST /support/guest/claim`, fire-and-forget, never blocks auth).
+  Backend: `support_tickets.user_id` is now nullable with a
+  `ck_support_tickets_owner_xor` CheckConstraint (exactly one of
+  `user_id`/`guest_token`); one ownership predicate
+  (`support_svc.owns_ticket`) used by both the authed and guest REST
+  endpoints and the ticket WebSocket (which tries JWT auth first, falls
+  back to treating `?token=` as a guest_token). Frontend: `ChatWidget`
+  no longer redirects a signed-out visitor to login - it mints a guest
+  session and shows a one-shot compose form (`GuestTicketCompose.tsx`,
+  new); there's deliberately no guest ticket LIST endpoint/view - one
+  open conversation per browser is the whole guest use case.
+  **Caught two real bugs while building this, both fixed before
+  shipping:** (1) first draft made `guest_token` UNIQUE on
+  `support_tickets`, which silently broke opening a second ticket from
+  the same guest identity - a guest, like a user, must be able to own
+  many tickets. (2) reordering the WS auth check to look up the ticket
+  before authenticating broke the existing "no token at all" rejection
+  path for authed users - caught by the pre-existing
+  `test_ticket_socket_rejects_a_missing_token` test, fixed by checking
+  "is there a token at all" before touching the ticket.
+  **Non-vacuous proof** on the core guest ownership check: temporarily
+  made `owns_ticket`'s guest branch always return true, confirmed both
+  the REST cross-guest-ticket test and the WS cross-guest-ticket test
+  failed with the real mismatch they're meant to catch, restored,
+  reconfirmed green.
+  **Honest gap:** FR-C406/C407 (frontend) are verified by `npm run
+  build` only (clean type-check + production build) - not manually
+  exercised in a real browser this session, no browser tool was
+  available. Worth a real click-through before calling the guest widget
+  fully done, same as the chat-feature skill's own account-created-flow
+  check would normally want.
+  **Environment finding, not fixed (out of scope, not touched):**
+  running the full `python -m pytest` suite surfaced ~95 failures in
+  files this feature never touched (`test_referrals.py`,
+  `test_selling_profit.py`, `test_partner_orders.py`, etc.) - root
+  cause confirmed: `backend/tests/conftest.py` has pre-existing,
+  uncommitted, in-progress work (visible in `git status` at the start
+  of this session, from a different/earlier session) adding real
+  per-test transaction isolation via a shared connection + SAVEPOINTs.
+  Any older test that opens a *second*, raw `AsyncSessionLocal()` to
+  verify state written through the `db_session`/`client` fixtures can
+  no longer see it (different connection, same still-open outer
+  transaction) - that pattern, not anything from this feature, is what
+  fails. None of this feature's own tests use that pattern. Left
+  conftest.py exactly as found; flagging here so whoever finishes that
+  isolation migration knows the blast radius.
+
 ## Blocked / needs confirming during build (not blocking the harness itself)
+- FR-C406/C407 (guest chat widget) need a real browser click-through
+  before being fully trusted - currently verified by `npm run build`
+  only. Not blocking because the backend contract they depend on is
+  fully test-proven; just flagging the gap honestly.
+- The full backend test suite has ~95 pre-existing failures from an
+  unrelated, uncommitted `conftest.py` transaction-isolation change
+  (see the entry above) - not something this feature introduced or
+  should fix. Whoever owns that migration should finish updating the
+  older tests that open a second raw session.
 - (Resolved 2026-11-18 - see the "Real production bug" entry above.)
   Dokploy's reverse proxy does pass WebSocket upgrade headers through
   cleanly; the real gap turned out to be a backend serialization bug,

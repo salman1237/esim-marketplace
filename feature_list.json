@@ -117,50 +117,50 @@
       "id": "FR-C401",
       "behavior": "SupportTicket supports nullable user_id with guest_token/guest_email",
       "verification": "cd backend && python -m pytest tests/test_guest_chat.py",
-      "state": "not_started",
-      "evidence": ""
+      "state": "passing",
+      "evidence": "Migration a8d2c40f916e: support_tickets.user_id nullable, +guest_token (indexed, NOT unique - one guest can own many tickets, caught live when a unique constraint broke a 2nd ticket from the same guest_token), +guest_email, CheckConstraint ck_support_tickets_owner_xor enforcing exactly one owner. 7/7 tests/test_guest_chat.py pass."
     },
     {
       "id": "FR-C402",
       "behavior": "POST /support/guest/session issues a guest_token",
       "verification": "cd backend && python -m pytest tests/test_guest_chat.py",
-      "state": "not_started",
-      "evidence": ""
+      "state": "passing",
+      "evidence": "POST /support/guest/session mints a bare UUID, no DB row. Covered by every tests/test_guest_chat.py test (all go through it first)."
     },
     {
       "id": "FR-C403",
       "behavior": "Guest ticket create + reply endpoints, same validation/attachment logic as authed ones",
       "verification": "cd backend && python -m pytest tests/test_guest_chat.py",
-      "state": "not_started",
-      "evidence": ""
+      "state": "passing",
+      "evidence": "POST /support/guest/tickets + POST /support/guest/tickets/{id}/messages added to support.py, calling the same support_svc.create_ticket/post_message the authed endpoints use (author=None path) - not a forked copy. A guest can share a product but has no field to attempt an order share at all (test_a_guest_can_share_a_product_but_not_an_order). 5/5 tests/test_guest_chat.py pass."
     },
     {
       "id": "FR-C404",
       "behavior": "WS /ws/support/tickets/{id} accepts a guest_token for a guest-owned ticket",
-      "verification": "cd backend && python -m pytest tests/test_guest_chat_ws.py",
-      "state": "not_started",
-      "evidence": ""
+      "verification": "cd backend && python -m pytest tests/test_support_chat_ws.py -k guest_token",
+      "state": "passing",
+      "evidence": "ws_support.py's _authorize_ticket tries JWT auth first, falls back to the same owns_ticket() guest check used by REST. Real two-socket proof: a guest's own token authenticates the ticket WS and staff watching the same ticket receives what the guest sends (test_ticket_socket_accepts_a_guest_token_for_its_own_ticket); a non-matching guest_token is rejected (test_ticket_socket_rejects_a_guest_token_for_someone_elses_ticket). Non-vacuous: broke owns_ticket's guest branch, confirmed both this test and test_a_guest_cannot_read_or_reply_to_someone_elses_ticket fail with the real IDs mismatched, restored, reconfirmed green. Also caught and fixed a real regression this work introduced in test_ticket_socket_rejects_a_missing_token (reordered the no-token check ahead of the ticket lookup). 18/18 tests/test_support_chat_ws.py pass."
     },
     {
       "id": "FR-C405",
       "behavior": "POST /support/guest/claim reassigns a guest_token's tickets to the logged-in user",
       "verification": "cd backend && python -m pytest tests/test_guest_chat.py",
-      "state": "not_started",
-      "evidence": ""
+      "state": "passing",
+      "evidence": "support_svc.claim_guest_tickets() reassigns every ticket a guest_token owns to the newly authed user in one pass, clears guest_token/guest_email; POST /support/guest/claim wires it up. Proven: claims only the guest's own tickets, doesn't touch tickets the account already owned (claimed=0), old guest_token 404s afterward. 2/2 relevant tests pass."
     },
     {
       "id": "FR-C406",
       "behavior": "FloatingChatButton works signed out - mints a guest session instead of redirecting to login",
       "verification": "cd frontend && npm run build",
-      "state": "not_started",
-      "evidence": ""
+      "state": "passing",
+      "evidence": "ChatWidget.tsx no longer redirects a signed-out visitor to login; mints/reuses a guest_token (lib/guestChat.ts) on open, resumes the one active guest ticket in this browser if any, else shows GuestTicketCompose.tsx (new). `npm run build` compiles clean (type-check + production build). Not manually verified in a browser this session - no browser tool was available; flagged honestly rather than claimed."
     },
     {
       "id": "FR-C407",
       "behavior": "Login/register success calls the claim endpoint when a guest_token exists in storage",
       "verification": "cd frontend && npm run build",
-      "state": "not_started",
-      "evidence": ""
+      "state": "passing",
+      "evidence": "login/register/Google sign-in all call claimGuestTicketsIfAny(token) right after storing the JWT - fire-and-forget, never blocks navigation on the support backend being reachable. `npm run build` compiles clean."
     },
     {
       "id": "FR-C501",

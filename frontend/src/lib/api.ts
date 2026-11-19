@@ -154,6 +154,32 @@ export const api = {
     return res.json();
   },
   closeTicket: (token: string, id: string) => fetchApi(`/api/v1/support/tickets/${id}/close`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+  // Guest chat (FR-C402/C403/C405) - no Authorization header; guest_token
+  // travels in the form body/query instead (docs/Architecture.md "Guest
+  // chat"). Same multipart-vs-JSON split as the authed calls above.
+  createGuestSession: () => fetchApi("/api/v1/support/guest/session", { method: "POST" }),
+  createGuestTicket: async (form: FormData) => {
+    const res = await fetch(`${API_BASE}/api/v1/support/guest/tickets`, { method: "POST", body: form });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `Failed with status ${res.status}`);
+    return res.json();
+  },
+  replyAsGuest: async (ticketId: string, form: FormData) => {
+    const res = await fetch(`${API_BASE}/api/v1/support/guest/tickets/${ticketId}/messages`, { method: "POST", body: form });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `Failed with status ${res.status}`);
+    return res.json();
+  },
+  getGuestTicket: (ticketId: string, guestToken: string) =>
+    fetchApi(`/api/v1/support/guest/tickets/${ticketId}?guest_token=${encodeURIComponent(guestToken)}`),
+  claimGuestTickets: (token: string, guestToken: string) => {
+    const form = new FormData();
+    form.append("guest_token", guestToken);
+    return fetch(`${API_BASE}/api/v1/support/guest/claim`, {
+      method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form,
+    }).then(async (res) => {
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `Failed with status ${res.status}`);
+      return res.json();
+    });
+  },
   // Attachments are behind auth, so they're fetched as a blob and handed back
   // as an object URL - same approach as KYC documents.
   getSupportAttachmentUrl: async (token: string, url: string) => {

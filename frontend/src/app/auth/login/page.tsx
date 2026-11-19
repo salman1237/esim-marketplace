@@ -6,6 +6,7 @@ import { ArrowRight } from "lucide-react";
 import AuthBrandMark from "@/components/AuthBrandMark";
 import { api } from "@/lib/api";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
+import { claimGuestTicketsIfAny } from "@/lib/guestChat";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -26,6 +27,10 @@ export default function LoginPage() {
       const res = await api.login({ email, password });
       localStorage.setItem("esim_token", res.access_token);
       localStorage.setItem("esim_role", res.role);
+      // FR-C407: fire-and-forget - a guest chat that doesn't exist (the
+      // common case) is a no-op server-side, and this must never block
+      // login on the support backend being reachable.
+      claimGuestTicketsIfAny(res.access_token).catch(() => {});
       if (res.role === "SUPER_ADMIN" || res.role === "ADMIN") {
         window.location.href = "/admin";
         return;

@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useAppSettings } from "@/lib/AppSettingsContext";
+import { claimGuestTicketsIfAny } from "@/lib/guestChat";
 
 declare global {
   interface Window {
@@ -60,6 +61,8 @@ export default function GoogleSignInButton({ mode = "signin", oneTap = false }: 
         const res = await api.googleLogin(response.credential);
         localStorage.setItem("esim_token", res.access_token);
         localStorage.setItem("esim_role", res.role);
+        // FR-C407, same reasoning as the email login/register forms.
+        claimGuestTicketsIfAny(res.access_token).catch(() => {});
         if (res.role === "SUPER_ADMIN" || res.role === "ADMIN") {
           window.location.href = "/admin";
           return;

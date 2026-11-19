@@ -8,6 +8,7 @@ withdrawals already work, so sub-admins can handle support without Super Admin.
 Attachments are served only through this router, to the ticket's owner or to
 staff; the files never sit under the public uploads mount.
 """
+import uuid
 from pathlib import Path
 from typing import List, Optional
 
@@ -64,13 +65,30 @@ async def _thread_author(db: AsyncSession, ticket: SupportTicket, viewer: User) 
     messages itself) - factored out of _thread() so a caller that's adding
     exactly one new message to an already-serialized thread (reply() below)
     doesn't need to re-run this query, or re-serialize the whole thread, just
-    to serialize that one message consistently."""
+    to serialize that one message consistently.
+
+    `viewer` is always a real User here - an authed endpoint (staff or a
+    signed-in customer). A guest-owned ticket (FR-C401, ticket.user_id is
+    None) has no owner row to look up; the viewer in that case is staff
+    (a guest can't reach these authed endpoints at all - see the guest-
+    only `_thread_author_guest` below), so show the guest's email/label
+    instead of the generic "Customer" fallback."""
+    if ticket.user_id is None:
+        return (ticket.guest_email or "Guest"), None
     owner = (await db.execute(
         select(User.username, User.avatar_url).where(User.id == ticket.user_id)
     )).first()
     name = "You" if viewer.id == ticket.user_id else ((owner.username if owner else None) or "Customer")
     avatar_url = owner.avatar_url if owner else None
     return name, avatar_url
+
+
+def _thread_author_guest() -> tuple[str, Optional[str]]:
+    """The guest-endpoint equivalent of `_thread_author` above: the only
+    viewer who can reach a guest endpoint for a given ticket is the guest
+    who owns it (enforced by `_ticket_for_guest`'s ownership check), so
+    their own non-staff messages are always "You" - no query needed."""
+    return "You", None
 
 
 async def _thread(db: AsyncSession, ticket: SupportTicket, viewer: User) -> list:
@@ -328,6 +346,141 @@ async def download_attachment(
     if not path.exists():
         raise HTTPException(status_code=404, detail="File missing from storage")
     return FileResponse(path, media_type=attachment.content_type, filename=attachment.original_name)
+
+
+# --- Guest (no auth - FR-C401-C405, docs/Architecture.md "Guest chat") -----
+
+async def _ticket_for_guest(db: AsyncSession, ticket_id: str, guest_token: str) -> SupportTicket:
+    """Same eager-load shape as `_ticket_for` above, but the ownership check
+    is `support_svc.owns_ticket`'s guest branch - one predicate, two ways to
+    arrive at it (Architecture.md). Same 404-either-way discipline: a wrong
+    ticket id and someone else's guest_token look identical to the caller."""
+    ticket = (await db.execute(
+        select(SupportTicket)
+        .options(
+            selectinload(SupportTicket.messages).selectinload(SupportMessage.attachments),
+            selectinload(SupportTicket.messages)
+            .selectinload(SupportMessage.shared_order)
+            .selectinload(Order.product),
+            selectinload(SupportTicket.messages)
+            .selectinload(SupportMessage.shared_order)
+            .selectinload(Order.esim_profile),
+            selectinload(SupportTicket.messages)
+            .selectinload(SupportMessage.shared_product)
+            .selectinload(Product.country),
+        )
+        .where(SupportTicket.id == ticket_id)
+    )).scalar_one_or_none()
+    if not ticket or not support_svc.owns_ticket(ticket, guest_token=guest_token):
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return ticket
+
+
+@router.post("/guest/session")
+async def guest_session():
+    """FR-C402: mints a bare guest_token - no DB row, no server-side
+    session, nothing to expire. The frontend stores it and sends it back
+    exactly where a JWT would go (Rules.md "Guest chat")."""
+    return {"guest_token": str(uuid.uuid4())}
+
+
+@router.post("/guest/tickets")
+async def create_guest_ticket(
+    guest_token: str = Form(...),
+    guest_email: Optional[str] = Form(None),
+    subject: str = Form(...),
+    body: str = Form(""),
+    category: TicketCategory = Form(TicketCategory.OTHER),
+    shared_product_id: Optional[str] = Form(None),
+    files: List[UploadFile] = File(default=[]),
+    db: AsyncSession = Depends(get_db),
+):
+    """FR-C403: same validation/attachment logic as the authed
+    create_ticket above, via the same support_svc functions - never a
+    forked copy (Architecture.md)."""
+    try:
+        attachments = await support_svc.save_attachments(files)
+        ticket, message = await support_svc.create_ticket(
+            db, user=None, subject=subject, category=category, body=body,
+            order_id=None, attachments=attachments,
+            shared_product_id=shared_product_id,
+            guest_token=guest_token, guest_email=guest_email,
+        )
+    except support_svc.SupportError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+    await db.commit()
+    await support_svc.broadcast_message(db, ticket, message, author=None)
+    author_name, author_avatar_url = _thread_author_guest()
+    new_message = support_svc.serialize_message(message, author_name=author_name, author_avatar_url=author_avatar_url)
+    return support_svc.serialize_ticket(ticket, messages=[new_message])
+
+
+@router.post("/guest/tickets/{ticket_id}/messages")
+async def reply_as_guest(
+    ticket_id: str,
+    guest_token: str = Form(...),
+    body: str = Form(""),
+    shared_product_id: Optional[str] = Form(None),
+    files: List[UploadFile] = File(default=[]),
+    db: AsyncSession = Depends(get_db),
+):
+    """FR-C403. A guest can share a product but never an order
+    (support_svc.post_message enforces this - it needs a real User to
+    check ownership against)."""
+    ticket = await _ticket_for_guest(db, ticket_id, guest_token)
+    author_name, author_avatar_url = _thread_author_guest()
+    existing_messages = [
+        support_svc.serialize_message(m, author_name=author_name, author_avatar_url=author_avatar_url)
+        for m in ticket.messages
+    ]
+
+    try:
+        attachments = await support_svc.save_attachments(files)
+        message = await support_svc.post_message(
+            db, ticket, None, body=body, attachments=attachments,
+            shared_product_id=shared_product_id,
+        )
+    except support_svc.SupportError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+    await db.commit()
+    await support_svc.broadcast_message(db, ticket, message, author=None)
+
+    new_message = support_svc.serialize_message(message, author_name=author_name, author_avatar_url=author_avatar_url)
+    return support_svc.serialize_ticket(ticket, messages=existing_messages + [new_message])
+
+
+@router.get("/guest/tickets/{ticket_id}")
+async def get_guest_ticket(
+    ticket_id: str,
+    guest_token: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    ticket = await _ticket_for_guest(db, ticket_id, guest_token)
+    author_name, author_avatar_url = _thread_author_guest()
+    messages = [
+        support_svc.serialize_message(m, author_name=author_name, author_avatar_url=author_avatar_url)
+        for m in ticket.messages
+    ]
+    return support_svc.serialize_ticket(ticket, messages=messages)
+
+
+@router.post("/guest/claim")
+async def claim_guest_tickets(
+    guest_token: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """FR-C405: called once by the frontend right after a successful
+    login/register when a guest_token exists in storage. A reassignment,
+    not a merge (Rules.md) - tickets the account already owns are
+    untouched."""
+    claimed = await support_svc.claim_guest_tickets(db, user=current_user, guest_token=guest_token)
+    await db.commit()
+    return {"claimed": claimed}
 
 
 # --- Staff ------------------------------------------------------------------

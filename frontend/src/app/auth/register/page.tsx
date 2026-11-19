@@ -5,6 +5,7 @@ import Link from "next/link";
 import AuthBrandMark from "@/components/AuthBrandMark";
 import { api } from "@/lib/api";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
+import { claimGuestTicketsIfAny } from "@/lib/guestChat";
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("");
@@ -50,6 +51,8 @@ export default function RegisterPage() {
       });
       localStorage.setItem("esim_token", res.access_token);
       localStorage.setItem("esim_role", res.role);
+      // FR-C407, same reasoning as the login page.
+      claimGuestTicketsIfAny(res.access_token).catch(() => {});
       // Mirrors the login page: a "Buy Now" while signed out that routed
       // here (via login's "Create account" link) must come back to the
       // same package, not to the home page.

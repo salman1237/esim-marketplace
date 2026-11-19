@@ -51,6 +51,34 @@ def is_staff(user: User) -> bool:
     return user.role in STAFF_ROLES
 
 
+def owns_ticket(ticket: SupportTicket, *, user: Optional[User] = None, guest_token: Optional[str] = None) -> bool:
+    """One ownership predicate for both identities (FR-C401/Architecture.md
+    "Guest chat") - the authed and guest endpoints both call this, never two
+    divergent checks."""
+    if user and (ticket.user_id == user.id or is_staff(user)):
+        return True
+    if guest_token and ticket.guest_token == guest_token:
+        return True
+    return False
+
+
+async def claim_guest_tickets(db: AsyncSession, *, user: User, guest_token: str) -> int:
+    """FR-C405: reassigns every ticket a guest_token owns to the newly
+    logged-in/registered user - a reassignment, not a merge (Rules.md). A
+    ticket the user already owns is untouched; messages already posted are
+    untouched (only ownership changes, never what was said)."""
+    if not guest_token:
+        return 0
+    rows = (await db.execute(
+        select(SupportTicket).where(SupportTicket.guest_token == guest_token)
+    )).scalars().all()
+    for ticket in rows:
+        ticket.user_id = user.id
+        ticket.guest_token = None
+        ticket.guest_email = None
+    return len(rows)
+
+
 async def save_attachments(files: Optional[Iterable[UploadFile]]) -> list[dict]:
     """Validates and writes the files, returning what the DB rows need.
 
@@ -122,22 +150,35 @@ async def _check_shared_product(db: AsyncSession, product_id: str) -> None:
 
 
 async def create_ticket(
-    db: AsyncSession, user: User, *, subject: str, category, body: str,
+    db: AsyncSession, user: Optional[User] = None, *, subject: str, category, body: str,
     order_id: Optional[str], attachments: list[dict],
     shared_order_id: Optional[str] = None, shared_product_id: Optional[str] = None,
+    guest_token: Optional[str] = None, guest_email: Optional[str] = None,
 ) -> tuple[SupportTicket, SupportMessage]:
     """Caller commits. Returns the message too (not just the ticket) so the
-    caller can broadcast it (FR-C105) without a second query."""
+    caller can broadcast it (FR-C105) without a second query.
+
+    Exactly one of user/guest_token identifies who this ticket belongs to
+    (FR-C401) - the caller (an authed or a guest endpoint) decides which,
+    this function never guesses."""
+    if bool(user) == bool(guest_token):
+        raise SupportError("A ticket needs exactly one owner.")
     subject = (subject or "").strip()
     if len(subject) < 3:
         raise SupportError("Give your ticket a subject.")
 
     ticket = SupportTicket(
         reference=new_reference(),
-        user_id=user.id,
+        user_id=user.id if user else None,
+        guest_token=guest_token,
+        guest_email=(guest_email or "").strip()[:255] or None,
         subject=subject[:200],
         category=category,
-        order_id=order_id or None,
+        # A guest has no verified orders to link - order_id only applies
+        # to an authed ticket (Rules.md's ownership check for sharing an
+        # order needs a User; a guest typing an arbitrary order id here
+        # would otherwise be unverifiable).
+        order_id=(order_id or None) if user else None,
         status=TicketStatus.OPEN,
     )
     db.add(ticket)
@@ -150,19 +191,27 @@ async def create_ticket(
 
 
 async def post_message(
-    db: AsyncSession, ticket: SupportTicket, author: User, *, body: str, attachments: list[dict],
+    db: AsyncSession, ticket: SupportTicket, author: Optional[User], *, body: str, attachments: list[dict],
     shared_order_id: Optional[str] = None, shared_product_id: Optional[str] = None,
 ) -> SupportMessage:
-    """Adds a message and moves the ticket to whoever it now waits on."""
+    """Adds a message and moves the ticket to whoever it now waits on.
+
+    `author=None` means a guest (FR-C401/C403) - a guest ticket's own
+    messages carry no `author_id` (nothing to point a FK at) and are never
+    staff. A guest can share a product (public catalog data, same rule as
+    an authed customer - Rules.md) but not an order, since order ownership
+    can only be verified against a real User."""
     if shared_order_id and shared_product_id:
         raise SupportError("A message can share an order or a package, not both.")
+    if shared_order_id and author is None:
+        raise SupportError("Sign in to share an order.")
     body = (body or "").strip()
     if not body and not attachments and not shared_order_id and not shared_product_id:
         raise SupportError("Write a message or attach a file.")
     if len(body) > MAX_BODY_CHARS:
         raise SupportError("That message is too long.")
 
-    staff = is_staff(author)
+    staff = is_staff(author) if author else False
     if not staff and ticket.status not in CUSTOMER_WRITABLE:
         raise SupportError("This ticket is closed. Please open a new one.")
 
@@ -176,7 +225,7 @@ async def post_message(
 
     message = SupportMessage(
         ticket_id=ticket.id,
-        author_id=author.id,
+        author_id=author.id if author else None,
         is_staff=staff,
         body=body or "(attachment only)",
         message_type=message_type,
@@ -201,7 +250,7 @@ async def post_message(
 
 
 async def broadcast_message(
-    db: AsyncSession, ticket: SupportTicket, message: SupportMessage, *, author: User,
+    db: AsyncSession, ticket: SupportTicket, message: SupportMessage, *, author: Optional[User],
 ) -> None:
     """Pushes a just-committed message to the ticket's WebSocket channel,
     and a lightweight summary to the staff queue channel - FR-C105. Caller
@@ -235,9 +284,15 @@ async def broadcast_message(
         # serialize_shared_product() reaches into product.country.name_en
         # for the card's click target - same reasoning.
         await db.refresh(message.shared_product, attribute_names=["country"])
+    # A guest ticket (author=None, FR-C401) has no User to name the
+    # broadcast's real identity with - "author" here is never "You" (that's
+    # viewer-relative, applied client-side), so fall back to the guest's
+    # email if they gave one, else a plain "Guest".
+    author_name = author.username if author else (ticket.guest_email or "Guest")
+    author_avatar_url = author.avatar_url if author else None
     await manager.broadcast_to_ticket(ticket.id, {
         "type": "message",
-        "message": serialize_message(message, author_name=author.username, author_avatar_url=author.avatar_url),
+        "message": serialize_message(message, author_name=author_name, author_avatar_url=author_avatar_url),
     })
     await manager.broadcast_to_queue({
         "type": "ticket_updated",
@@ -374,10 +429,19 @@ def serialize_ticket(
         "last_message_at": ticket.last_message_at,
         "resolved_at": ticket.resolved_at,
         "closed_at": ticket.closed_at,
+        # True for a ticket opened before the visitor had an account
+        # (FR-C401) - lets the admin queue show it distinctly (FR-C512).
+        "is_guest": ticket.guest_token is not None,
     }
     if for_staff:
+        if user:
+            customer = {"id": user.id, "username": user.username, "email": user.email}
+        elif ticket.guest_token:
+            customer = {"id": None, "username": "Guest", "email": ticket.guest_email}
+        else:
+            customer = None
         data.update({
-            "customer": {"id": user.id, "username": user.username, "email": user.email} if user else None,
+            "customer": customer,
             "assigned_to": assignee_name,
         })
     if messages is not None:
