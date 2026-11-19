@@ -1,6 +1,31 @@
 # DECISIONS.md
 Judgment calls, newest first. Each: what, why, revisit-if.
 
+## 2026-11-20 — Swap esim-db-beta/esim-db from postgres:16-alpine to pgvector/pgvector:pg16, REINDEX after
+**What I did:** checked live (SSH, `pg_available_extensions`) - neither
+beta's nor prod's deployed Postgres has pgvector at all, confirming the
+open question flagged when FR-C501 was designed. User explicitly chose
+"swap beta first, verify, then prod" when asked. Changed
+`docker-compose.beta.yml`'s `esim-db-beta` image to
+`pgvector/pgvector:pg16` - prod's `docker-compose.yml` is deliberately
+**not** touched yet, pending beta verification. **Why this image, not
+compiling the extension into the existing Alpine image:** `pgvector/
+pgvector:pg16` is the officially maintained image for exactly this -
+same Postgres 16 data format, pgvector pre-built, far less fragile than
+hand-installing a compiled extension into a running Alpine container
+that gets replaced on every deploy anyway. **Real risk found and
+flagged, not glossed over:** the swap moves from Alpine (musl libc) to
+Debian (glibc) under the *same* locale name (`en_US.utf8`, confirmed on
+both DBs) - glibc's collation implementation isn't guaranteed to sort
+identically to musl's, which can leave a BTREE index on a text column
+silently wrong (looks fine, occasionally returns incomplete results)
+without an explicit `REINDEX` after the swap. A `REINDEX DATABASE
+esim_db;` (or per-index `REINDEX ... CONCURRENTLY` on beta first to
+rehearse, non-blocking on prod) is treated as a mandatory step of this
+migration, not a nice-to-have. **Revisit if:** beta verification turns
+up any problem (data integrity, app behavior, the extension itself
+misbehaving) - prod does not get this swap until beta is clean.
+
 ## 2026-11-20 — pgvector on the existing Postgres, not a dedicated vector DB
 **What I did:** the RAG knowledge base (`kb_chunks`) lives on the same
 single-instance Postgres already deployed, via the `pgvector` extension,

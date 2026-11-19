@@ -24,7 +24,18 @@
 
 services:
   esim-db-beta:
-    image: postgres:16-alpine
+    # Swapped from postgres:16-alpine for FR-C501 (pgvector) - confirmed
+    # live that the stock image has no vector extension at all (checked
+    # pg_available_extensions, empty). pgvector/pgvector:pg16 is the
+    # official postgres:16 image (Debian/glibc, not Alpine/musl) with
+    # pgvector compiled in - same Postgres major version, so the existing
+    # data directory/volume is compatible, but the libc change means text
+    # collation ("en_US.utf8" - confirmed live on both beta and prod) may
+    # sort differently even under the same locale name. See
+    # docs/Technical_Requirements.md / DECISIONS.md: a REINDEX after this
+    # lands is required, not optional, to rule out silently wrong index
+    # results from that collation change - don't skip it.
+    image: pgvector/pgvector:pg16
     container_name: esim-db-beta
     restart: unless-stopped
     environment:
